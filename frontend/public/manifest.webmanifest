@@ -1,0 +1,12 @@
+{
+  "name": "StoreMap — find it on the map",
+  "short_name": "StoreMap",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef0e8",
+  "theme_color": "#2f6f3e",
+  "description": "Search any product and see exactly where it is in the store.",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

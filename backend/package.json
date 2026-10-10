@@ -1,0 +1,17 @@
+{
+  "name": "storemap-backend",
+  "version": "1.0.0",
+  "description": "StoreMap — in-store product mapping: API, auth (Google + Apple), SQLite, static hosting",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test",
+    "smoke": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

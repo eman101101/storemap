@@ -1,0 +1,45 @@
+# Fly.io deployment for StoreMap — Stage 0 (docs/INFRASTRUCTURE.md §12).
+#
+#   fly launch --no-deploy          # first time: creates the app, keeps this file
+#   fly volumes create storemap_data --size 10 --region iad
+#   fly secrets set SESSION_SECRET=... [R2_*=... CF_*=...]
+#   fly deploy
+#
+# Full runbook: docs/DEPLOY.md
+app = "storemap"
+primary_region = "iad"
+
+[build]
+
+[env]
+  DATA_DIR = "/data"
+  NODE_ENV = "production"
+  PORT = "8080" # Fly's expected listen port
+
+# Persistence: SQLite + any legacy local uploads live on this volume and are
+# replicated to R2 by Litestream (backup), snapshotted weekly by Fly.
+[[mounts]]
+  source = "storemap_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off" # litestream must keep replicating
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 180
+    hard_limit = 200
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-2x" # 512 MB — see INFRASTRUCTURE.md §13 for sizing up

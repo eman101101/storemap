@@ -1,0 +1,15 @@
+# Litestream replica config (docs/INFRASTRUCTURE.md §7) — continuous SQLite
+# WAL streaming to Cloudflare R2. Env vars come from the runtime environment
+# (fly secrets), never from this file.
+dbs:
+  - path: /data/storemap.db
+    replicas:
+      - type: s3
+        bucket: ${R2_BUCKET}
+        path: storemap
+        endpoint: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+        # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are read from the env by
+        # litestream automatically.
+        retention: 72h
+        retention-check-interval: 1h
+        sync-interval: 10s

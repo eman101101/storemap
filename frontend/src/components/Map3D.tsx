@@ -1,0 +1,380 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Floor, MapElement } from '../types';
+import {
+  buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler, renderScene, shade,
+  routeFaces, stockFaces,
+  type Camera3D, type Face, type Pin3D, type PinHit, type StockItem,
+} from '../lib/render3d';
+import { shelfAnchor, type WorldPt } from '../lib/geometry';
+
+export interface Pin {
+  location: { id: string; x: number; y: number; product_id: string };
+  product: { name: string; category_color?: string | null };
+}
+
+interface Props {
+  floor: Floor;
+  elements: MapElement[];
+  pins: Pin[];
+  focusPinId?: string | null;
+  route?: WorldPt[] | null;
+  /** When set (seq changes), the camera flies the route from its start to the item. */
+  flythrough?: { points: WorldPt[]; seq: number } | null;
+  onPinClick?: (productId: string) => void;
+  /** All pins on the floor — drives the visual product blocks on the shelf faces. */
+  stockPins?: Pin[];
+  /** Multi-stop trip: numbered markers at each ordered stop (A1). */
+  tripStops?: { productId: string; name: string; point: WorldPt }[];
+  /** Camera lives in the parent so toggling 2D↔3D doesn't reset the angle. */
+  camera: Camera3D | null;
+  onCamera: (c: Camera3D) => void;
+}
+
+const PITCH_MIN = 0.18;
+const PITCH_MAX = 1.45;
+const DIST_MIN = 3;
+const DIST_MAX = 160;
+
+const EYE_Z = 8; // drone-style: well above the shelves
+const EYE_BACK = 4; // camera trails the walker by this many meters along the path
+const LOOK_AHEAD = 4;
+const LOOK_Z = 0; // look down at the path itself
+/** The one angle the whole flight holds — approach, walk and arrival alike. */
+const FLIGHT_PITCH = Math.atan2(EYE_Z, EYE_BACK + LOOK_AHEAD);
+const FLY_SPEED = 9; // m/s along the path
+const FLY_MIN_S = 3;
+const FLY_MAX_S = 9;
+const APPROACH_MS = 750;
+const ARRIVE_MS = 950;
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const lerpAngle = (a: number, b: number, t: number) => {
+  const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  return a + d * t;
+};
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+/** Smoothly move the camera (ease-out) — a single rAF loop that stops when done. */
+function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D) => void, signal: { cancelled: boolean }) {
+  const keys = ['yaw', 'pitch', 'dist', 'tx', 'ty', 'tz'] as const;
+  const start = performance.now();
+  const dur = 420;
+  const step = (now: number) => {
+    if (signal.cancelled) return;
+    const t = Math.min(1, (now - start) / dur);
+    const e = easeOut(t);
+    const next: Camera3D = { ...from };
+    for (const k of keys) {
+      if (to[k] !== undefined) {
+        next[k] = k === 'yaw' ? lerpAngle(from[k], to[k] as number, e) : lerp(from[k], to[k] as number, e);
+      }
+    }
+    apply(next);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState({ w: 800, h: 600 });
+  const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
+  const setCam = onCamera;
+  const [flying, setFlying] = useState(false);
+  const tweenSignal = useRef({ cancelled: false });
+  const flySignal = useRef<{ cancelled: boolean } | null>(null);
+  const flyGoal = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // the seq that already flew — the very first route shown must NOT auto-play
+  const flownSeq = useRef<number | null>(null);
+  const hitsRef = useRef<PinHit[]>([]);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
+  const pinch = useRef<{ dist: number; startDist: number } | null>(null);
+  const camRef = useRef(cam);
+  camRef.current = cam;
+  const floorRef = useRef(floor);
+  floorRef.current = floor;
+
+  // visual product blocks on the shelf faces, from every pinned item on this floor
+  const stocking = useMemo<StockItem[]>(
+    () =>
+      stockPins
+        .map((p) => {
+          const a = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
+          if (!a) return null;
+          return {
+            x: a.x,
+            y: a.y,
+            nx: a.nx,
+            ny: a.ny,
+            color: shade(p.product.category_color || '#2f6f3e', 0.88 + (((p.location.x * 7 + p.location.y * 13) % 5) * 0.06)),
+          };
+        })
+        .filter((s): s is StockItem => s !== null),
+    [stockPins, elements]
+  );
+
+  // static geometry only depends on the floor + elements — build it once, not per frame
+  const sceneFaces = useMemo<Face[]>(() => buildSceneFaces(floor, elements), [floor, elements]);
+
+  // one BSP per draw layer over the whole scene: exact back-to-front order for
+  // any camera angle. Rebuilt only when the data changes, never per frame.
+  const bspInput = useMemo(() => {
+    const faces = [...sceneFaces, ...stockFaces(stocking)];
+    if (route && route.length > 1) faces.push(...routeFaces(route));
+    return faces;
+  }, [sceneFaces, stocking, route]);
+  const bspFaceCount = bspInput.length;
+  const sceneBSP = useMemo(() => buildSceneBSP(bspInput), [bspInput]); // E2 note: >3K faces would move to an idle-callback build; current scenes peak ~2K
+  void bspFaceCount;
+
+  // observe container size
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) setSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height) setSize({ w: r.width, h: r.height });
+    return () => ro.disconnect();
+  }, []);
+
+  // A5: floor changes keep the shopper's angle and zoom — only re-aim the
+  // center (a whole-floor refit would jar mid-trip). First mount still fits.
+  const lastFloorId = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastFloorId.current === null) {
+      lastFloorId.current = floor.id;
+      return;
+    }
+    if (floor.id !== lastFloorId.current) {
+      lastFloorId.current = floor.id;
+      setCam({ ...camRef.current, tx: floor.width_m / 2, ty: floor.height_m / 2, tz: 0 });
+    }
+  }, [floor.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Overview framing above a point — same angle as the flight, pulled back. */
+  const overviewOf = (x: number, y: number): Partial<Camera3D> => {
+    const span = Math.max(floorRef.current.width_m, floorRef.current.height_m);
+    return { tx: x, ty: y, tz: 0, dist: Math.min(42, Math.max(14, span / 2)), pitch: FLIGHT_PITCH };
+  };
+
+  const stopFlySignal = () => {
+    if (flySignal.current) flySignal.current.cancelled = true;
+    flySignal.current = null;
+    setFlying(false);
+  };
+
+  const arriveAt = (x: number, y: number) => {
+    stopFlySignal();
+    tweenSignal.current.cancelled = true;
+    const signal = { cancelled: false };
+    tweenSignal.current = signal;
+    tweenCamera(camRef.current, overviewOf(x, y), setCam, signal);
+  };
+
+  // the fly-through: glide in → walk the route → rise to an overview of the item.
+  // Only plays when the seq moves past the one already flown (the "Fly" button).
+  useEffect(() => {
+    if (!flythrough || flythrough.points.length < 2) return;
+    if (flownSeq.current === null) {
+      flownSeq.current = flythrough.seq; // first observation never auto-plays
+      return;
+    }
+    if (flownSeq.current === flythrough.seq) return;
+    flownSeq.current = flythrough.seq;
+    tweenSignal.current.cancelled = true;
+    stopFlySignal();
+    const signal = { cancelled: false };
+    flySignal.current = signal;
+    setFlying(true);
+
+    const sampler = pathSampler(flythrough.points);
+    const goal = flythrough.points[flythrough.points.length - 1];
+    flyGoal.current = { x: goal.x, y: goal.y };
+    // G3: honor prefers-reduced-motion — glide gently to the arrival framing
+    // instead of flying the path
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      signal.cancelled = true;
+      const s2 = { cancelled: false };
+      tweenSignal.current = s2;
+      tweenCamera(camRef.current, overviewOf(goal.x, goal.y), setCam, s2);
+      return () => {
+        signal.cancelled = true;
+        s2.cancelled = true;
+      };
+    }
+    const flightS = sampler.total;
+    const flightMs = Math.min(FLY_MAX_S, Math.max(FLY_MIN_S, flightS / FLY_SPEED)) * 1000;
+    const camAtS = (s: number) =>
+      camFromEyeLook(
+        { x: sampler.at(s - EYE_BACK).x, y: sampler.at(s - EYE_BACK).y, z: EYE_Z },
+        { x: sampler.at(s + LOOK_AHEAD).x, y: sampler.at(s + LOOK_AHEAD).y, z: LOOK_Z }
+      );
+    const startCam = camAtS(0);
+    const from = camRef.current;
+    const t0 = performance.now();
+
+    const step = (now: number) => {
+      if (signal.cancelled) return;
+      const t = now - t0;
+      if (t < APPROACH_MS) {
+        // glide from wherever the camera is to the path's start position
+        const e = easeOut(t / APPROACH_MS);
+        setCam({
+          yaw: lerpAngle(from.yaw, startCam.yaw, e),
+          pitch: lerp(from.pitch, startCam.pitch, e),
+          dist: lerp(from.dist, startCam.dist, e),
+          tx: lerp(from.tx, startCam.tx, e),
+          ty: lerp(from.ty, startCam.ty, e),
+          tz: lerp(from.tz, startCam.tz, e),
+        });
+      } else if (t < APPROACH_MS + flightMs) {
+        const s = ((t - APPROACH_MS) / flightMs) * flightS;
+        setCam(camAtS(s));
+      } else {
+        setFlying(false);
+        flySignal.current = null;
+        const signal2 = { cancelled: false };
+        tweenSignal.current = signal2;
+        tweenCamera(camRef.current, overviewOf(goal.x, goal.y), setCam, signal2);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+
+    return () => {
+      signal.cancelled = true;
+      setFlying(false);
+    };
+  }, [flythrough?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // draw on every relevant change
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.width !== Math.round(size.w * dpr) || canvas.height !== Math.round(size.h * dpr)) {
+      canvas.width = Math.round(size.w * dpr);
+      canvas.height = Math.round(size.h * dpr);
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pins3d: Pin3D[] = pins.map((p) => {
+      const anchor = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
+      return {
+        productId: p.location.product_id,
+        x: p.location.x,
+        y: p.location.y,
+        color: p.product.category_color || '#2f6f3e',
+        label: p.location.id === focusPinId ? p.product.name : undefined,
+        focused: p.location.id === focusPinId,
+        ax: anchor?.x,
+        ay: anchor?.y,
+      };
+    });
+    hitsRef.current = renderScene(ctx, size.w, size.h, cam, floor, elements, {
+      bsp: sceneBSP,
+      route,
+      pins: pins3d,
+      routeStart: route && route.length > 1 ? route[0] : null,
+      tripStops,
+    });
+  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP]);
+
+  // wheel zoom (non-passive so preventDefault works)
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      stopFlySignal();
+      const c = camRef.current;
+      setCam({ ...c, dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist * Math.exp(e.deltaY * 0.0016))) });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    canvasRef.current?.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    stopFlySignal();
+    if (pointers.current.size === 2) {
+      const pts = [...pointers.current.values()];
+      pinch.current = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), startDist: camRef.current.dist };
+      drag.current = null;
+      return;
+    }
+    drag.current = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current && pointers.current.size === 2) {
+      const pts = [...pointers.current.values()];
+      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinch.current.dist > 0) {
+        setCam({ ...camRef.current, dist: Math.min(DIST_MAX, Math.max(DIST_MIN, (pinch.current.startDist * d) / pinch.current.dist)) });
+      }
+      return;
+    }
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+    setCam({
+      ...camRef.current,
+      yaw: d.yaw + dx * 0.005,
+      pitch: Math.min(PITCH_MAX, Math.max(PITCH_MIN, d.pitch + dy * 0.005)),
+    });
+  };
+
+  const endPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.moved) return;
+    // tap → nearest pin within 16 px
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    let best: PinHit | null = null;
+    let bestD = 18;
+    for (const hit of hitsRef.current) {
+      const dist = Math.hypot(hit.sx - px, hit.sy - py);
+      if (dist < bestD) {
+        bestD = dist;
+        best = hit;
+      }
+    }
+    if (best) onPinClick?.(best.productId);
+  };
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: drag.current ? 'grabbing' : 'grab' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+        aria-label="3D store map"
+      />
+      {flying && (
+        <button className="fly-skip" onClick={() => arriveAt(flyGoal.current.x, flyGoal.current.y)}>
+          Skip flight ✕
+        </button>
+      )}
+    </>
+  );
+}
