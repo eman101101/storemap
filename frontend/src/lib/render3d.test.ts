@@ -4,7 +4,7 @@ import type { Floor, MapElement } from '../types';
 import {
   project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
-  buildSceneBSP, traverseFaceBSP, NEAR,
+  buildSceneBSP, traverseFaceBSP, buildContactShadows, MODERN_THEME, RETRO_THEME, NEAR,
   type Face,
 } from './render3d';
 
@@ -224,6 +224,63 @@ describe('colors', () => {
   it('multiplies hex channels', () => {
     expect(shade('#ff0000', 0.5)).toBe('#800000');
     expect(shade('#3366cc', 1)).toBe('#3366cc');
+  });
+});
+
+describe('map themes (modern default vs optional retro 2010s)', () => {
+  it('modern stays the classic look: single-quad route, 5-face box', () => {
+    expect(routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }])).toHaveLength(1);
+    const base = [{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }];
+    expect(boxFaces(base, 1.5, '#e7d5a8')).toHaveLength(5);
+    // the default scene fill is unchanged (pinned by the tiling tests too)
+    const faces = buildSceneFaces(floor, []);
+    expect(faces[0]!.fill).toBe('#f5f3ec');
+  });
+
+  it('retro route adds a glossy highlight strip and dashes above the ribbon', () => {
+    const faces = routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }], RETRO_THEME);
+    expect(faces.length).toBeGreaterThan(1);
+    expect(faces.every((f) => f.layer === 1)).toBe(true);
+    const zs = faces.map((f) => f.pts[0]!.z);
+    expect(Math.min(...zs)).toBeCloseTo(ROUTE.z, 5); // base ribbon still at ROUTE.z
+    expect(Math.max(...zs)).toBeGreaterThan(ROUTE.z); // gloss rides above it
+  });
+
+  it('retro two-tone splits every side quad into a sunlit band and a shaded base', () => {
+    const base = [{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }];
+    const faces = boxFaces(base, 1.5, '#e7d5a8', 1, RETRO_THEME);
+    expect(faces).toHaveLength(9); // top + 4 sides × 2 bands
+    expect(faces[0].pts.every((p) => p.z === 1.5)).toBe(true); // top unchanged
+  });
+
+  it('retro theme keeps the modern scene face counts (shadows are composed by Map3D)', () => {
+    const els = [el('wall', 'rect', { x: 0, y: 0, w: 20, h: 0.4, rot: 0 })];
+    const modern = buildSceneFaces(floor, els);
+    const retro = buildSceneFaces(floor, els, RETRO_THEME);
+    // two-tone doubles the wall's side quads, so retro emits more — but the
+    // floor/grid/decal counts (what the pinned tests check) must be identical
+    const count = (fs: Face[], pred: (f: Face) => boolean) => fs.filter(pred).length;
+    expect(count(retro, (f) => f.line === true)).toBe(count(modern, (f) => f.line === true));
+    expect(count(retro, (f) => !f.line && f.layer === 0)).toBe(count(modern, (f) => !f.line && f.layer === 0));
+  });
+
+  it('contact shadows: one decal per solid rect, offset away from the light', () => {
+    const faces = buildContactShadows([el('shelf', 'rect', { x: 4, y: 4, w: 3, h: 1, rot: 0 })], RETRO_THEME);
+    expect(faces).toHaveLength(1);
+    const f = faces[0]!;
+    expect(f.layer).toBe(0.5);
+    expect(f.pts.every((p) => p.z === 0.05)).toBe(true);
+    expect((f.alpha ?? 1) < 1).toBe(true);
+    // light comes from −x/−y, so the shadow center falls +x/+y of the fixture center (5.5, 4.5)
+    const cx = f.pts.reduce((a, p) => a + p.x, 0) / f.pts.length;
+    const cy = f.pts.reduce((a, p) => a + p.y, 0) / f.pts.length;
+    expect(cx).toBeGreaterThan(5.5);
+    expect(cy).toBeGreaterThan(4.5);
+  });
+
+  it('contact shadows skip decals and non-rect shapes', () => {
+    const els = [el('zone', 'rect', { x: 2, y: 2, w: 5, h: 5, rot: 0 }), el('wall', 'polyline', [[0, 0], [4, 4]])];
+    expect(buildContactShadows(els, RETRO_THEME)).toHaveLength(0);
   });
 });
 

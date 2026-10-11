@@ -2,12 +2,14 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import type { AuthInfo } from './types';
+import { ThemeProvider } from './theme';
 import Landing from './components/Landing';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import EditorPage from './components/EditorPage';
 import StockPage from './components/StockPage';
 import ViewerPage from './components/ViewerPage';
+import ThemeSettings from './components/ThemeSettings';
 
 interface AuthCtx extends AuthInfo {
   loading: boolean;
@@ -39,18 +41,20 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={{ ...auth, loading, refresh }}>
-      <div className="app-shell">
-        {!isViewer && <TopNav />}
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/dashboard/stores/:storeId" element={<EditorPage />} />
-          <Route path="/dashboard/stores/:storeId/stock" element={<StockPage />} />
-          <Route path="/s/:slug" element={<ViewerPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </div>
+      <ThemeProvider>
+        <div className="app-shell">
+          {!isViewer && <TopNav />}
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/stores/:storeId" element={<EditorPage />} />
+            <Route path="/dashboard/stores/:storeId/stock" element={<StockPage />} />
+            <Route path="/s/:slug" element={<ViewerPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
+      </ThemeProvider>
     </AuthContext.Provider>
   );
 }
@@ -68,6 +72,7 @@ function TopNav() {
         <span className="brand-logo">▦</span> StoreMap
       </Link>
       <div className="spacer" />
+      <ThemeSettings />
       {user ? (
         <div className="nav-user">
           <NavLink to="/dashboard" className="btn ghost sm">

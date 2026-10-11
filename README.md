@@ -46,6 +46,10 @@ with **Google** or **Apple**.
   renders correctly instead of vanishing). Shelves look stocked: every pinned
   product draws a colored facing block on its shelf face. No WebGL, no three.js,
   a few KB of code, smooth on low-end devices.
+- **Themes** — light/dark/system appearance for the whole app, plus an optional
+  **Retro 2010s** 3D map style (saturated sky, warm sun, glossy fixtures,
+  contact shadows — see [docs/DESIGN-RETRO-3D.md](docs/DESIGN-RETRO-3D.md)).
+  Both live in the ◐ settings popover and are saved per device.
 - Multi-floor support, entrance/exit markers, tap a shelf (2D) to see its layout
 - Touch-first: one-finger pan, pinch zoom; fully responsive
 

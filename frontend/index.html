@@ -12,6 +12,14 @@
 </head>
   <body>
     <div id="root"></div>
+    <script>
+      // apply the saved appearance before first paint (ThemeProvider default: system)
+      try {
+        var m = localStorage.getItem('storemap.mode');
+        var dark = m === 'dark' || ((m === null || m === 'system') && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

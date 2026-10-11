@@ -10,8 +10,10 @@ import type {
 import { parseElement } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
-import { fitCamera, type Camera3D } from '../lib/render3d';
+import { fitCamera, MODERN_THEME, RETRO_THEME, type Camera3D } from '../lib/render3d';
 import { useAuth } from '../App';
+import { useTheme } from '../theme';
+import ThemeSettings from './ThemeSettings';
 
 interface Pin {
   location: ProductLocation;
@@ -56,6 +58,8 @@ export default function ViewerPage() {
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { mapTheme } = useTheme();
+  const sceneTheme = mapTheme === 'retro' ? RETRO_THEME : MODERN_THEME;
 
   /** One tap from the shopper view into the owner's editor (login first if needed). */
   const goEdit = () => {
@@ -342,6 +346,7 @@ export default function ViewerPage() {
               stockPins={floorPins}
               camera={cam3d}
               onCamera={setCam3d}
+              theme={sceneTheme}
               onPinClick={(productId) => {
                 const p = data.products.find((pr) => pr.id === productId);
                 if (p) focusResult(p);
@@ -458,6 +463,7 @@ export default function ViewerPage() {
               3D
             </button>
           </div>
+          <ThemeSettings />
         </div>
 
         {activeRoute && (

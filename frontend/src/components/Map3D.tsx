@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
 import {
-  buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler, renderScene, shade,
-  routeFaces, stockFaces,
-  type Camera3D, type Face, type Pin3D, type PinHit, type StockItem,
+  buildSceneBSP, buildSceneFaces, buildContactShadows, camFromEyeLook, fitCamera, pathSampler,
+  renderScene, shade, routeFaces, stockFaces, MODERN_THEME,
+  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type StockItem,
 } from '../lib/render3d';
 import { shelfAnchor, type WorldPt } from '../lib/geometry';
 
@@ -28,6 +28,8 @@ interface Props {
   /** Camera lives in the parent so toggling 2D↔3D doesn't reset the angle. */
   camera: Camera3D | null;
   onCamera: (c: Camera3D) => void;
+  /** Visual theme for the scene — defaults to modern; RETRO_THEME is the 2010s look. */
+  theme?: MapTheme;
 }
 
 const PITCH_MIN = 0.18;
@@ -75,7 +77,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops, theme = MODERN_THEME }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -115,15 +117,16 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   );
 
   // static geometry only depends on the floor + elements — build it once, not per frame
-  const sceneFaces = useMemo<Face[]>(() => buildSceneFaces(floor, elements), [floor, elements]);
+  const sceneFaces = useMemo<Face[]>(() => buildSceneFaces(floor, elements, theme), [floor, elements, theme]);
 
   // one BSP per draw layer over the whole scene: exact back-to-front order for
   // any camera angle. Rebuilt only when the data changes, never per frame.
   const bspInput = useMemo(() => {
-    const faces = [...sceneFaces, ...stockFaces(stocking)];
-    if (route && route.length > 1) faces.push(...routeFaces(route));
+    const faces = [...sceneFaces, ...stockFaces(stocking, theme)];
+    if (theme.retro) faces.push(...buildContactShadows(elements, theme));
+    if (route && route.length > 1) faces.push(...routeFaces(route, theme));
     return faces;
-  }, [sceneFaces, stocking, route]);
+  }, [sceneFaces, stocking, route, theme, elements]);
   const bspFaceCount = bspInput.length;
   const sceneBSP = useMemo(() => buildSceneBSP(bspInput), [bspInput]); // E2 note: >3K faces would move to an idle-callback build; current scenes peak ~2K
   void bspFaceCount;
@@ -284,8 +287,9 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       pins: pins3d,
       routeStart: route && route.length > 1 ? route[0] : null,
       tripStops,
+      theme,
     });
-  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP]);
+  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme]);
 
   // wheel zoom (non-passive so preventDefault works)
   useEffect(() => {

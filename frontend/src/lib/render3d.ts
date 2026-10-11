@@ -200,40 +200,96 @@ export function shade(hex: string, mult: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
 
-// key light from upper-left-front; brightness = 0.55 + 0.45·|n·L|
-const LIGHT = { x: -0.38, y: -0.5, z: 0.78 };
-function lit(normal: V3, base: string): string {
-  const l =
-    Math.abs(normal.x * LIGHT.x + normal.y * LIGHT.y + normal.z * LIGHT.z) / Math.hypot(normal.x, normal.y, normal.z);
-  return shade(base, 0.55 + 0.45 * l);
+/**
+ * Visual theme for the 3D scene. MODERN is the classic look; RETRO is the
+ * optional "2010s 3D map" style (docs/DESIGN-RETRO-3D.md): saturated sky,
+ * warm sun, two-tone gloss, contact shadows, glossy route, chunky labels.
+ * Both are pure data — every themed function takes one as an optional arg
+ * and defaults to MODERN, so existing callers and tests are unchanged.
+ */
+export interface MapTheme {
+  floorFill: string;
+  gridFill: string;
+  skyTop: string;
+  skyBottom: string;
+  /** key-light direction (need not be normalized; z is up) */
+  light: V3;
+  ambient: number; // brightness floor
+  diffuse: number; // how strongly facing the light matters
+  retro: boolean;
 }
 
-/** Flat-shaded box: side quads + top, from 4 base corners (world, y-down) and a height. */
-export function boxFaces(base: WorldPt[], height: number, color: string, alpha = 1): Face[] {
+export const MODERN_THEME: MapTheme = {
+  floorFill: '#f5f3ec',
+  gridFill: '#dfe3d8',
+  skyTop: '#e3e9ef',
+  skyBottom: '#eef0e8',
+  light: { x: -0.38, y: -0.5, z: 0.78 },
+  ambient: 0.55,
+  diffuse: 0.45,
+  retro: false,
+};
+
+export const RETRO_THEME: MapTheme = {
+  floorFill: '#e9dcba', // warm parchment
+  gridFill: '#d6c69a',
+  skyTop: '#7cb2e2', // saturated 2010s blue…
+  skyBottom: '#e6f0f9', // …fading to horizon haze
+  light: { x: -0.45, y: -0.42, z: 0.78 }, // warm sun, still upper-left
+  ambient: 0.42,
+  diffuse: 0.58, // punchier contrast than modern
+  retro: true,
+};
+
+function lit(normal: V3, base: string, theme: MapTheme = MODERN_THEME, extra = 1): string {
+  const l =
+    Math.abs(normal.x * theme.light.x + normal.y * theme.light.y + normal.z * theme.light.z) /
+    Math.hypot(normal.x, normal.y, normal.z);
+  return shade(base, (theme.ambient + theme.diffuse * l) * extra);
+}
+
+/** Flat-shaded box: side quads + top, from 4 base corners (world, y-down) and a height.
+ *  Retro themes split every side quad into a sunlit upper band and darker base. */
+export function boxFaces(
+  base: WorldPt[],
+  height: number,
+  color: string,
+  alpha = 1,
+  theme: MapTheme = MODERN_THEME
+): Face[] {
   if (base.length < 3 || height <= 0) return [];
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
   // top face (normal up)
-  faces.push({ pts: t, fill: lit({ x: 0, y: 0, z: 1 }, color), alpha });
+  faces.push({ pts: t, fill: lit({ x: 0, y: 0, z: 1 }, color, theme), alpha });
   for (let i = 0; i < base.length; i++) {
     const j = (i + 1) % base.length;
     const n = { x: b[j].y - b[i].y, y: -(b[j].x - b[i].x), z: 0 }; // outward for CW bases in y-down coords
-    faces.push({ pts: [t[i], t[j], b[j], b[i]], fill: lit(n, color), alpha });
+    if (theme.retro) {
+      // 2010s plastic gloss: light catches the upper band, base sits in shade
+      const f = 0.62;
+      const mid = (p: V3, q: V3): V3 => ({ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, z: p.z + (q.z - p.z) * f });
+      const m1 = mid(t[i], b[i]);
+      const m2 = mid(t[j], b[j]);
+      faces.push({ pts: [t[i], t[j], m2, m1], fill: lit(n, color, theme, 1.16), alpha });
+      faces.push({ pts: [m1, m2, b[j], b[i]], fill: lit(n, color, theme, 0.72), alpha });
+    } else {
+      faces.push({ pts: [t[i], t[j], b[j], b[i]], fill: lit(n, color, theme), alpha });
+    }
   }
   return faces;
 }
 
 /* ---------------- scene construction ---------------- */
 
-const FLOOR_FILL = '#f5f3ec';
-const GRID_FILL = '#dfe3d8';
 const ROUTE_COLOR = '#e4572e';
 
 export const ROUTE = { ribbon: ROUTE_COLOR, width: 0.45, z: 0.07 };
 
-/** Ribbon quads hugging the floor along a route polyline. */
-export function routeFaces(route: WorldPt[]): Face[] {
+/** Ribbon quads hugging the floor along a route polyline.
+ *  Retro adds a glossy highlight strip and dashed centerline above the base. */
+export function routeFaces(route: WorldPt[], theme: MapTheme = MODERN_THEME): Face[] {
   const faces: Face[] = [];
   const hw = ROUTE.width / 2;
   const z = ROUTE.z;
@@ -271,16 +327,95 @@ export function routeFaces(route: WorldPt[]): Face[] {
       layer: 1,
     });
   }
+  if (!theme.retro) return faces;
+  // 2010s GPS gloss: narrow bright strip riding the ribbon's centerline
+  const hw2 = 0.09;
+  const z2 = z + 0.01;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) continue;
+    const nx = (-dy / len) * hw2;
+    const ny = (dx / len) * hw2;
+    faces.push({
+      pts: [
+        { x: a.x + nx, y: a.y + ny, z: z2 },
+        { x: b.x + nx, y: b.y + ny, z: z2 },
+        { x: b.x - nx, y: b.y - ny, z: z2 },
+        { x: a.x - nx, y: a.y - ny, z: z2 },
+      ],
+      fill: shade(ROUTE.ribbon, 1.32),
+      layer: 1,
+    });
+  }
+  // dashes above everything — the era's turn-by-turn look
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) continue;
+    const ux = dx / len;
+    const uy = dy / len;
+    const nx = -uy * 0.05;
+    const ny = ux * 0.05;
+    for (let s = 0.6; s + 0.7 <= len; s += 1.3) {
+      const mx = a.x + ux * (s + 0.35);
+      const my = a.y + uy * (s + 0.35);
+      faces.push({
+        pts: [
+          { x: mx - ux * 0.35 + nx, y: my - uy * 0.35 + ny, z: 0.09 },
+          { x: mx + ux * 0.35 + nx, y: my + uy * 0.35 + ny, z: 0.09 },
+          { x: mx + ux * 0.35 - nx, y: my + uy * 0.35 - ny, z: 0.09 },
+          { x: mx - ux * 0.35 - nx, y: my - uy * 0.35 - ny, z: 0.09 },
+        ],
+        fill: '#fff2cf',
+        alpha: 0.95,
+        layer: 1,
+      });
+    }
+  }
   return faces;
 }
 
-function polyPrism(el: MapElement, pts: WorldPt[], height: number): Face[] {
+/**
+ * 2010s contact shadows: one soft decal per solid rect fixture, offset away
+ * from the theme's light by a height-scaled amount. Composed by the caller
+ * (Map3D) next to the scene faces — never inside buildSceneFaces, whose exact
+ * face counts are pinned by tests.
+ */
+export function buildContactShadows(elements: MapElement[], theme: MapTheme = MODERN_THEME): Face[] {
+  const faces: Face[] = [];
+  const lLen = Math.hypot(theme.light.x, theme.light.y) || 1;
+  for (const el of elements) {
+    const h = TYPE_HEIGHT[el.type] ?? 0;
+    if (h <= 0.12 || el.shape !== 'rect') continue;
+    const r = el.geom as RectGeom;
+    if (r.w <= 0 || r.h <= 0) continue;
+    const d = h * 0.45;
+    const ox = (-theme.light.x / lLen) * d;
+    const oy = (-theme.light.y / lLen) * d;
+    faces.push({
+      pts: rectCorners(r).map((p) => ({ x: p.x + ox, y: p.y + oy, z: 0.05 })),
+      fill: '#1b2a20',
+      alpha: 0.16,
+      layer: 0.5,
+    });
+  }
+  return faces;
+}
+
+function polyPrism(el: MapElement, pts: WorldPt[], height: number, theme: MapTheme = MODERN_THEME): Face[] {
   const base = el.color || TYPE_COLOR[el.type];
   if (height <= 0.12) {
     // flat decal (zone tint) — above the floor tiles so tiling can't cover it
     return [{ pts: pts.map((p) => ({ x: p.x, y: p.y, z: height })), fill: base, alpha: 0.35, layer: 0.5 }];
   }
-  return boxFaces(pts, height, base);
+  return boxFaces(pts, height, base, 1, theme);
 }
 
 /** Long faces break centroid-depth sorting — tile any quad whose edges exceed this. */
@@ -349,7 +484,7 @@ export function subdivideFaces(faces: Face[]): Face[] {
 }
 
 /** All drawable faces for a floor: slab + grid (layer 0), decals (layer 0.5) and extruded elements (layer 2). */
-export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
+export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: MapTheme = MODERN_THEME): Face[] {
   const faces: Face[] = [];
   const w = floor.width_m;
   const h = floor.height_m;
@@ -362,7 +497,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
       { x: w, y: h, z: 0 },
       { x: 0, y: h, z: 0 },
     ],
-    fill: FLOOR_FILL,
+    fill: theme.floorFill,
     layer: 0,
   });
   // 1 m grid — above the floor tiles (they're markings, and their 54 m centroids
@@ -370,7 +505,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
   for (let gx = 1; gx < w; gx++) {
     faces.push({
       pts: [{ x: gx, y: 0, z: 0 }, { x: gx, y: h, z: 0 }],
-      stroke: GRID_FILL,
+      stroke: theme.gridFill,
       lw: 1,
       layer: 0.25,
       line: true,
@@ -379,7 +514,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
   for (let gy = 1; gy < h; gy++) {
     faces.push({
       pts: [{ x: 0, y: gy, z: 0 }, { x: w, y: gy, z: 0 }],
-      stroke: GRID_FILL,
+      stroke: theme.gridFill,
       lw: 1,
       layer: 0.25,
       line: true,
@@ -400,11 +535,11 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
           layer: 0.5,
         });
       } else {
-        faces.push(...boxFaces(rectCorners(r), height, color));
+        faces.push(...boxFaces(rectCorners(r), height, color, 1, theme));
       }
     } else if (el.shape === 'polygon') {
       const pts = polyPoints(el);
-      if (pts.length >= 3) faces.push(...polyPrism(el, pts, TYPE_HEIGHT[el.type] ?? 0));
+      if (pts.length >= 3) faces.push(...polyPrism(el, pts, TYPE_HEIGHT[el.type] ?? 0, theme));
     } else if (el.shape === 'polyline') {
       const pts = polyPoints(el);
       if (el.type === 'wall') {
@@ -423,7 +558,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[]): Face[] {
             { x: b.x - nx, y: b.y - ny },
             { x: a.x - nx, y: a.y - ny },
           ];
-          faces.push(...boxFaces(base, TYPE_HEIGHT.wall, color));
+          faces.push(...boxFaces(base, TYPE_HEIGHT.wall, color, 1, theme));
         }
       } else {
         // aisle / route-like marking: flat ribbon
@@ -653,7 +788,7 @@ export function cameraEye(cam: Camera3D): V3 {
 /** Vertical product blocks along the shelf faces — makes fixtures look stocked.
  *  No camera culling: the scene BSP orders every block exactly, so back-facing
  *  blocks end up covered by the shelf's own front faces. */
-export function stockFaces(items: StockItem[]): Face[] {
+export function stockFaces(items: StockItem[], theme: MapTheme = MODERN_THEME): Face[] {
   const faces: Face[] = [];
   const halfW = 0.45; // half-width along the face
   const z0 = 0.32;
@@ -671,7 +806,7 @@ export function stockFaces(items: StockItem[]): Face[] {
         { x: ox - tx * halfW, y: oy - ty * halfW, z: z0 },
         { x: ox + tx * halfW, y: oy + ty * halfW, z: z0 },
       ],
-      fill: shade(it.color, 0.92),
+      fill: shade(it.color, theme.retro ? 0.97 : 0.92),
     });
   }
   return faces;
@@ -692,6 +827,8 @@ export interface SceneInput {
   bsp?: LayeredBSP[] | null;
   /** Multi-stop trip: numbered markers drawn in the overlay pass. */
   tripStops?: { productId: string; name: string; point: WorldPt }[];
+  /** Visual theme — defaults to the modern look; RETRO_THEME adds the 2010s style. */
+  theme?: MapTheme;
 }
 
 /**
@@ -709,6 +846,7 @@ export function renderScene(
   input: SceneInput = {}
 ): PinHit[] {
   const fov = cam.fov ?? DEFAULT_FOV;
+  const theme = input.theme ?? MODERN_THEME;
   interface Draw {
     face: Face;
     spts: { x: number; y: number }[];
@@ -736,9 +874,9 @@ export function renderScene(
     }
   } else {
     // legacy painter path — IMPORTANT: never mutate input.faces, callers cache it
-    const all: Face[] = input.faces ? input.faces.slice() : buildSceneFaces(floor, elements);
-    if (input.stocking?.length) all.push(...stockFaces(input.stocking));
-    if (input.route && input.route.length > 1) all.push(...routeFaces(input.route));
+    const all: Face[] = input.faces ? input.faces.slice() : buildSceneFaces(floor, elements, theme);
+    if (input.stocking?.length) all.push(...stockFaces(input.stocking, theme));
+    if (input.route && input.route.length > 1) all.push(...routeFaces(input.route, theme));
     for (const face of all) {
       const d = projectFace(face);
       if (d) draws.push(d);
@@ -749,10 +887,22 @@ export function renderScene(
 
   // sky → ground backdrop
   const bg = ctx.createLinearGradient(0, 0, 0, h);
-  bg.addColorStop(0, '#e3e9ef');
-  bg.addColorStop(1, '#eef0e8');
+  bg.addColorStop(0, theme.skyTop);
+  bg.addColorStop(1, theme.skyBottom);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
+  if (theme.retro) {
+    // 2010s sun: warm glow in the sky on the light's side, behind all geometry
+    const sx = w * 0.16;
+    const sy = h * 0.15;
+    const sr = Math.min(w, h) * 0.17;
+    const sun = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    sun.addColorStop(0, 'rgba(255,252,235,0.95)');
+    sun.addColorStop(0.25, 'rgba(255,244,200,0.55)');
+    sun.addColorStop(1, 'rgba(255,244,200,0)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(0, 0, w, h);
+  }
 
   ctx.lineJoin = 'round';
   for (const { face, spts } of draws) {
@@ -777,6 +927,17 @@ export function renderScene(
       ctx.lineWidth = face.lw ?? 1;
       ctx.stroke();
     }
+  }
+  if (theme.retro) {
+    // 2010s vignette — after the scene, before the overlay, so pins and labels
+    // stay crisp and untinted
+    const cx = w / 2;
+    const cy = h * 0.46;
+    const vg = ctx.createRadialGradient(cx, cy, Math.min(w, h) * 0.45, cx, cy, Math.max(w, h) * 0.78);
+    vg.addColorStop(0, 'rgba(24,34,54,0)');
+    vg.addColorStop(1, 'rgba(24,34,54,0.2)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
   }
 
   /* ---- overlay: markers, pins, labels (always on top) ---- */
@@ -852,7 +1013,7 @@ export function renderScene(
       ctx.stroke();
       if (pin.focused) {
         drawFloorDisc(ctx, cam, w, h, { x: px, y: py }, 0.55, pin.color, pitchSin, true);
-        if (pin.label) drawLabel(ctx, dot.x, dot.y - 14, pin.label, 13, true);
+        if (pin.label) drawLabel(ctx, dot.x, dot.y - 14, pin.label, 13, true, theme.retro);
       }
       continue;
     }
@@ -880,7 +1041,7 @@ export function renderScene(
     }
     if (pin.focused) {
       drawFloorDisc(ctx, cam, w, h, { x: pin.x, y: pin.y }, 0.55, pin.color, pitchSin, true);
-      if (pin.label) drawLabel(ctx, top?.x ?? base.x, (top?.y ?? base.y) - 14, pin.label, 13, true);
+      if (pin.label) drawLabel(ctx, top?.x ?? base.x, (top?.y ?? base.y) - 14, pin.label, 13, true, theme.retro);
     }
   }
 
@@ -913,7 +1074,7 @@ export function renderScene(
       if (prev && Math.hypot(prev.x - pr.x, prev.y - pr.y) < 140) continue;
       drawnAt.set(key, { x: pr.x, y: pr.y });
       const size = Math.max(8.5, Math.min(14, 260 / pr.depth));
-      drawLabel(ctx, pr.x, pr.y, el.label, size);
+      drawLabel(ctx, pr.x, pr.y, el.label, size, false, theme.retro);
     }
   }
 
@@ -949,10 +1110,30 @@ function drawFloorDisc(
   }
 }
 
-function drawLabel(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, size: number, bold = false) {
+function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+  size: number,
+  bold = false,
+  retro = false
+) {
   ctx.font = `${bold ? '700 ' : ''}${size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  if (retro) {
+    // 2010s signpost: warm halo behind a crisp dark outline around cream text
+    ctx.lineWidth = Math.max(3.4, size / 3);
+    ctx.strokeStyle = 'rgba(255, 243, 196, 0.6)';
+    ctx.strokeText(text, x, y);
+    ctx.lineWidth = Math.max(2.2, size / 4.5);
+    ctx.strokeStyle = '#26313d';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = '#fffdf6';
+    ctx.fillText(text, x, y);
+    return;
+  }
   ctx.lineWidth = Math.max(2.5, size / 4);
   ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.strokeText(text, x, y);
