@@ -7,7 +7,7 @@
  * one draw pass per frame, no shaders, no scene graph.
  */
 import type { Floor, MapElement, RectGeom, PointGeom } from '../types';
-import { polyPoints, rectCorners, type WorldPt } from './geometry';
+import { polyPoints, polyMidpoint, rectCorners, type WorldPt } from './geometry';
 import { TYPE_COLOR, TYPE_STROKE } from './mapColors';
 
 export interface V3 {
@@ -261,8 +261,15 @@ export function boxFaces(
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
-  // top face (normal up)
-  faces.push({ pts: t, fill: lit({ x: 0, y: 0, z: 1 }, color, theme), alpha });
+  // top face (normal up) — slightly brighter than the sides and outlined so
+  // fixture tops read clearly from above and at shallow angles
+  faces.push({
+    pts: t,
+    fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.08),
+    stroke: shade(color, 0.62),
+    lw: 0.9,
+    alpha,
+  });
   for (let i = 0; i < base.length; i++) {
     const j = (i + 1) % base.length;
     const n = { x: b[j].y - b[i].y, y: -(b[j].x - b[i].x), z: 0 }; // outward for CW bases in y-down coords
@@ -765,6 +772,19 @@ export interface PinHit {
   sy: number;
 }
 
+/** Hoverable aisle symbol position (screen px). */
+export interface AisleHit {
+  elementId: string;
+  sx: number;
+  sy: number;
+}
+
+/** Everything the caller needs for hit-testing after a frame. */
+export interface SceneHits {
+  pins: PinHit[];
+  aisles: AisleHit[];
+}
+
 /** Decorative product facing standing on a shelf's wall face. */
 export interface StockItem {
   x: number;
@@ -832,7 +852,7 @@ export interface SceneInput {
 }
 
 /**
- * Draw one frame. Returns projected pin positions for tap hit-testing.
+ * Draw one frame. Returns projected pin + aisle-symbol positions for hit-testing.
  * Faces straddling the camera are clipped against the near plane, not skipped;
  * with input.bsp the draw order is the exact BSP back-to-front traversal.
  */
@@ -844,7 +864,7 @@ export function renderScene(
   floor: Floor,
   elements: MapElement[],
   input: SceneInput = {}
-): PinHit[] {
+): SceneHits {
   const fov = cam.fov ?? DEFAULT_FOV;
   const theme = input.theme ?? MODERN_THEME;
   interface Draw {
@@ -891,18 +911,6 @@ export function renderScene(
   bg.addColorStop(1, theme.skyBottom);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
-  if (theme.retro) {
-    // 2010s sun: warm glow in the sky on the light's side, behind all geometry
-    const sx = w * 0.16;
-    const sy = h * 0.15;
-    const sr = Math.min(w, h) * 0.17;
-    const sun = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-    sun.addColorStop(0, 'rgba(255,252,235,0.95)');
-    sun.addColorStop(0.25, 'rgba(255,244,200,0.55)');
-    sun.addColorStop(1, 'rgba(255,244,200,0)');
-    ctx.fillStyle = sun;
-    ctx.fillRect(0, 0, w, h);
-  }
 
   ctx.lineJoin = 'round';
   for (const { face, spts } of draws) {
@@ -941,30 +949,77 @@ export function renderScene(
   }
 
   /* ---- overlay: markers, pins, labels (always on top) ---- */
-  const hits: PinHit[] = [];
+  const hits: SceneHits = { pins: [], aisles: [] };
   const pitchSin = Math.sin(cam.pitch);
 
-  // entrance / exit / POI markers as billboards — stay clean from any camera angle
+  // entrance / exit / POI markers: ground disc + tall pole + glyph head —
+  // big enough to spot from the default overview angle
   for (const el of elements) {
     if (el.shape !== 'point') continue;
     const g = el.geom as PointGeom;
     const base = project(cam, w, h, { x: g.x, y: g.y, z: 0 });
-    const top = project(cam, w, h, { x: g.x, y: g.y, z: 1.35 });
+    const top = project(cam, w, h, { x: g.x, y: g.y, z: 2.0 });
     if (!base || !top) continue;
     const c = el.color || TYPE_COLOR[el.type];
+    const glyph = el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★';
+    // ground disc anchors the marker to its spot on the floor
+    ctx.beginPath();
+    ctx.ellipse(base.x, base.y, 11, Math.max(11 * pitchSin, 2), 0, 0, Math.PI * 2);
+    ctx.fillStyle = c;
+    ctx.globalAlpha = 0.35;
+    ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.strokeStyle = c;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(base.x, base.y);
     ctx.lineTo(top.x, top.y);
     ctx.stroke();
+    // glyph head with a white ring
     ctx.beginPath();
-    ctx.arc(top.x, top.y, 4.5, 0, Math.PI * 2);
+    ctx.arc(top.x, top.y, 10, 0, Math.PI * 2);
     ctx.fillStyle = c;
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 2.2;
     ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(glyph, top.x, top.y + 0.5);
+    if (el.label) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.retro);
+  }
+
+  // aisle symbols: floating disc above the aisle's midpoint; hovering it (see
+  // AisleHit) shows what's stocked along the aisle
+  for (const el of elements) {
+    if (el.type !== 'aisle' || el.shape !== 'polyline') continue;
+    const mid = polyMidpoint(polyPoints(el));
+    if (!mid) continue;
+    const base = project(cam, w, h, { x: mid.x, y: mid.y, z: 0.1 });
+    const top = project(cam, w, h, { x: mid.x, y: mid.y, z: 2.3 });
+    if (!base || !top) continue;
+    ctx.strokeStyle = 'rgba(93, 110, 100, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(base.x, base.y);
+    ctx.lineTo(top.x, top.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(top.x, top.y, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4f6f1';
+    ctx.fill();
+    ctx.strokeStyle = '#5d6e64';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#33413a';
+    ctx.font = '800 12px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('≡', top.x, top.y + 0.5);
+    hits.aisles.push({ elementId: el.id, sx: top.x, sy: top.y });
+    if (el.label) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.retro);
   }
 
   // numbered trip stop markers (A1) — drawn above the route discs
@@ -1002,7 +1057,7 @@ export function renderScene(
     if (onShelf) {
       const dot = project(cam, w, h, { x: px, y: py, z: 1.05 });
       if (!dot) continue;
-      hits.push({ productId: pin.productId, sx: dot.x, sy: dot.y });
+      hits.pins.push({ productId: pin.productId, sx: dot.x, sy: dot.y });
       const r = pin.focused ? 9 : 6.5;
       ctx.beginPath();
       ctx.arc(dot.x, dot.y, r, 0, Math.PI * 2);
@@ -1019,7 +1074,7 @@ export function renderScene(
     }
     const base = project(cam, w, h, { x: pin.x, y: pin.y, z: 0 });
     if (!base) continue;
-    hits.push({ productId: pin.productId, sx: base.x, sy: base.y });
+    hits.pins.push({ productId: pin.productId, sx: base.x, sy: base.y });
     // free-standing pin: pole clears the 1.5 m shelves so the marker stays visible
     const poleH = pin.focused ? 2.6 : 2.1;
     const top = project(cam, w, h, { x: pin.x, y: pin.y, z: poleH });

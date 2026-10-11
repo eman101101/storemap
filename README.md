@@ -51,7 +51,10 @@ with **Google** or **Apple**.
   contact shadows — see [docs/DESIGN-RETRO-3D.md](docs/DESIGN-RETRO-3D.md)).
   Both live in the ◐ settings popover and are saved per device.
 - Multi-floor support, entrance/exit markers, tap a shelf (2D) to see its layout
-- Touch-first: one-finger pan, pinch zoom; fully responsive
+- Aisle labels on the map (2D and 3D); hover an aisle's `≡` symbol for what's
+  stocked along it
+- Touch-first: one-finger pan, pinch zoom, two-finger drag to pan the 3D
+  camera sideways; fully responsive
 
 **For store owners** — Google / Apple sign-in
 - Guided map editor with a **pick filter** — *Fixtures* selects shelves/walls/zones,
@@ -61,7 +64,8 @@ with **Google** or **Apple**.
   with one click
 - Guided map editor: walls, shelves, aisles, zones, POIs
   - rectangles, polygons, polylines, points on a meter grid with snapping
-  - move / resize / rotate, duplicate, undo–redo, keyboard shortcuts (`R`, `Del`, `Esc`)
+  - move / resize / rotate (rotation handle, `R` key, or the panel's ° field),
+    duplicate, undo–redo, keyboard shortcuts (`R`, `Del`, `Esc`)
   - **Aisle pair tool** — drag one shelf row and a facing row appears 1.5 m across
     the aisle, like a real grocery store
   - optional uploaded floor-plan image to trace over
@@ -119,6 +123,12 @@ shelf faces:
 cd backend && node scripts/seed-demo.mjs            # idempotent
 node scripts/seed-demo.mjs --reset                  # rebuild from scratch
 ```
+
+The same script also seeds **Annex Market** (`/s/annex-market`) — a
+complex-shape example: an L-shaped hall with a loading-dock notch and an
+attached backstock warehouse traced with polyline walls, labeled aisles in
+both the hall and the warehouse, and 42 pinned products. Use
+`--reset-annex` to rebuild just that one.
 
 ## Tests
 

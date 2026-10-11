@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement, PointGeom, PolyGeom, Product, RectGeom, ProductLocation } from '../types';
 import {
-  elementContains, elementPoints, fitViewport, HANDLE_TYPES, polyPoints, rectCorners,
+  elementContains, elementPoints, fitViewport, HANDLE_TYPES, polyPoints, polyMidpoint, rectCorners,
   resizeRect, rotateRectTo, shelfAnchor, snap, snapPt, translateElement,
   type HandleType, type Viewport, type WorldPt,
 } from '../lib/geometry';
 import { TYPE_COLOR, TYPE_STROKE, shade } from '../lib/mapColors';
+import { aisleContents } from '../lib/aisleInfo';
 
 export type EditorTool =
   | 'select' | 'shelf' | 'aisle-pair' | 'wall' | 'wall-line' | 'aisle' | 'zone' | 'zone-poly'
@@ -63,6 +64,8 @@ interface Props {
   onPinSelect?: (productId: string) => void;
   /** Viewer tap on a map element (e.g. open a shelf's layout). */
   onElementClick?: (el: MapElement) => void;
+  /** Every pin on the floor (unfiltered) — drives the aisle hover contents. */
+  stockPins?: MapPin[];
   focusPinId?: string | null;
   highlightElementIds?: Set<string>;
   fitSignal?: number;
@@ -93,9 +96,10 @@ export default function MapCanvas(props: Props) {
     selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement,
     onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, onPinClick, onElementClick,
     focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
-    pickFilter = 'all', onPinMove, onPinSelect, tripStops,
+    pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
   } = props;
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
+  const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -536,16 +540,29 @@ export default function MapCanvas(props: Props) {
 
   const sel = selectedId ? floorEls.find((el) => el.id === selectedId) : null;
 
+  // viewer-only: wide invisible hit paths over aisle ribbons → hover tooltip
+  const aisleEls = useMemo(() => floorEls.filter((el) => el.type === 'aisle' && el.shape === 'polyline'), [floorEls]);
+  const hoverAisleEl = hoverAisle ? floorEls.find((el) => el.id === hoverAisle.id) ?? null : null;
+  const hoverContents = useMemo(
+    () => (hoverAisleEl ? aisleContents(hoverAisleEl, stockPins) : null),
+    [hoverAisleEl, stockPins]
+  );
+  const svgPoint = (e: React.PointerEvent) => {
+    const rect = svgRef.current!.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
   return (
-    <svg
-      ref={svgRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endPointer}
-      onPointerCancel={endPointer}
-      onDoubleClick={onDoubleClick}
-      style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
-    >
+    <>
+      <svg
+        ref={svgRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+        onDoubleClick={onDoubleClick}
+        style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
+      >
       <defs>
         {/* strokes are in world meters: pattern content ignores vectorEffect */}
         <pattern id="grid-min" width={1} height={1} patternUnits="userSpaceOnUse">
@@ -673,8 +690,66 @@ export default function MapCanvas(props: Props) {
         {sel?.shape === 'rect' && edit && (
           <SelectionOverlay r={sel.geom as RectGeom} scale={scale} label={sel.label} />
         )}
+
+        {!edit &&
+          aisleEls.map((el) => (
+            <polyline
+              key={`aisle-hit-${el.id}`}
+              points={polyPoints(el).map((p) => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              style={{ cursor: 'pointer' }}
+              onPointerEnter={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
+              onPointerMove={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
+              onPointerLeave={() => setHoverAisle(null)}
+            />
+          ))}
       </g>
-    </svg>
+      </svg>
+      {hoverAisle && hoverAisleEl && (
+        <AisleTip
+          style={{ left: hoverAisle.sx, top: hoverAisle.sy }}
+          label={hoverAisleEl.label || 'Aisle'}
+          contents={hoverContents}
+        />
+      )}
+    </>
+  );
+}
+
+/** Aisle hover card — positioned in screen px inside the map container. */
+function AisleTip({
+  style,
+  label,
+  contents,
+}: {
+  style: React.CSSProperties;
+  label: string;
+  contents: { categories: { name: string; color: string; count: number }[]; count: number; examples: string[] } | null;
+}) {
+  return (
+    <div className="aisle-tip" style={style} role="tooltip">
+      <b>{label}</b>
+      {contents && contents.count > 0 ? (
+        <>
+          <div className="aisle-tip-cats">
+            {contents.categories.slice(0, 4).map((c) => (
+              <span key={c.name} className="aisle-tip-cat">
+                <span className="dot" style={{ background: c.color }} />
+                {c.name} · {c.count}
+              </span>
+            ))}
+          </div>
+          <span className="aisle-tip-count">
+            {contents.count} item{contents.count === 1 ? '' : 's'} nearby
+          </span>
+        </>
+      ) : (
+        <span className="aisle-tip-count">No pinned products along this aisle yet</span>
+      )}
+    </div>
   );
 }
 
@@ -733,6 +808,9 @@ function ElementNode({
   const pts = polyPoints(el);
   const closed = el.shape === 'polygon';
   const centroid = pts.reduce((a, p) => ({ x: a.x + p.x / pts.length, y: a.y + p.y / pts.length }), { x: 0, y: 0 });
+  // aisle labels sit ON the line (arc-length midpoint), between the shelf rows
+  const mid = el.type === 'aisle' ? polyMidpoint(pts) : null;
+  const labelAt = mid ?? centroid;
   return (
     <g>
       <polyline
@@ -747,8 +825,19 @@ function ElementNode({
         vectorEffect="non-scaling-stroke"
       />
       {label && (
-        <text x={centroid.x} y={centroid.y} textAnchor="middle" dominantBaseline="central" fontSize={fs} className="el-label">
-          {label}
+        <text
+          x={labelAt.x}
+          y={labelAt.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={mid ? Math.max(fs, 11 / scale) : fs}
+          className="el-label"
+          stroke={mid ? '#ffffff' : undefined}
+          strokeWidth={mid ? 3 / scale : undefined}
+          paintOrder={mid ? 'stroke' : undefined}
+          fontWeight={mid ? 700 : undefined}
+        >
+          {mid ? label.toUpperCase() : label}
         </text>
       )}
     </g>

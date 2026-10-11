@@ -64,6 +64,46 @@ export function polyPoints(el: MapElement): WorldPt[] {
   return g.map(([x, y]) => ({ x, y }));
 }
 
+/** Point at 50% of a polyline's arc length — always lies ON the line, unlike
+ *  the vertex average (which leaves the line wherever it bends). */
+export function polyMidpoint(pts: WorldPt[]): WorldPt | null {
+  if (!pts.length) return null;
+  if (pts.length === 1) return pts[0];
+  let total = 0;
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    cum.push(total);
+  }
+  const half = total / 2;
+  for (let i = 1; i < cum.length; i++) {
+    if (cum[i] >= half) {
+      const segLen = cum[i] - cum[i - 1] || 1;
+      const t = (half - cum[i - 1]) / segLen;
+      return {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+      };
+    }
+  }
+  return pts[pts.length - 1];
+}
+
+/** Shortest distance from a point to a polyline's segments. */
+export function distToPolyline(p: WorldPt, pts: WorldPt[]): number {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+    best = Math.min(best, Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t)));
+  }
+  return best;
+}
+
 /** Points for any element shape (rect corners, polygon/line vertices, or single point). */
 export function elementPoints(el: MapElement): WorldPt[] {
   if (el.shape === 'rect') return rectCorners(el.geom as RectGeom);

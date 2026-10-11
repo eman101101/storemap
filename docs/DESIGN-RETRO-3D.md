@@ -6,7 +6,9 @@ labels, vignette) is implemented behind the in-app ◐ settings toggle
 ("Map style → Retro 2010s"), alongside light/dark app mode. Not yet done:
 F1/F2 pin redesign, H1/H2 camera bob/orbit, I skeuomorphic CSS chrome —
 all default-modern, zero behavior change when the theme is off.
-This doc remains the full spec; the breakage review below is still accurate.
+Update: the sun disc (A2) was later removed by request — the retro sky is
+now the clean blue gradient only. This doc remains the full spec; the
+breakage review below is still accurate.
 
 Reference aesthetic: Google Earth 5 / Maps 2010, Bing Maps 3D, early iOS
 skeuomorphism — saturated sky, warm directional sun, glossy extrusions,

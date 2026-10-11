@@ -357,6 +357,7 @@ export default function ViewerPage() {
             floor={floor}
             elements={elements.filter((e) => e.floor_id === floor.id)}
             pins={pins}
+            stockPins={floorPins}
             viewport={viewport}
             onViewport={setViewport}
             focusPinId={focusPinLocationId}

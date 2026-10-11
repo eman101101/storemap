@@ -3,13 +3,14 @@ import type { Floor, MapElement } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, buildContactShadows, camFromEyeLook, fitCamera, pathSampler,
   renderScene, shade, routeFaces, stockFaces, MODERN_THEME,
-  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type StockItem,
+  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem,
 } from '../lib/render3d';
 import { shelfAnchor, type WorldPt } from '../lib/geometry';
+import { aisleContents, AISLE_REACH_M } from '../lib/aisleInfo';
 
 export interface Pin {
   location: { id: string; x: number; y: number; product_id: string };
-  product: { name: string; category_color?: string | null };
+  product: { name: string; category_name?: string | null; category_color?: string | null };
 }
 
 interface Props {
@@ -88,10 +89,11 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const flyGoal = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // the seq that already flew — the very first route shown must NOT auto-play
   const flownSeq = useRef<number | null>(null);
-  const hitsRef = useRef<PinHit[]>([]);
+  const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[] }>({ pins: [], aisles: [] });
+  const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
-  const pinch = useRef<{ dist: number; startDist: number } | null>(null);
+  const pinch = useRef<{ dist: number; startDist: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
   const camRef = useRef(cam);
   camRef.current = cam;
   const floorRef = useRef(floor);
@@ -309,9 +311,18 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     canvasRef.current?.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     stopFlySignal();
+    setHoverAisle(null);
     if (pointers.current.size === 2) {
       const pts = [...pointers.current.values()];
-      pinch.current = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), startDist: camRef.current.dist };
+      const c = camRef.current;
+      pinch.current = {
+        dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+        startDist: c.dist,
+        cx: (pts[0].x + pts[1].x) / 2,
+        cy: (pts[0].y + pts[1].y) / 2,
+        tx: c.tx,
+        ty: c.ty,
+      };
       drag.current = null;
       return;
     }
@@ -319,14 +330,53 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!pointers.current.has(e.pointerId)) return;
+    if (!pointers.current.has(e.pointerId)) {
+      // hover (no buttons): nearest aisle symbol within 16 px
+      if (pointers.current.size === 0 && !drag.current && !flying) {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+          let best: AisleHit | null = null;
+          let bestD = 16;
+          for (const hit of hitsRef.current.aisles) {
+            const d = Math.hypot(hit.sx - px, hit.sy - py);
+            if (d < bestD) {
+              bestD = d;
+              best = hit;
+            }
+          }
+          setHoverAisle(best ? { id: best.elementId, sx: best.sx, sy: best.sy } : null);
+        }
+      }
+      return;
+    }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch.current && pointers.current.size === 2) {
+      // two fingers: pinch zooms, and the fingers' centroid pans the camera
+      // target sideways/forwards (screen right → world right per yaw)
       const pts = [...pointers.current.values()];
+      const p = pinch.current;
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      if (pinch.current.dist > 0) {
-        setCam({ ...camRef.current, dist: Math.min(DIST_MAX, Math.max(DIST_MIN, (pinch.current.startDist * d) / pinch.current.dist)) });
+      const cx = (pts[0].x + pts[1].x) / 2;
+      const cy = (pts[0].y + pts[1].y) / 2;
+      let next = { ...camRef.current };
+      if (p.dist > 0) {
+        next.dist = Math.min(DIST_MAX, Math.max(DIST_MIN, (p.startDist * d) / p.dist));
       }
+      const dx = cx - p.cx;
+      const dy = cy - p.cy;
+      const k = next.dist * 0.0016; // metres per screen pixel, scales with zoom
+      const rx = Math.cos(next.yaw);
+      const ry = -Math.sin(next.yaw); // screen-right on the ground
+      const ux = Math.sin(next.yaw);
+      const uy = Math.cos(next.yaw); // screen-up on the ground
+      next = {
+        ...next,
+        tx: p.tx - (rx * dx + ux * dy) * k,
+        ty: p.ty - (ry * dx + uy * dy) * k,
+      };
+      setCam(next);
       return;
     }
     const d = drag.current;
@@ -347,13 +397,13 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     const d = drag.current;
     drag.current = null;
     if (!d || d.moved) return;
-    // tap → nearest pin within 16 px
+    // tap → nearest pin within 18 px
     const rect = canvasRef.current!.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     let best: PinHit | null = null;
     let bestD = 18;
-    for (const hit of hitsRef.current) {
+    for (const hit of hitsRef.current.pins) {
       const dist = Math.hypot(hit.sx - px, hit.sy - py);
       if (dist < bestD) {
         bestD = dist;
@@ -363,22 +413,70 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     if (best) onPinClick?.(best.productId);
   };
 
+  const hoverAisleEl = hoverAisle ? elements.find((el) => el.id === hoverAisle.id) ?? null : null;
+  const hoverContents = useMemo(
+    () => (hoverAisleEl ? aisleContents(hoverAisleEl, stockPins) : null),
+    [hoverAisleEl, stockPins]
+  );
+
   return (
     <>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: drag.current ? 'grabbing' : 'grab' }}
+        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: drag.current ? 'grabbing' : hoverAisle ? 'pointer' : 'grab' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
+        onPointerLeave={() => setHoverAisle(null)}
         aria-label="3D store map"
       />
+      {hoverAisle && hoverAisleEl && (
+        <AisleTooltip
+          style={{ left: hoverAisle.sx, top: hoverAisle.sy }}
+          label={hoverAisleEl.label || 'Aisle'}
+          contents={hoverContents}
+        />
+      )}
       {flying && (
         <button className="fly-skip" onClick={() => arriveAt(flyGoal.current.x, flyGoal.current.y)}>
           Skip flight ✕
         </button>
       )}
     </>
+  );
+}
+
+/** Shared aisle hover card (3D canvas + 2D SVG both render it). */
+export function AisleTooltip({
+  style,
+  label,
+  contents,
+}: {
+  style: React.CSSProperties;
+  label: string;
+  contents: { categories: { name: string; color: string; count: number }[]; count: number; examples: string[] } | null;
+}) {
+  return (
+    <div className="aisle-tip" style={style} role="tooltip">
+      <b>{label}</b>
+      {contents && contents.count > 0 ? (
+        <>
+          <div className="aisle-tip-cats">
+            {contents.categories.slice(0, 4).map((c) => (
+              <span key={c.name} className="aisle-tip-cat">
+                <span className="dot" style={{ background: c.color }} />
+                {c.name} · {c.count}
+              </span>
+            ))}
+          </div>
+          <span className="aisle-tip-count">
+            {contents.count} item{contents.count === 1 ? '' : 's'} within {AISLE_REACH_M} m
+          </span>
+        </>
+      ) : (
+        <span className="aisle-tip-count">No pinned products along this aisle yet</span>
+      )}
+    </div>
   );
 }

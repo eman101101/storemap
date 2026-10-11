@@ -624,6 +624,22 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
   flex: 1;
 }
 
+/* ---------- Aisle hover tooltip (2D SVG + 3D canvas) ---------- */
+.aisle-tip {
+  position: absolute; z-index: 30; pointer-events: none;
+  transform: translate(-50%, calc(-100% - 16px));
+  background: var(--surface-solid); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.18); padding: 10px 12px;
+  min-width: 180px; max-width: 260px;
+  display: flex; flex-direction: column; gap: 6px;
+  animation: fadeIn 0.12s ease;
+}
+.aisle-tip > b { font-size: 13.5px; }
+.aisle-tip-cats { display: flex; flex-direction: column; gap: 3px; }
+.aisle-tip-cat { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink); }
+.aisle-tip-cat .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.aisle-tip-count { font-size: 11.5px; color: var(--ink-soft); }
+
 /* ---------- Theme settings popover (light/dark + map style) ---------- */
 .theme-settings { position: relative; display: inline-flex; }
 .theme-gear {

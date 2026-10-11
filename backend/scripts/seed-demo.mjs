@@ -40,8 +40,11 @@ if (reset) {
   console.log(`Reset demo store — rebuilding at ${W}×${H} m.`);
 } else if (shelfCount >= 6 && Math.abs(floor.width_m - W) < 0.01) {
   console.log('Demo layout already present — skipping (use --reset to rebuild).');
-  process.exit(0);
 }
+// labeled block: "already present" skips only the Freshmart rebuild — the
+// Annex Market section further down still runs
+freshmart: {
+if (!reset && shelfCount >= 6 && Math.abs(floor.width_m - W) < 0.01) break freshmart;
 floor = db.prepare('SELECT id FROM floors WHERE store_id = ? ORDER BY level LIMIT 1').get(store.id);
 
 const insEl = db.prepare(
@@ -214,3 +217,182 @@ if (tiny) {
   console.log('Tiny profile applied: single aisle, 12 pins.');
 }
 console.log(`Seeded Freshmart Downtown: ${W}×${H} m, checkout area, border + aisle-pair shelving, ${take} products with pins.`);
+} // end freshmart block
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Annex Market — a COMPLEX-SHAPE example: an L-shaped retail hall (notched
+   north-east corner with a loading dock) plus an attached warehouse room
+   along the south-east. Traced with polyline walls so the footprint really
+   is the union shape, an interior wall with a doorway between hall and
+   warehouse, aisle ribbons with labels in both the hall and the warehouse,
+   and products pinned along every face. Idempotent per store.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const AW = 48; // annex floor size, meters
+const AH = 46;
+const resetAnnex = reset || process.argv.includes('--reset-annex');
+
+let annex = db.prepare("SELECT id FROM stores WHERE slug = 'annex-market'").get();
+if (!annex) {
+  // its own demo owner so it never collides with a real account's stores
+  let owner = db.prepare("SELECT id FROM users WHERE email = 'annex@storemap.demo'").get();
+  if (!owner) {
+    const uid = randomUUID();
+    db.prepare("INSERT INTO users (id, email, name, provider, provider_sub) VALUES (?, ?, ?, 'dev', ?)").run(
+      uid, 'annex@storemap.demo', 'Annex Demo', 'annex-demo'
+    );
+    owner = { id: uid };
+  }
+  const sid = randomUUID();
+  db.prepare(
+    `INSERT INTO stores (id, owner_id, name, slug, address, description, hours, is_public)
+     VALUES (?, ?, 'Annex Market', 'annex-market', '12 Harbour Rd',
+             'Complex-shape example: L-shaped hall with a loading-dock notch and an attached backstock warehouse.',
+             '7am-11pm daily', 1)`
+  ).run(sid, owner.id);
+  db.prepare('INSERT INTO floors (id, store_id, name, level, width_m, height_m) VALUES (?, ?, ?, ?, ?, ?)').run(
+    randomUUID(), sid, 'Main + Warehouse', 1, AW, AH
+  );
+  annex = { id: sid };
+  console.log('Created Annex Market (annex-market).');
+}
+let annexFloor = db.prepare('SELECT id FROM floors WHERE store_id = ? ORDER BY level LIMIT 1').get(annex.id);
+const annexShelves = db
+  .prepare("SELECT COUNT(*) AS n FROM map_elements WHERE floor_id = ? AND type = 'shelf'")
+  .get(annexFloor.id).n;
+
+if (resetAnnex && annexShelves > 0) {
+  db.prepare('DELETE FROM product_locations WHERE floor_id = ?').run(annexFloor.id);
+  db.prepare('DELETE FROM products WHERE store_id = ?').run(annex.id);
+  db.prepare('DELETE FROM categories WHERE store_id = ?').run(annex.id);
+  db.prepare('DELETE FROM map_elements WHERE floor_id = ?').run(annexFloor.id);
+  annexShelves = 0;
+  console.log('Reset Annex Market — rebuilding.');
+}
+
+if (annexShelves === 0) {
+  db.prepare('UPDATE floors SET width_m = ?, height_m = ? WHERE id = ?').run(AW, AH, annexFloor.id);
+  annexFloor = db.prepare('SELECT id FROM floors WHERE store_id = ? ORDER BY level LIMIT 1').get(annex.id);
+  const insA = db.prepare(
+    "INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)"
+  );
+  let az = 1;
+  const arect = (type, x, y, w, h, label = '') =>
+    insA.run(randomUUID(), annexFloor.id, type, 'rect', JSON.stringify({ x, y, w, h, rot: 0 }), label, '', az++);
+  const apoly = (type, pts, label = '') =>
+    insA.run(randomUUID(), annexFloor.id, type, 'polyline', JSON.stringify(pts.map((p) => [p[0], p[1]])), label, '', az++);
+  const apoint = (type, x, y, label = '') =>
+    insA.run(randomUUID(), annexFloor.id, type, 'point', JSON.stringify({ x, y }), label, '', az++);
+
+  /* ---- complex footprint: L-hall ∪ east wing ∪ attached warehouse ----
+     Union outline (clockwise): hall [0..32]×[0..34], east wing [32..48]×[8..34],
+     warehouse [32..48]×[34..46]; the NE notch [32..48]×[0..8] is the dock. */
+  apoly('wall', [
+    [0, 0], [32, 0], [32, 8], [48, 8], [48, 46], [32, 46], [32, 34], [0, 34], [0, 0],
+  ], 'Outer walls');
+  // interior wall between the east wing and the warehouse, doorway at x 38..41
+  apoly('wall', [[32, 34], [38, 34]], 'Hall / warehouse');
+  apoly('wall', [[41, 34], [48, 34]], 'Hall / warehouse');
+
+  apoint('entrance', 6, 32.8, 'Entrance');
+  apoint('exit', 26, 32.8, 'Exit');
+  arect('zone', 2.5, 27.5, 13, 5, 'Checkout');
+  for (let i = 0; i < 3; i++) arect('shelf', 4 + i * 4, 28.6, 2.6, 1.2, `Checkout ${i + 1}`);
+  apoint('poi', 44.5, 3.5, 'Loading dock');
+  arect('zone', 33, 1, 14, 6, 'Loading dock');
+
+  /* ---- hall shelving: border + four aisle pairs ---- */
+  arect('shelf', 0.55, 2.5, 1.1, 30, 'West wall');
+  arect('shelf', 2, 0.55, 28, 1.1, 'North wall');
+  const afaces = [];
+  afaces.push({ axis: 'v', line: 1.65, from: 3, to: 31 });
+  afaces.push({ axis: 'h', line: 1.65, from: 3, to: 28 });
+  for (let p = 0; p < 4; p++) {
+    const y0 = 4.5 + p * 5.6;
+    const label = `Aisle ${p + 1}`;
+    arect('shelf', 3.5, y0, 24, 0.7, label);
+    arect('shelf', 3.5, y0 + 2.2, 24, 0.7, label);
+    apoly('aisle', [[4, y0 + 1.45], [27, y0 + 1.45]], label);
+    for (const line of [y0, y0 + 0.7, y0 + 2.2, y0 + 2.9]) afaces.push({ axis: 'h', line, from: 4, to: 27 });
+  }
+
+  /* ---- east wing: two vertical aisle pairs (seasonal) ---- */
+  arect('zone', 33.2, 9.2, 14.6, 23.8, 'Seasonal');
+  for (let v = 0; v < 2; v++) {
+    const x0 = 35.2 + v * 6.4;
+    const label = `Aisle ${5 + v}`;
+    arect('shelf', x0, 10, 0.7, 21, label);
+    arect('shelf', x0 + 2.7, 10, 0.7, 21, label);
+    apoly('aisle', [[x0 + 1.7, 11], [x0 + 1.7, 30]], label);
+    for (const line of [x0, x0 + 0.7, x0 + 2.7, x0 + 3.4]) afaces.push({ axis: 'v', line, from: 11, to: 30 });
+  }
+
+  /* ---- warehouse: tall racks off a corridor from the doorway ---- */
+  arect('zone', 32.6, 34.6, 14.8, 10.8, 'Backstock');
+  apoly('aisle', [[35, 40], [45, 40]], 'Rack row');
+  for (let r = 0; r < 3; r++) {
+    const x = 34.2 + r * 4.4;
+    arect('shelf', x, 36.2, 1.3, 7.6, `Rack ${r + 1}`);
+    afaces.push({ axis: 'v', line: x + 0.05, from: 36.6, to: 43.4 });
+    afaces.push({ axis: 'v', line: x + 1.25, from: 36.6, to: 43.4 });
+  }
+  apoint('poi', 39.5, 44.9, 'Receiving');
+
+  /* ---- categories + products pinned along every face ---- */
+  const insACat = db.prepare('INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)');
+  const insAProd = db.prepare(
+    'INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  const insALoc = db.prepare(
+    "INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, 0, '{}')"
+  );
+  const ACATS = [
+    ['Dairy', '#3b6fd4', '🥛', ['Whole Milk 1L', 'Butter 250g', 'Cheddar 350g', 'Greek Yogurt 500g', 'Oat Milk 1L', 'Brie 200g']],
+    ['Produce', '#2f9e44', '🥬', ['Bananas', 'Apples 4-pack', 'Rocket 100g', 'Tomatoes 500g', 'Avocados 2-pack', 'Carrots 1kg']],
+    ['Snacks', '#d4a017', '🍿', ['Sea Salt Crisps', 'Tortilla Chips', 'Milk Chocolate', 'Cookies 300g', 'Pretzels', 'Popcorn']],
+    ['Household', '#3a7ca5', '🧻', ['Kitchen Roll', 'Laundry Pods', 'Bin Bags', 'Washing Up Liquid', 'Bleach', 'Sponges']],
+    ['Seasonal', '#e4572e', '🎃', ['Pumpkin', 'Fairy Lights', 'Gift Wrap', 'Candles', 'Wreath', 'Advent Calendar']],
+    ['Hardware', '#7950f2', '🔧', ['Duct Tape', 'Batteries AA', 'Light Bulbs', 'Extension Lead', 'Screwdriver Set', 'Work Gloves']],
+    ['Bulk', '#c47f17', '📦', ['Rice 10kg', 'Flour 5kg', 'Olive Oil 5L', 'Detergent 10L', 'Dog Food 12kg', 'Cat Litter 10L']],
+  ];
+  const aproducts = [];
+  const acat = {};
+  for (const [name, color, icon, items] of ACATS) {
+    const cid = randomUUID();
+    insACat.run(cid, annex.id, name, color, icon);
+    acat[name] = cid;
+    for (const item of items) aproducts.push({ name: item, category: name });
+  }
+  // warehouse faces get the Hardware/Bulk tail of the list; hall faces the rest
+  const hallFaceCount = afaces.filter((f) => f.from > 5).length; // hall faces run longer — cheap split proxy
+  const aslots = [];
+  for (const f of afaces) {
+    const len = f.to - f.from;
+    const n = Math.max(1, Math.floor(len / 2.0));
+    for (let i = 0; i < n; i++) {
+      const at = f.from + ((i + 0.5) * len) / n;
+      aslots.push(f.axis === 'h' ? { x: at, y: f.line, hall: f.axis === 'h' } : { x: f.line, y: at, hall: f.line < 32 });
+    }
+  }
+  void hallFaceCount;
+  const hallSlots = aslots.filter((s) => s.hall);
+  const whSlots = aslots.filter((s) => !s.hall);
+  const hallItems = aproducts.filter((p) => !['Hardware', 'Bulk'].includes(p.category));
+  const whItems = aproducts.filter((p) => ['Hardware', 'Bulk'].includes(p.category));
+  const place = (items, slots) => {
+    for (let i = 0; i < items.length && slots.length; i++) {
+      const slot = slots[Math.floor((i * slots.length) / items.length)];
+      const pid = randomUUID();
+      insAProd.run(
+        pid, annex.id, acat[items[i].category], items[i].name, 'Harbour Line',
+        `ANN-${String(i + 1).padStart(3, '0')}`, '', '', Math.round((0.95 + ((i * 53) % 1800) / 100) * 100) / 100, ''
+      );
+      insALoc.run(randomUUID(), pid, annexFloor.id, slot.x, slot.y);
+    }
+  };
+  place(hallItems, hallSlots);
+  place(whItems, whSlots);
+  console.log(`Seeded Annex Market: ${AW}×${AH} m complex footprint (L-hall + dock notch + warehouse), aisles labeled, ${hallItems.length + whItems.length} products.`);
+} else {
+  console.log('Annex Market layout already present — skipping (use --reset-annex to rebuild).');
+}

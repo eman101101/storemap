@@ -799,6 +799,26 @@ function ElementPanel({
                 />
               </Field>
             </div>
+            {el.shape === 'rect' && (() => {
+              const g = el.geom as RectGeom;
+              const setRot = (rot: number) =>
+                patch({ ...el, geom: { ...g, rot: ((Math.round(rot) % 360) + 360) % 360 } });
+              return (
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <Field label="Rotation (°)">
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        className="input" type="number" step={5} min={-360} max={360}
+                        value={Math.round(((g.rot % 360) + 360) % 360)}
+                        onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setRot(v); }}
+                      />
+                      <button className="btn sm" title="Rotate 90° counter-clockwise" onClick={() => setRot(g.rot - 90)}>↺</button>
+                      <button className="btn sm" title="Rotate 90° clockwise" onClick={() => setRot(g.rot + 90)}>↻</button>
+                    </div>
+                  </Field>
+                </div>
+              );
+            })()}
             <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>
               Nudges move 0.25 m · arrow keys work on the map too (Shift = 1 m).
             </p>
