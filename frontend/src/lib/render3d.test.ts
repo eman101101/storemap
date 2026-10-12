@@ -80,7 +80,7 @@ describe('box faces', () => {
     expect(faces[0].pts.every((p) => p.z === 1.5)).toBe(true);
     const side = faces[1];
     expect(side.pts.some((p) => p.z === 0)).toBe(true);
-    expect(side.pts.some((p) => p.z === 1.5)).toBe(true);
+    expect(side.pts.some((p) => p.z > 1.49)).toBe(true); // walls reach (almost) the cap
     // distinct normals produce at least 3 distinct shades (top + 2 side levels)
     expect(new Set(faces.map((f) => f.fill)).size).toBeGreaterThanOrEqual(3);
   });
@@ -258,22 +258,28 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     }
   });
 
-  it('cap is inset into the box so the BSP can strictly separate it from the sides', () => {
-    // A cap that merely touches the side planes has no separating plane —
-    // the BSP can order a side after it and paint over the cap (tops
-    // vanishing / appearing below the front face). The ~5 mm inset keeps
-    // the cap strictly inside every side plane.
+  it('walls stop just below the full-size cap so the BSP can strictly separate them', () => {
+    // A cap that merely touches the walls' top edges has no separating plane —
+    // the BSP can order a wall after it and paint over the cap. Walls a hair
+    // SHORTER make cap-vs-walls strictly separable in z with zero visible
+    // gap: the full-footprint cap just overhangs the walls by a millimetre.
+    // (An inset cap — the earlier approach — showed a dark seam through the
+    // gap at close zoom.)
     const faces = boxFaces([{ x: 0, y: 0 }, { x: 24, y: 0 }, { x: 24, y: 0.7 }, { x: 0, y: 0.7 }], 1.5, '#e7d5a8');
     const cap = faces[0]!;
+    // cap: full footprint at the full height
     const ys = cap.pts.map((p) => p.y);
     const xs = cap.pts.map((p) => p.x);
-    expect(Math.min(...ys)).toBeGreaterThan(0);
-    expect(Math.max(...ys)).toBeLessThan(0.7);
-    expect(Math.min(...xs)).toBeGreaterThan(0);
-    expect(Math.max(...xs)).toBeLessThan(24);
-    // still at full height, and still 4 corners
+    expect(Math.min(...ys)).toBeCloseTo(0, 5);
+    expect(Math.max(...ys)).toBeCloseTo(0.7, 5);
+    expect(Math.min(...xs)).toBeCloseTo(0, 5);
+    expect(Math.max(...xs)).toBeCloseTo(24, 5);
     expect(cap.pts.every((p) => p.z === 1.5)).toBe(true);
-    expect(cap.pts).toHaveLength(4);
+    // every wall stops strictly below the cap plane
+    for (const f of faces.slice(1)) {
+      expect(Math.max(...f.pts.map((p) => p.z))).toBeLessThan(1.5);
+      expect(Math.max(...f.pts.map((p) => p.z))).toBeGreaterThan(1.49);
+    }
   });
 
   it('depth-capped leaves fall back to back-to-front centroid order', () => {

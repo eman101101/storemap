@@ -258,25 +258,17 @@ export function boxFaces(
   theme: MapTheme = MODERN_THEME
 ): Face[] {
   if (base.length < 3 || height <= 0) return [];
-  // The cap is inset ~5 mm INTO the box (sides stay vertical and full-size).
-  // A cap that merely touches the side planes has no strictly separating
-  // plane — the BSP can then order a side face AFTER the cap and paint over
-  // it (caps vanishing / appearing below the front face). Insetting just the
-  // cap polygon keeps it strictly inside every side plane, so any splitter
-  // separates the pair correctly for any camera. The sub-mm gap is invisible
-  // at map scale and the sides stay axis-aligned for the tiling pass.
-  const cx = base.reduce((a, p) => a + p.x, 0) / base.length;
-  const cy = base.reduce((a, p) => a + p.y, 0) / base.length;
-  const CAP_INSET_M = 0.005;
-  const capTop = base.map((p) => {
-    const dx = cx - p.x;
-    const dy = cy - p.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 1e-6) return { x: p.x, y: p.y, z: height };
-    const k = Math.max(0, d - CAP_INSET_M) / d;
-    return { x: p.x + dx * (1 - k), y: p.y + dy * (1 - k), z: height };
-  });
+  // The walls stop 1 mm BELOW the cap, and the cap keeps the FULL footprint.
+  // A cap that merely touches the walls' top edges has no strictly separating
+  // plane — the BSP can then order a wall after the cap and paint over it
+  // (caps vanishing / floating below the front face). With the walls a hair
+  // shorter, cap-vs-walls is strictly separable in z, so any splitter orders
+  // them exactly from any camera — and unlike an inset cap (which shows a
+  // dark seam through the gap at close zoom), the full-size cap just
+  // overhangs the walls by an invisible millimetre.
+  const WALL_SHORT_M = 0.001;
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
+  const wt = base.map((p) => ({ x: p.x, y: p.y, z: height - WALL_SHORT_M }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
   // top face (normal up) — deliberately much brighter than any side (≈1.18×):
@@ -284,7 +276,7 @@ export function boxFaces(
   // value separation from the front face to read as a surface. No outline —
   // tiled caps would show the stroke as grid lines across the top.
   faces.push({
-    pts: capTop,
+    pts: t,
     fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.18),
     alpha,
   });
@@ -296,12 +288,12 @@ export function boxFaces(
       // (kept a notch below the top face so the cap stays the brightest plane)
       const f = 0.62;
       const mid = (p: V3, q: V3): V3 => ({ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, z: p.z + (q.z - p.z) * f });
-      const m1 = mid(t[i], b[i]);
-      const m2 = mid(t[j], b[j]);
-      faces.push({ pts: [t[i], t[j], m2, m1], fill: lit(n, color, theme, 1.05), alpha });
+      const m1 = mid(wt[i], b[i]);
+      const m2 = mid(wt[j], b[j]);
+      faces.push({ pts: [wt[i], wt[j], m2, m1], fill: lit(n, color, theme, 1.05), alpha });
       faces.push({ pts: [m1, m2, b[j], b[i]], fill: lit(n, color, theme, 0.66), alpha });
     } else {
-      faces.push({ pts: [t[i], t[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
+      faces.push({ pts: [wt[i], wt[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
     }
   }
   return faces;
