@@ -258,6 +258,24 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     }
   });
 
+  it('cap is inset into the box so the BSP can strictly separate it from the sides', () => {
+    // A cap that merely touches the side planes has no separating plane —
+    // the BSP can order a side after it and paint over the cap (tops
+    // vanishing / appearing below the front face). The ~1 cm inset keeps
+    // the cap strictly inside every side plane.
+    const faces = boxFaces([{ x: 0, y: 0 }, { x: 24, y: 0 }, { x: 24, y: 0.7 }, { x: 0, y: 0.7 }], 1.5, '#e7d5a8');
+    const cap = faces[0]!;
+    const ys = cap.pts.map((p) => p.y);
+    const xs = cap.pts.map((p) => p.x);
+    expect(Math.min(...ys)).toBeGreaterThan(0);
+    expect(Math.max(...ys)).toBeLessThan(0.7);
+    expect(Math.min(...xs)).toBeGreaterThan(0);
+    expect(Math.max(...xs)).toBeLessThan(24);
+    // still at full height, and still 4 corners
+    expect(cap.pts.every((p) => p.z === 1.5)).toBe(true);
+    expect(cap.pts).toHaveLength(4);
+  });
+
   it('retro route adds a glossy highlight strip and dashes above the ribbon', () => {
     const faces = routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }], RETRO_THEME);
     expect(faces.length).toBeGreaterThan(1);

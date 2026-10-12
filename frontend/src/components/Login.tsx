@@ -35,7 +35,23 @@ export default function Login() {
     try {
       await api.demoLogin();
       await refresh();
-      navigate(params.get('next') || '/dashboard');
+      const next = params.get('next');
+      if (next) {
+        navigate(next);
+        return;
+      }
+      // no destination given: open the complex test map straight in the editor
+      try {
+        const mine = await api.myStores();
+        const annex = mine.stores.find((s) => s.slug === 'annex-market');
+        if (annex) {
+          navigate(`/dashboard/stores/${annex.id}`);
+          return;
+        }
+      } catch {
+        /* fall through to the dashboard */
+      }
+      navigate('/dashboard');
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Sign-in failed');
     } finally {
@@ -58,8 +74,8 @@ export default function Login() {
               🗺️ Open the demo maps — no sign-in
             </button>
             <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
-              One click straight into the demo/test maps (Annex Market, and any map drawn under
-              the demo account) — handy for trying the editor.
+              One click straight into the demo maps — opens the complex test map (Annex Market)
+              in the editor, no account needed.
             </p>
             <div className="divider">or</div>
           </>

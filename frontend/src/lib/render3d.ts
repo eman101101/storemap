@@ -258,6 +258,24 @@ export function boxFaces(
   theme: MapTheme = MODERN_THEME
 ): Face[] {
   if (base.length < 3 || height <= 0) return [];
+  // The cap is inset ~5 mm INTO the box (sides stay vertical and full-size).
+  // A cap that merely touches the side planes has no strictly separating
+  // plane — the BSP can then order a side face AFTER the cap and paint over
+  // it (caps vanishing / appearing below the front face). Insetting just the
+  // cap polygon keeps it strictly inside every side plane, so any splitter
+  // separates the pair correctly for any camera. The sub-mm gap is invisible
+  // at map scale and the sides stay axis-aligned for the tiling pass.
+  const cx = base.reduce((a, p) => a + p.x, 0) / base.length;
+  const cy = base.reduce((a, p) => a + p.y, 0) / base.length;
+  const CAP_INSET_M = 0.005;
+  const capTop = base.map((p) => {
+    const dx = cx - p.x;
+    const dy = cy - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-6) return { x: p.x, y: p.y, z: height };
+    const k = Math.max(0, d - CAP_INSET_M) / d;
+    return { x: p.x + dx * (1 - k), y: p.y + dy * (1 - k), z: height };
+  });
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
@@ -265,7 +283,7 @@ export function boxFaces(
   // and outlined: at overview zoom the top is only a few pixels tall, so it
   // needs strong value separation from the front face to read as a surface
   faces.push({
-    pts: t,
+    pts: capTop,
     fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.18),
     stroke: shade(color, 0.55),
     lw: 1.1,
