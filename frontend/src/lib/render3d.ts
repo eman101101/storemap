@@ -279,14 +279,13 @@ export function boxFaces(
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
-  // top face (normal up) — deliberately much brighter than any side (≈1.18×)
-  // and outlined: at overview zoom the top is only a few pixels tall, so it
-  // needs strong value separation from the front face to read as a surface
+  // top face (normal up) — deliberately much brighter than any side (≈1.18×):
+  // at overview zoom the top is only a few pixels tall, so it needs strong
+  // value separation from the front face to read as a surface. No outline —
+  // tiled caps would show the stroke as grid lines across the top.
   faces.push({
     pts: capTop,
     fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.18),
-    stroke: shade(color, 0.55),
-    lw: 1.1,
     alpha,
   });
   for (let i = 0; i < base.length; i++) {
