@@ -32,6 +32,9 @@ export const config = {
   // Local/demo login without OAuth credentials. Never available in production
   // unless explicitly enabled.
   devLogin: env.ENABLE_DEV_LOGIN === 'true' || (!isProd && env.ENABLE_DEV_LOGIN !== 'false'),
+  // One-click "open the demo maps" login target — the account that owns the
+  // seeded demo stores (seed-demo.mjs). Overridable via DEMO_LOGIN_EMAIL.
+  demoLoginEmail: (env.DEMO_LOGIN_EMAIL || 'annex@storemap.demo').toLowerCase(),
   maxUploadBytes: 10 * 1024 * 1024,
 
   // ---- Stage 0 cloud storage / CDN (docs/INFRASTRUCTURE.md) ----

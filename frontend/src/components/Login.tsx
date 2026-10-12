@@ -29,6 +29,20 @@ export default function Login() {
     }
   };
 
+  const demoLogin = async () => {
+    setBusy(true);
+    setLocalError('');
+    try {
+      await api.demoLogin();
+      await refresh();
+      navigate(params.get('next') || '/dashboard');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="auth-wrap">
       <div className="card auth-card">
@@ -37,6 +51,19 @@ export default function Login() {
           Create and publish store maps. Shoppers never need an account.
         </p>
         {(error || localError) && <div className="error-note">{error || localError}</div>}
+
+        {providers.dev && (
+          <>
+            <button className="btn primary block" onClick={demoLogin} disabled={busy}>
+              🗺️ Open the demo maps — no sign-in
+            </button>
+            <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
+              One click straight into the demo/test maps (Annex Market, and any map drawn under
+              the demo account) — handy for trying the editor.
+            </p>
+            <div className="divider">or</div>
+          </>
+        )}
 
         <div className="stack">
           <a

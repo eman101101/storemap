@@ -42,6 +42,8 @@ export const api = {
       method: 'POST',
       body: json({ email, name }),
     }),
+  /** One-click session as the demo-map owner (server-gated, dev only). */
+  demoLogin: () => request<{ user: unknown }>('/api/auth/demo-login', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
   // Stores

@@ -112,7 +112,8 @@ cd ../backend && npm start     # single origin on :8787
 
 Without OAuth credentials configured, the login page offers a **local demo login**
 (`ENABLE_DEV_LOGIN`, on by default outside production) so you can try everything
-immediately.
+immediately — including a one-click **"Open the demo maps"** button that signs you
+straight into the seeded demo stores, no form needed.
 
 To fill the bundled demo store with a realistic layout — a 54×36 m supermarket with
 stocked wall shelving around the border, double-sided gondola pairs facing each other

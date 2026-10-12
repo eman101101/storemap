@@ -78,6 +78,18 @@ test('dev login issues a usable session', async () => {
   assert.equal(me.body.user.email, 'alice@example.com');
 });
 
+test('demo login issues a session for the demo-map owner (one click, no form)', async () => {
+  const res = await call('/api/auth/demo-login', { method: 'POST' });
+  assert.equal(res.status, 200);
+  const cookie = sessionCookie(res.setCookie);
+  const me = await call('/api/auth/me', { cookie });
+  assert.equal(me.status, 200);
+  assert.equal(me.body.user.email, 'annex@storemap.demo');
+  // the demo owner can actually edit: their store list is readable
+  const mine = await call('/api/stores/mine', { cookie });
+  assert.equal(mine.status, 200);
+});
+
 test('store lifecycle: create → defaults a floor → update → full payload', async () => {
   const cookie = await loginAs('bob@example.com');
   const created = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Corner Grocer' } });
