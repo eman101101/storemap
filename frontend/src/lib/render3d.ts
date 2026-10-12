@@ -261,13 +261,14 @@ export function boxFaces(
   const t = base.map((p) => ({ x: p.x, y: p.y, z: height }));
   const b = base.map((p) => ({ x: p.x, y: p.y, z: 0 }));
   const faces: Face[] = [];
-  // top face (normal up) — slightly brighter than the sides and outlined so
-  // fixture tops read clearly from above and at shallow angles
+  // top face (normal up) — deliberately much brighter than any side (≈1.18×)
+  // and outlined: at overview zoom the top is only a few pixels tall, so it
+  // needs strong value separation from the front face to read as a surface
   faces.push({
     pts: t,
-    fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.08),
-    stroke: shade(color, 0.62),
-    lw: 0.9,
+    fill: lit({ x: 0, y: 0, z: 1 }, color, theme, 1.18),
+    stroke: shade(color, 0.55),
+    lw: 1.1,
     alpha,
   });
   for (let i = 0; i < base.length; i++) {
@@ -275,14 +276,15 @@ export function boxFaces(
     const n = { x: b[j].y - b[i].y, y: -(b[j].x - b[i].x), z: 0 }; // outward for CW bases in y-down coords
     if (theme.retro) {
       // 2010s plastic gloss: light catches the upper band, base sits in shade
+      // (kept a notch below the top face so the cap stays the brightest plane)
       const f = 0.62;
       const mid = (p: V3, q: V3): V3 => ({ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, z: p.z + (q.z - p.z) * f });
       const m1 = mid(t[i], b[i]);
       const m2 = mid(t[j], b[j]);
-      faces.push({ pts: [t[i], t[j], m2, m1], fill: lit(n, color, theme, 1.16), alpha });
-      faces.push({ pts: [m1, m2, b[j], b[i]], fill: lit(n, color, theme, 0.72), alpha });
+      faces.push({ pts: [t[i], t[j], m2, m1], fill: lit(n, color, theme, 1.05), alpha });
+      faces.push({ pts: [m1, m2, b[j], b[i]], fill: lit(n, color, theme, 0.66), alpha });
     } else {
-      faces.push({ pts: [t[i], t[j], b[j], b[i]], fill: lit(n, color, theme), alpha });
+      faces.push({ pts: [t[i], t[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
     }
   }
   return faces;

@@ -237,6 +237,27 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     expect(faces[0]!.fill).toBe('#f5f3ec');
   });
 
+  it('top faces read clearly brighter than every side — caps stay visible', () => {
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255);
+    };
+    for (const [name, color, theme] of [
+      ['modern shelf', '#e7d5a8', MODERN_THEME],
+      ['modern wall', '#4b5147', MODERN_THEME],
+      ['retro shelf', '#e7d5a8', RETRO_THEME],
+      ['retro wall', '#4b5147', RETRO_THEME],
+    ] as const) {
+      const faces = boxFaces([{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }], 1.5, color, 1, theme);
+      const topL = lum(faces[0]!.fill!);
+      const maxSide = Math.max(...faces.slice(1).map((f) => lum(f.fill!)));
+      // the cap must out-bright the brightest side by a clear margin — at
+      // overview zoom the top band is only a few px tall and needs the
+      // contrast to read as a surface at all
+      expect(topL - maxSide, `${name}: top ${topL} vs side ${maxSide}`).toBeGreaterThan(50);
+    }
+  });
+
   it('retro route adds a glossy highlight strip and dashes above the ribbon', () => {
     const faces = routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }], RETRO_THEME);
     expect(faces.length).toBeGreaterThan(1);
