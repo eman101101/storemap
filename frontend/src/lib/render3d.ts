@@ -659,10 +659,18 @@ function splitFaceByPlane(f: Face, axis: 0 | 1 | 2, value: number): [Face[], Fac
  * it yields an EXACT draw order for any camera position — the correct-occlusion
  * guarantee a centroid sort can only approximate. Built once per data change and
  * cached with the scene; per-frame cost is a linear traversal.
+ *
+ * Depth cap: a subtree that can't subdivide further within MAX_BSP_DEPTH
+ * becomes a leaf holding several faces; traversal then falls back to a
+ * centroid-depth sort for that leaf (see emitLeaf) so the cap can never leave
+ * faces in arbitrary order — the bug where a stock block behind a shelf drew
+ * over its cap came from exactly such an unordered leaf.
  */
+export const MAX_BSP_DEPTH = 40;
+
 export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
   if (faces.length === 0) return null;
-  if (faces.length <= 1 || depth > 24) {
+  if (faces.length <= 1 || depth > MAX_BSP_DEPTH) {
     // a single face (or a rare unresolvably deep leaf): nothing left to order
     return { axis: 0, split: 0, below: null, above: null, faces };
   }
@@ -738,17 +746,29 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
   };
 }
 
+/** Emit a node's faces; a multi-face leaf (depth-capped) sorts back-to-front
+ *  by centroid depth as a painter's-algorithm fallback. */
+function emitLeaf(faces: Face[], eye: V3, out: Face[]): void {
+  if (faces.length > 1) {
+    const depthOf = (f: Face) =>
+      f.pts.reduce((a, p) => a + Math.hypot(p.x - eye.x, p.y - eye.y, p.z - eye.z), 0) / f.pts.length;
+    out.push(...[...faces].sort((a, b) => depthOf(b) - depthOf(a))); // farthest first
+    return;
+  }
+  out.push(...faces);
+}
+
 /** Back-to-front traversal: faces on the far side of each plane draw first. */
 export function traverseFaceBSP(node: FaceBSP | null, eye: V3, out: Face[]): void {
   if (!node) return;
   const eyeAt = faceAxisValue(eye, node.axis);
   if (eyeAt > node.split) {
     traverseFaceBSP(node.below, eye, out);
-    for (const f of node.faces) out.push(f);
+    emitLeaf(node.faces, eye, out);
     traverseFaceBSP(node.above, eye, out);
   } else {
     traverseFaceBSP(node.above, eye, out);
-    for (const f of node.faces) out.push(f);
+    emitLeaf(node.faces, eye, out);
     traverseFaceBSP(node.below, eye, out);
   }
 }

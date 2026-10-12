@@ -261,7 +261,7 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
   it('cap is inset into the box so the BSP can strictly separate it from the sides', () => {
     // A cap that merely touches the side planes has no separating plane —
     // the BSP can order a side after it and paint over the cap (tops
-    // vanishing / appearing below the front face). The ~1 cm inset keeps
+    // vanishing / appearing below the front face). The ~5 mm inset keeps
     // the cap strictly inside every side plane.
     const faces = boxFaces([{ x: 0, y: 0 }, { x: 24, y: 0 }, { x: 24, y: 0.7 }, { x: 0, y: 0.7 }], 1.5, '#e7d5a8');
     const cap = faces[0]!;
@@ -274,6 +274,27 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     // still at full height, and still 4 corners
     expect(cap.pts.every((p) => p.z === 1.5)).toBe(true);
     expect(cap.pts).toHaveLength(4);
+  });
+
+  it('depth-capped leaves fall back to back-to-front centroid order', () => {
+    // When the BSP hits MAX_BSP_DEPTH with several faces still together, the
+    // leaf must sort them by centroid depth instead of keeping input order —
+    // an unordered leaf is what let a stock block behind a shelf paint over
+    // its cap on the real (block-decorated) scene.
+    const leaf = {
+      axis: 0 as const,
+      split: 0,
+      below: null,
+      above: null,
+      faces: [
+        { pts: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 1, z: 0 }, { x: 0, y: 1, z: 0 }], fill: '#near' },
+        { pts: [{ x: 9, y: 9, z: 0 }, { x: 10, y: 9, z: 0 }, { x: 10, y: 10, z: 0 }, { x: 9, y: 10, z: 0 }], fill: '#far' },
+        { pts: [{ x: 4, y: 4, z: 0 }, { x: 5, y: 4, z: 0 }, { x: 5, y: 5, z: 0 }, { x: 4, y: 5, z: 0 }], fill: '#mid' },
+      ],
+    };
+    const out: Face[] = [];
+    traverseFaceBSP(leaf, { x: -10, y: -10, z: 10 }, out);
+    expect(out.map((f) => f.fill)).toEqual(['#far', '#mid', '#near']);
   });
 
   it('retro route adds a glossy highlight strip and dashes above the ribbon', () => {
