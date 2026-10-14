@@ -2,10 +2,11 @@
 import { describe, it, expect } from 'vitest';
 import type { Floor, MapElement } from '../types';
 import {
-  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE,
+  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE, renderScene,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
   buildSceneBSP, traverseFaceBSP, buildContactShadows, MODERN_THEME, RETRO_THEME, NEAR,
-  type Face,
+  screenToWorldFloor, pointInPoly,
+  type Face, type Camera3D,
 } from './render3d';
 
 const floor: Floor = {
@@ -408,8 +409,7 @@ describe('contact shadows', () => {
   });
 });
 
-describe('near-plane clipping', () => {
-  const cam = { yaw: 0, pitch: 0.5, dist: 3, tx: 10, ty: 7, tz: 0 };
+describe('near-plane clipping', () => {  const cam = { yaw: 0, pitch: 0.5, dist: 3, tx: 10, ty: 7, tz: 0 };
 
   it('keeps the visible part of a face straddling the camera', () => {
     // wall running away from the camera: near end in front, far end behind
@@ -453,5 +453,68 @@ describe('near-plane clipping', () => {
       { x: 6, y: 6, nx: 0, ny: -1, color: '#2f9e44' },
     ]);
     expect(faces).toHaveLength(2);
+  });
+});
+
+describe('screenToWorldFloor (3D edit-drag unprojection)', () => {
+  const W = 1280;
+  const H = 720;
+  const cams: [string, Camera3D][] = [
+    ['default', fitCamera(floor)],
+    ['yaw 0', { ...fitCamera(floor), yaw: 0 }],
+    ['from west', { ...fitCamera(floor), yaw: Math.PI / 2 }],
+    ['low pitch 0.3', { ...fitCamera(floor), pitch: 0.3 }],
+    ['close-in', { yaw: -0.3, pitch: 0.7, dist: 12, tx: 15, ty: 20, tz: 0 }],
+  ];
+
+  for (const [name, cam] of cams) {
+    it(`round-trips world → screen → world (${name})`, () => {
+      for (const p of [{ x: 5, y: 5 }, { x: 24, y: 23 }, { x: 20, y: 12 }, { x: 12, y: 30 }]) {
+        const s = project(cam, W, H, { x: p.x, y: p.y, z: 0 });
+        if (!s) continue; // behind camera at this angle — unprojection is moot
+        const back = screenToWorldFloor(cam, W, H, s.x, s.y)!;
+        expect(back.x, `${name} @${p.x},${p.y}`).toBeCloseTo(p.x, 3);
+        expect(back.y, `${name} @${p.x},${p.y}`).toBeCloseTo(p.y, 3);
+      }
+    });
+  }
+
+  it('returns null for pixels above the horizon (ray never meets the floor)', () => {
+    // horizon lands on-screen only when pitch + fov/2 < 90°
+    const cam = { ...fitCamera(floor), pitch: 0.4 }; // top-edge ray: -25°+25° ≈ horizon
+    expect(screenToWorldFloor(cam, W, H, W / 2, 2)).toBeNull();
+    // and a ground pixel still resolves at the same pitch
+    expect(screenToWorldFloor(cam, W, H, W / 2, H - 4)).not.toBeNull();
+  });
+});
+
+describe('fixture hit polygons (3D picking)', () => {
+  // Canvas2D context stub: every method no-ops and chains, every property sets
+  const stubCtx = new Proxy(function stub() {}, {
+    get: () => () => stubCtx,
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D;
+
+  it('editHits builds a footprint polygon containing the projected shelf', () => {
+    const elements = [el('shelf', 'rect', { x: 10, y: 10, w: 12, h: 0.7, rot: 0 })];
+    const cam = fitCamera(floor);
+    const hits = renderScene(stubCtx, 1280, 720, cam, floor, elements, { editHits: true });
+    const hit = hits.fixtures!.find((f) => f.elementId === elements[0]!.id)!;
+    expect(hit).toBeTruthy();
+    const inside = pointInPoly(
+      project(cam, 1280, 720, { x: 16, y: 10.35, z: 0.75 })!.x,
+      project(cam, 1280, 720, { x: 16, y: 10.35, z: 0.75 })!.y,
+      hit.poly
+    );
+    expect(inside).toBe(true);
+    expect(pointInPoly(5, 5, hit.poly)).toBe(false);
+  });
+
+  it('point elements hit around their marker head', () => {
+    const elements = [el('entrance', 'point', { x: 20, y: 19 })];
+    const cam = fitCamera(floor);
+    const hits = renderScene(stubCtx, 1280, 720, cam, floor, elements, { editHits: true });
+    const hit = hits.fixtures!.find((f) => f.elementId === elements[0]!.id)!;
+    expect(hit.poly).toHaveLength(4);
   });
 });

@@ -3,12 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api } from '../api';
 import MapCanvas, { TOOL_DEF, TYPE_COLOR, type EditorTool } from './MapCanvas';
+import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
 import type {
   Category, Floor, MapElement, Product, ProductLocation, RectGeom, Store,
 } from '../types';
 import { elementToRow, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
+import type { Camera3D } from '../lib/render3d';
 import { Field, Modal } from './ui';
 
 const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] = [
@@ -68,6 +70,17 @@ export default function EditorPage() {
   const [placeProductId, setPlaceProductId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [loadError, setLoadError] = useState('');
+  // 3D edit view: same elements/selection/undo pipeline, different viewport
+  const [view3d, setView3d] = useState(() => {
+    try {
+      return localStorage.getItem('storemap.editorView') === '3d';
+    } catch {
+      return false;
+    }
+  });
+  const [cam3d, setCam3d] = useState<Camera3D | null>(null);
+  const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
+  const dragOrig3d = useRef<MapElement | null>(null);
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
 
   const history = useRef<{ past: { els: MapElement[]; label: string }[]; future: { els: MapElement[]; label: string }[] }>({
@@ -128,6 +141,40 @@ export default function EditorPage() {
     },
     [elements, floor]
   );
+
+  // 3D drag: deltas are relative to the drag start, applied to the element as
+  // it was when the gesture began (same contract as MapCanvas's move gesture)
+  const dragElement3d = useCallback(
+    (id: string, dx: number, dy: number, phase: 'begin' | 'live' | 'push') => {
+      if (phase === 'begin') {
+        dragOrig3d.current = elements.find((e) => e.id === id) ?? null;
+      }
+      const orig = dragOrig3d.current;
+      if (!orig || orig.id !== id) return;
+      changeElements(
+        elements.map((e) => (e.id === id ? translateElement(orig, dx, dy) : e)),
+        phase,
+        'move'
+      );
+    },
+    [elements, changeElements]
+  );
+
+  const switchView3d = useCallback((v: boolean) => {
+    setView3d(v);
+    if (v) setTool('select'); // drawing stays 2D-only
+    try {
+      localStorage.setItem('storemap.editorView', v ? '3d' : '2d');
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  // a selection made anywhere (outline, panel, 3D click) aims the 3D camera
+  useEffect(() => {
+    if (!selectedId) return;
+    setFocus3d((f) => ({ id: selectedId, seq: (f?.seq ?? 0) + 1 }));
+  }, [selectedId]);
 
   const addElement = useCallback(
     (el: MapElement) => {
@@ -397,47 +444,93 @@ export default function EditorPage() {
 
       <div className="editor-body">
         <div className="map-wrap">
-          <MapCanvas
-            floor={floor}
-            elements={floorElements}
-            pins={pins}
-            viewport={viewport}
-            onViewport={setViewport}
-            edit
-            tool={tool}
-            selectedId={selectedId}
-            draftPts={draftPts}
-            onSelect={(id) => {
-              setSelectedId(id);
-              if (id) setSideTab('map');
-              if (selectedIds.size) setSelectedIds(new Set());
-            }}
-            onElementsChange={changeElements}
-            onAddElement={addElement}
-            onDraftAdd={(p) => setDraftPts((d) => [...d, p])}
-            onDraftFinish={finishDraft}
-            onDraftCancel={() => setDraftPts([])}
-            onPlaceProduct={placeProduct}
-            selectedIds={selectedIds}
-            onMultiSelect={(ids) => {
-              setSelectedIds(ids);
-              if (ids.size === 1) setSelectedId([...ids][0]);
-              if (ids.size === 0) setSelectedId(null);
-            }}
-            bgOpacity={bgOpacity}
-            pickFilter={pickFilter}
-            onPinMove={movePin}
-            onPinSelect={(productId) => {
-              setFlashProductId(productId);
-              setSideTab('products');
-            }}
-            fitSignal={fitSignal}
-            zoomCommand={zoomCmd}
-          />
-          <div className="zoom-controls">
-            <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 1.25, seq: z.seq + 1 }))} title="Zoom in">+</button>
-            <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 0.8, seq: z.seq + 1 }))} title="Zoom out">−</button>
+          {view3d ? (
+            <Map3D
+              floor={floor}
+              elements={floorElements}
+              pins={pins.filter((p) => p.location.floor_id === floor.id)}
+              stockPins={pins.filter((p) => p.location.floor_id === floor.id)}
+              camera={cam3d}
+              onCamera={setCam3d}
+              edit
+              selectedId={selectedId}
+              onSelectElement={(id) => {
+                setSelectedId(id);
+                if (id) setSideTab('map');
+                if (selectedIds.size) setSelectedIds(new Set());
+              }}
+              onElementDrag={dragElement3d}
+              onElementsChange={changeElements}
+              onPinClick={(productId) => {
+                setFlashProductId(productId);
+                setSideTab('products');
+              }}
+              focusElement={focus3d}
+              fitSignal={fitSignal}
+            />
+          ) : (
+            <MapCanvas
+              floor={floor}
+              elements={floorElements}
+              pins={pins}
+              viewport={viewport}
+              onViewport={setViewport}
+              edit
+              tool={tool}
+              selectedId={selectedId}
+              draftPts={draftPts}
+              onSelect={(id) => {
+                setSelectedId(id);
+                if (id) setSideTab('map');
+                if (selectedIds.size) setSelectedIds(new Set());
+              }}
+              onElementsChange={changeElements}
+              onAddElement={addElement}
+              onDraftAdd={(p) => setDraftPts((d) => [...d, p])}
+              onDraftFinish={finishDraft}
+              onDraftCancel={() => setDraftPts([])}
+              onPlaceProduct={placeProduct}
+              selectedIds={selectedIds}
+              onMultiSelect={(ids) => {
+                setSelectedIds(ids);
+                if (ids.size === 1) setSelectedId([...ids][0]);
+                if (ids.size === 0) setSelectedId(null);
+              }}
+              bgOpacity={bgOpacity}
+              pickFilter={pickFilter}
+              onPinMove={movePin}
+              onPinSelect={(productId) => {
+                setFlashProductId(productId);
+                setSideTab('products');
+              }}
+              fitSignal={fitSignal}
+              zoomCommand={zoomCmd}
+            />
+          )}
+          <div className="view-toggle" style={{ position: 'absolute', top: 10, left: 12, zIndex: 5, boxShadow: 'var(--shadow)' }}>
+            <button className={!view3d ? 'active' : ''} aria-pressed={!view3d} onClick={() => switchView3d(false)} title="2D editor">
+              2D
+            </button>
+            <button className={view3d ? 'active' : ''} aria-pressed={view3d} onClick={() => switchView3d(true)} title="3D editor — click to select, drag to move">
+              3D
+            </button>
           </div>
+          {view3d && (
+            <div className="map-hint" style={{ left: '50%', transform: 'translateX(-50%)' }}>
+              3D: click to select · drag a fixture to move · drag empty space to orbit · R rotates · Del deletes
+            </div>
+          )}
+          {view3d && tool !== 'select' && (
+            <div className="map-hint warn-note" style={{ left: '50%', transform: 'translateX(-50%)', bottom: 48, pointerEvents: 'auto' }}>
+              Drawing is 2D-only — switch to 2D to draw.
+            </div>
+          )}
+          {!view3d && (
+            <div className="zoom-controls">
+              <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 1.25, seq: z.seq + 1 }))} title="Zoom in">+</button>
+              <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 0.8, seq: z.seq + 1 }))} title="Zoom out">−</button>
+            </div>
+          )}
           {placing && (
             <div className="map-hint" style={{ pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
               📍 Click the map to pin <b>{placing.name}</b>

@@ -347,6 +347,7 @@ export default function ViewerPage() {
               camera={cam3d}
               onCamera={setCam3d}
               theme={sceneTheme}
+              onElementClick={(el) => el.type === 'shelf' && setShelfPopupId(el.id)}
               onPinClick={(productId) => {
                 const p = data.products.find((pr) => pr.id === productId);
                 if (p) focusResult(p);

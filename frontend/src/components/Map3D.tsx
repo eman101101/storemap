@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, buildContactShadows, camFromEyeLook, fitCamera, pathSampler,
-  renderScene, shade, routeFaces, stockFaces, MODERN_THEME,
-  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem,
+  renderScene, screenToWorldFloor, pointInPoly, shade, routeFaces, stockFaces, MODERN_THEME,
+  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit,
+  type FixtureHit, type StockItem,
 } from '../lib/render3d';
-import { shelfAnchor, type WorldPt } from '../lib/geometry';
+import { snap, elementPoints, shelfAnchor, translateElement, type WorldPt } from '../lib/geometry';
 import { aisleContents, AISLE_REACH_M } from '../lib/aisleInfo';
 
 export interface Pin {
@@ -31,6 +32,23 @@ interface Props {
   onCamera: (c: Camera3D) => void;
   /** Visual theme for the scene — defaults to modern; RETRO_THEME is the 2010s look. */
   theme?: MapTheme;
+  /** Viewer tap on a fixture (e.g. open a shelf's layout) — parity with the 2D map. */
+  onElementClick?: (el: MapElement) => void;
+  // ---- edit mode (EditorPage) ----
+  /** Enable click-select + floor-plane dragging of fixtures. */
+  edit?: boolean;
+  /** Snap increment for drags/nudges (meters). */
+  grid?: number | null;
+  selectedId?: string | null;
+  onSelectElement?: (id: string | null) => void;
+  /** Drag delta relative to drag start, in world meters (already snapped). */
+  onElementDrag?: (id: string, dx: number, dy: number, phase: 'begin' | 'live' | 'push') => void;
+  /** Element-level edits from keyboard shortcuts (rotate/delete/nudge). */
+  onElementsChange?: (els: MapElement[], history: 'begin' | 'live' | 'push') => void;
+  /** When seq changes, aim the camera target at this element (outline selection). */
+  focusElement?: { id: string; seq: number } | null;
+  /** When seq changes, refit the camera to the whole floor (the Fit button). */
+  fitSignal?: number;
 }
 
 const PITCH_MIN = 0.18;
@@ -78,7 +96,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops, theme = MODERN_THEME }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -89,11 +107,14 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const flyGoal = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // the seq that already flew — the very first route shown must NOT auto-play
   const flownSeq = useRef<number | null>(null);
-  const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[] }>({ pins: [], aisles: [] });
+  const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[]; fixtures?: FixtureHit[] }>({ pins: [], aisles: [] });
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  const [hoverFixture, setHoverFixture] = useState(false);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
   const pinch = useRef<{ dist: number; startDist: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
+  // 3D edit drag: which fixture, where the pointer grabbed the floor plane
+  const elDrag = useRef<{ id: string; startFloor: WorldPt; began: boolean; moved: boolean; lastDx: number; lastDy: number } | null>(null);
   const camRef = useRef(cam);
   camRef.current = cam;
   const floorRef = useRef(floor);
@@ -160,6 +181,73 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       setCam({ ...camRef.current, tx: floor.width_m / 2, ty: floor.height_m / 2, tz: 0 });
     }
   }, [floor.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fit button: refit the whole floor when the editor raises fitSignal
+  const lastFit = useRef(fitSignal);
+  useEffect(() => {
+    if (fitSignal === lastFit.current) return;
+    lastFit.current = fitSignal;
+    setCam(fitCamera(floor));
+  }, [fitSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // selection made elsewhere (outline/panel) → aim the camera target at it
+  const lastFocusSeq = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusElement || focusElement.seq === lastFocusSeq.current) return;
+    lastFocusSeq.current = focusElement.seq;
+    const el = elements.find((x) => x.id === focusElement.id);
+    if (!el) return;
+    const pts = elementPoints(el);
+    const cx = pts.reduce((a, p) => a + p.x / pts.length, 0);
+    const cy = pts.reduce((a, p) => a + p.y / pts.length, 0);
+    tweenSignal.current.cancelled = true;
+    const signal = { cancelled: false };
+    tweenSignal.current = signal;
+    tweenCamera(camRef.current, { tx: cx, ty: cy, tz: 0 }, setCam, signal);
+  }, [focusElement?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // edit-mode keyboard: rotate (R), delete, nudge (arrows) — parity with 2D
+  useEffect(() => {
+    if (!edit) return;
+    const isTyping = (t: EventTarget | null) =>
+      t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+    const replace = (next: MapElement[], history: 'begin' | 'live' | 'push') => onElementsChange?.(next, history);
+    const onKey = (e: KeyboardEvent) => {
+      if (isTyping(e.target)) return;
+      if (e.key === 'Escape') {
+        if (selectedId) onSelectElement?.(null);
+        return;
+      }
+      if (!selectedId) return;
+      const el = elements.find((x) => x.id === selectedId);
+      if (!el) return;
+      if ((e.key === 'r' || e.key === 'R') && el.shape === 'rect') {
+        e.preventDefault();
+        const g = el.geom as { x: number; y: number; w: number; h: number; rot: number };
+        replace(
+          elements.map((x) =>
+            x.id === selectedId ? { ...x, geom: { ...g, rot: (((g.rot + 90) % 360) + 360) % 360 } } : x
+          ),
+          'push'
+        );
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        replace(elements.filter((x) => x.id !== selectedId), 'push');
+        onSelectElement?.(null);
+      } else if (e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : grid ?? 0.25;
+        const dx = e.key === 'ArrowRight' ? step : e.key === 'ArrowLeft' ? -step : 0;
+        const dy = e.key === 'ArrowDown' ? step : e.key === 'ArrowUp' ? -step : 0;
+        replace(
+          elements.map((x) => (x.id === selectedId ? translateElement(x, dx, dy) : x)),
+          'push'
+        );
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [edit, selectedId, elements, grid, onElementsChange, onSelectElement]);
 
   /** Overview framing above a point — same angle as the flight, pulled back. */
   const overviewOf = (x: number, y: number): Partial<Camera3D> => {
@@ -290,8 +378,10 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       routeStart: route && route.length > 1 ? route[0] : null,
       tripStops,
       theme,
+      editHits: edit || Boolean(onElementClick),
+      selectedId: edit ? selectedId : null,
     });
-  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme]);
+  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme, edit, selectedId]);
 
   // wheel zoom (non-passive so preventDefault works)
   useEffect(() => {
@@ -307,10 +397,32 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  /** Nearest fixture whose screen footprint contains the point (nearest wins). */
+  const fixtureAt = (px: number, py: number): FixtureHit | null => {
+    const fixtures = hitsRef.current.fixtures;
+    if (!fixtures) return null;
+    let best: FixtureHit | null = null;
+    for (const f of fixtures) {
+      if (!pointInPoly(px, py, f.poly)) continue;
+      if (!best || f.depth < best.depth) best = f;
+    }
+    return best;
+  };
+
+  const screenPx = (e: { clientX: number; clientY: number }) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    canvasRef.current?.setPointerCapture(e.pointerId);
+    try {
+      canvasRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // synthetic/untracked pointer — capture is best-effort
+    }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     stopFlySignal();
+    tweenSignal.current.cancelled = true;
     setHoverAisle(null);
     if (pointers.current.size === 2) {
       const pts = [...pointers.current.values()];
@@ -324,6 +436,25 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         ty: c.ty,
       };
       drag.current = null;
+      elDrag.current = null;
+      return;
+    }
+    if (edit && e.button === 0) {
+      // edit mode: grabbing a fixture drags it on the floor plane; empty space orbits
+      const px = screenPx(e);
+      const hit = fixtureAt(px.x, px.y);
+        if (hit) {
+        const startFloor = screenToWorldFloor(camRef.current, size.w, size.h, px.x, px.y);
+        if (startFloor) {
+          elDrag.current = { id: hit.elementId, startFloor, began: false, moved: false, lastDx: 0, lastDy: 0 };
+          if (onSelectElement && selectedId !== hit.elementId) {
+            onSelectElement(hit.elementId);
+          }
+          return;
+        }
+      }
+      if (onSelectElement && selectedId) onSelectElement(null);
+      drag.current = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
       return;
     }
     drag.current = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
@@ -331,8 +462,8 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!pointers.current.has(e.pointerId)) {
-      // hover (no buttons): nearest aisle symbol within 16 px
-      if (pointers.current.size === 0 && !drag.current && !flying) {
+      // hover (no buttons): aisle symbol tooltip in viewer, move-cursor in edit
+      if (pointers.current.size === 0 && !drag.current && !elDrag.current && !flying) {
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
           const px = e.clientX - rect.left;
@@ -347,6 +478,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
             }
           }
           setHoverAisle(best ? { id: best.elementId, sx: best.sx, sy: best.sy } : null);
+          if (edit) setHoverFixture(Boolean(fixtureAt(px, py)));
         }
       }
       return;
@@ -380,7 +512,28 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       return;
     }
     const d = drag.current;
-    if (!d) return;
+    if (!d) {
+      // live element drag: project the pointer to the floor plane and report
+      // the snapped world delta from the grab point
+      const ed = elDrag.current;
+      if (ed && onElementDrag) {
+        const px = screenPx(e);
+        const floorNow = screenToWorldFloor(camRef.current, size.w, size.h, px.x, px.y);
+        if (!floorNow) return;
+        const rawDx = floorNow.x - ed.startFloor.x;
+        const rawDy = floorNow.y - ed.startFloor.y;
+        const g = grid ?? 0.25;
+        const dx = snap(ed.startFloor.x + rawDx, g) - ed.startFloor.x;
+        const dy = snap(ed.startFloor.y + rawDy, g) - ed.startFloor.y;
+        if (dx === ed.lastDx && dy === ed.lastDy) return;
+        if (Math.abs(dx) + Math.abs(dy) > 0) ed.moved = true;
+        onElementDrag(ed.id, dx, dy, ed.began ? 'live' : 'begin');
+        ed.began = true;
+        ed.lastDx = dx;
+        ed.lastDy = dy;
+      }
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
@@ -394,10 +547,22 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const endPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
+    // finish an element drag
+    const ed = elDrag.current;
+    if (ed) {
+      elDrag.current = null;
+      if (ed.moved) {
+        // final position already sent as the last 'live'; commit history entry
+        onElementDrag?.(ed.id, ed.lastDx ?? 0, ed.lastDy ?? 0, 'push');
+      } else if (onSelectElement) {
+        onSelectElement(ed.id); // a click selects (already selected above — keep for safety)
+      }
+      return;
+    }
     const d = drag.current;
     drag.current = null;
     if (!d || d.moved) return;
-    // tap → nearest pin within 18 px
+    // tap → nearest pin within 18 px, else a fixture (viewer: shelf layout)
     const rect = canvasRef.current!.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
@@ -410,7 +575,17 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         best = hit;
       }
     }
-    if (best) onPinClick?.(best.productId);
+    if (best) {
+      onPinClick?.(best.productId);
+      return;
+    }
+    if (onElementClick) {
+      const hit = fixtureAt(px, py);
+      if (hit) {
+        const el = elements.find((x) => x.id === hit.elementId);
+        if (el) onElementClick(el);
+      }
+    }
   };
 
   const hoverAisleEl = hoverAisle ? elements.find((el) => el.id === hoverAisle.id) ?? null : null;
@@ -423,12 +598,18 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     <>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: drag.current ? 'grabbing' : hoverAisle ? 'pointer' : 'grab' }}
+        style={{
+          width: '100%', height: '100%', display: 'block', touchAction: 'none',
+          cursor: drag.current || elDrag.current ? 'grabbing' : hoverFixture && edit ? 'move' : hoverAisle ? 'pointer' : 'grab',
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
-        onPointerLeave={() => setHoverAisle(null)}
+        onPointerLeave={() => {
+          setHoverAisle(null);
+          setHoverFixture(false);
+        }}
         aria-label="3D store map"
       />
       {hoverAisle && hoverAisleEl && (
