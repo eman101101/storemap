@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, buildContactShadows, camFromEyeLook, fitCamera, pathSampler,
-  renderScene, screenToWorldFloor, pointInPoly, shade, routeFaces, stockFaces, MODERN_THEME,
-  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit,
-  type FixtureHit, type StockItem,
+  renderScene, screenToWorldFloor, pickFixture, shade, routeFaces, stockFaces, MODERN_THEME,
+  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem,
 } from '../lib/render3d';
 import { snap, elementPoints, shelfAnchor, translateElement, type WorldPt } from '../lib/geometry';
 import { aisleContents, AISLE_REACH_M } from '../lib/aisleInfo';
@@ -107,9 +106,12 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const flyGoal = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // the seq that already flew — the very first route shown must NOT auto-play
   const flownSeq = useRef<number | null>(null);
-  const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[]; fixtures?: FixtureHit[] }>({ pins: [], aisles: [] });
+  const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[] }>({ pins: [], aisles: [] });
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
-  const [hoverFixture, setHoverFixture] = useState(false);
+  /** Hover pick preview (edit mode): what a click would select, and where. */
+  const [hoverPick, setHoverPick] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  /** Viewer: pointer is over a tappable shelf. */
+  const [hoverShelf, setHoverShelf] = useState(false);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
   const pinch = useRef<{ dist: number; startDist: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
@@ -378,10 +380,10 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       routeStart: route && route.length > 1 ? route[0] : null,
       tripStops,
       theme,
-      editHits: edit || Boolean(onElementClick),
       selectedId: edit ? selectedId : null,
+      hoverId: edit ? hoverPick?.id ?? null : null,
     });
-  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme, edit, selectedId]);
+  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme, edit, selectedId, hoverPick]);
 
   // wheel zoom (non-passive so preventDefault works)
   useEffect(() => {
@@ -397,17 +399,8 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  /** Nearest fixture whose screen footprint contains the point (nearest wins). */
-  const fixtureAt = (px: number, py: number): FixtureHit | null => {
-    const fixtures = hitsRef.current.fixtures;
-    if (!fixtures) return null;
-    let best: FixtureHit | null = null;
-    for (const f of fixtures) {
-      if (!pointInPoly(px, py, f.poly)) continue;
-      if (!best || f.depth < best.depth) best = f;
-    }
-    return best;
-  };
+  /** Ray-pick the fixture under a screen pixel (nearest hit wins). */
+  const fixtureAt = (px: number, py: number) => pickFixture(camRef.current, size.w, size.h, px, py, elements);
 
   const screenPx = (e: { clientX: number; clientY: number }) => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -478,7 +471,11 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
             }
           }
           setHoverAisle(best ? { id: best.elementId, sx: best.sx, sy: best.sy } : null);
-          if (edit) setHoverFixture(Boolean(fixtureAt(px, py)));
+          // hover picking: preview what a click would select (edit) / show
+          // the pointer cursor over tappable shelves (viewer)
+          const pick = edit || onElementClick ? fixtureAt(px, py) : null;
+          setHoverPick(edit && pick ? { id: pick.elementId, sx: px, sy: py } : null);
+          setHoverShelf(Boolean(pick));
         }
       }
       return;
@@ -600,7 +597,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         ref={canvasRef}
         style={{
           width: '100%', height: '100%', display: 'block', touchAction: 'none',
-          cursor: drag.current || elDrag.current ? 'grabbing' : hoverFixture && edit ? 'move' : hoverAisle ? 'pointer' : 'grab',
+          cursor: drag.current || elDrag.current ? 'grabbing' : hoverPick && edit ? 'move' : hoverShelf && onElementClick ? 'pointer' : hoverAisle ? 'pointer' : 'grab',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -608,10 +605,20 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         onPointerCancel={endPointer}
         onPointerLeave={() => {
           setHoverAisle(null);
-          setHoverFixture(false);
+          setHoverPick(null);
+          setHoverShelf(false);
         }}
         aria-label="3D store map"
       />
+      {hoverPick && edit && (() => {
+        const el = elements.find((x) => x.id === hoverPick.id);
+        if (!el || el.id === selectedId) return null;
+        return (
+          <div className="pick-tip" style={{ left: hoverPick.sx, top: hoverPick.sy }}>
+            {el.label || el.type}
+          </div>
+        );
+      })()}
       {hoverAisle && hoverAisleEl && (
         <AisleTooltip
           style={{ left: hoverAisle.sx, top: hoverAisle.sy }}

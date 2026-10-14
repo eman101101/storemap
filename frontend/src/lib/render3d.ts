@@ -785,7 +785,7 @@ export function buildSceneBSP(faces: Face[]): LayeredBSP[] {
 
 /* ---------------- edit-mode fixture picking ---------------- */
 
-/** Footprint corners + extrusion height for any element shape (null for points). */
+/** Footprint corners + extrusion height for outline drawing (null for points). */
 function elementFootprint(el: MapElement): { base: WorldPt[]; h: number } | null {
   const h = TYPE_HEIGHT[el.type] ?? 0;
   if (el.shape === 'rect') {
@@ -798,84 +798,114 @@ function elementFootprint(el: MapElement): { base: WorldPt[]; h: number } | null
   return null;
 }
 
-function convexHull(pts: { x: number; y: number }[]): { x: number; y: number }[] {
-  if (pts.length < 3) return pts;
-  const s = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
-    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower: { x: number; y: number }[] = [];
-  for (const p of s) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, p) <= 0) lower.pop();
-    lower.push(p);
+/** Convex base polygons the element's 3D body occupies (walls: one per segment). */
+function footprintSegments(el: MapElement): WorldPt[][] {
+  const h = Math.max(TYPE_HEIGHT[el.type] ?? 0, 0.12);
+  if (el.shape === 'rect') return [rectCorners(el.geom as RectGeom)];
+  if (el.shape === 'polygon') return [polyPoints(el)];
+  if (el.shape === 'polyline') {
+    const pts = polyPoints(el);
+    const out: WorldPt[][] = [];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 1e-6) continue;
+      const nx = (-(b.y - a.y) / len) * 0.11;
+      const ny = ((b.x - a.x) / len) * 0.11;
+      out.push([
+        { x: a.x + nx, y: a.y + ny },
+        { x: b.x + nx, y: b.y + ny },
+        { x: b.x - nx, y: b.y - ny },
+        { x: a.x - nx, y: a.y - ny },
+      ]);
+    }
+    void h;
+    return out;
   }
-  const upper: { x: number; y: number }[] = [];
-  for (let i = s.length - 1; i >= 0; i--) {
-    const p = s[i]!;
-    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  lower.pop();
-  upper.pop();
-  return [...lower, ...upper];
+  return [];
 }
 
-function buildFixtureHits(
-  elements: MapElement[],
+/**
+ * Entry distance along the ray into a convex prism (base polygon extruded
+ * z ∈ [0, h]), by clipping the ray against each face plane. Null when missed.
+ */
+function rayPrismT(
+  ray: { ox: number; oy: number; oz: number; dx: number; dy: number; dz: number },
+  base: WorldPt[],
+  h: number
+): number | null {
+  let t0 = 1e-4;
+  let t1 = Infinity;
+  const cx = base.reduce((a, p) => a + p.x / base.length, 0);
+  const cy = base.reduce((a, p) => a + p.y / base.length, 0);
+  for (let i = 0; i < base.length; i++) {
+    const a = base[i]!;
+    const b = base[(i + 1) % base.length];
+    let nx = b.y - a.y;
+    let ny = -(b.x - a.x);
+    const mx = (a.x + b.x) / 2 - cx;
+    const my = (a.y + b.y) / 2 - cy;
+    if (nx * mx + ny * my < 0) {
+      nx = -nx;
+      ny = -ny; // orient outward
+    }
+    const on = nx * (ray.ox - a.x) + ny * (ray.oy - a.y);
+    const dn = nx * ray.dx + ny * ray.dy;
+    if (Math.abs(dn) < 1e-9) {
+      if (on < 0) return null; // parallel and outside this face's slab
+      continue;
+    }
+    const t = -on / dn;
+    if (dn > 0) t1 = Math.min(t1, t);
+    else t0 = Math.max(t0, t);
+    if (t0 > t1) return null;
+  }
+  if (Math.abs(ray.dz) < 1e-9) {
+    if (ray.oz < 0 || ray.oz > h) return null;
+  } else {
+    let za = (0 - ray.oz) / ray.dz;
+    let zb = (h - ray.oz) / ray.dz;
+    if (za > zb) [za, zb] = [zb, za];
+    t0 = Math.max(t0, za);
+    t1 = Math.min(t1, zb);
+    if (t0 > t1) return null;
+  }
+  return t0;
+}
+
+/**
+ * 3D picking: ray from the camera through the pixel against every element's
+ * extruded body; the nearest hit wins. Correct occlusion — a nearer fixture
+ * always beats anything behind it — unlike hull/centroid heuristics (which
+ * let the building-spanning outer wall swallow every click).
+ */
+export function pickFixture(
   cam: Camera3D,
   w: number,
-  h: number
-): FixtureHit[] {
-  const hits: FixtureHit[] = [];
+  h: number,
+  sx: number,
+  sy: number,
+  elements: MapElement[]
+): { elementId: string; t: number } | null {
+  const ray = screenRay(cam, w, h, sx, sy);
+  let best: { elementId: string; t: number } | null = null;
   for (const el of elements) {
     if (el.shape === 'point') {
       const g = el.geom as PointGeom;
       const top = project(cam, w, h, { x: g.x, y: g.y, z: 2.0 });
-      if (!top) continue;
-      const r = 12;
-      hits.push({
-        elementId: el.id,
-        poly: [
-          { x: top.x - r, y: top.y - r },
-          { x: top.x + r, y: top.y - r },
-          { x: top.x + r, y: top.y + r },
-          { x: top.x - r, y: top.y + r },
-        ],
-        depth: top.depth,
-        cx: top.x,
-        cy: top.y,
-      });
+      if (top && Math.hypot(top.x - sx, top.y - sy) <= 12 && (!best || top.depth < best.t)) {
+        best = { elementId: el.id, t: top.depth };
+      }
       continue;
     }
-    const fp = elementFootprint(el);
-    if (!fp) continue;
-    const corners: V3[] = [
-      ...fp.base.map((p) => ({ x: p.x, y: p.y, z: 0 })),
-      ...fp.base.map((p) => ({ x: p.x, y: p.y, z: fp.h })),
-    ];
-    const projected = corners.map((p) => project(cam, w, h, p));
-    if (projected.every((p) => p === null)) continue;
-    const visible = projected.filter((p) => p !== null) as { x: number; y: number; depth: number }[];
-    if (visible.length < 3) continue;
-    const poly = convexHull(visible.map((p) => ({ x: p.x, y: p.y })));
-    hits.push({
-      elementId: el.id,
-      poly,
-      depth: visible.reduce((a, p) => a + p.depth, 0) / visible.length,
-      cx: poly.reduce((a, p) => a + p.x / poly.length, 0),
-      cy: poly.reduce((a, p) => a + p.y / poly.length, 0),
-    });
+    const h2 = Math.max(TYPE_HEIGHT[el.type] ?? 0, 0.12);
+    for (const base of footprintSegments(el)) {
+      const t = rayPrismT(ray, base, h2);
+      if (t !== null && (!best || t < best.t)) best = { elementId: el.id, t };
+    }
   }
-  return hits;
-}
-
-/** Point-in-convex-polygon (even-odd works for the hulls we build). */
-export function pointInPoly(px: number, py: number, poly: { x: number; y: number }[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]!, b = poly[j]!;
-    if (a.y > py !== b.y > py && px < ((b.x - a.x) * (py - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
+  return best;
 }
 
 /* ---------------- drawing ---------------- */
@@ -905,24 +935,10 @@ export interface AisleHit {
   sy: number;
 }
 
-/** A fixture's screen-space footprint for click/drag hit-testing in edit mode. */
-export interface FixtureHit {
-  elementId: string;
-  /** convex hull of the element's projected 3D corners (screen px) */
-  poly: { x: number; y: number }[];
-  /** smaller = nearer the camera; picking prefers the nearest hit */
-  depth: number;
-  /** projected center, for aiming the camera at the element */
-  cx: number;
-  cy: number;
-}
-
 /** Everything the caller needs for hit-testing after a frame. */
 export interface SceneHits {
   pins: PinHit[];
   aisles: AisleHit[];
-  /** present only when SceneInput.editHits is set (edit mode / shelf taps) */
-  fixtures?: FixtureHit[];
 }
 
 /** Decorative product facing standing on a shelf's wall face. */
@@ -957,6 +973,15 @@ export function screenToWorldFloor(
   sx: number,
   sy: number
 ): WorldPt | null {
+  const { ox, oy, oz, dx, dy, dz } = screenRay(cam, w, h, sx, sy);
+  if (Math.abs(dz) < 1e-9) return null;
+  const t = -oz / dz;
+  if (t <= 0) return null;
+  return { x: ox + dx * t, y: oy + dy * t };
+}
+
+/** Ray from the eye through a screen pixel (world space). */
+export function screenRay(cam: Camera3D, w: number, h: number, sx: number, sy: number) {
   const fov = cam.fov ?? DEFAULT_FOV;
   const f = h / 2 / Math.tan(fov / 2);
   // camera-space point on the ray at depth f (screen coords are x1/depth, up/depth)
@@ -978,11 +1003,10 @@ export function screenToWorldFloor(
   const py = cam.ty + dy;
   const pz = cam.tz + dz;
   const eye = cameraEye(cam);
-  const dir = { x: px - eye.x, y: py - eye.y, z: pz - eye.z };
-  if (Math.abs(dir.z) < 1e-9) return null;
-  const t = -eye.z / dir.z;
-  if (t <= 0) return null;
-  return { x: eye.x + dir.x * t, y: eye.y + dir.y * t };
+  return {
+    ox: eye.x, oy: eye.y, oz: eye.z,
+    dx: px - eye.x, dy: py - eye.y, dz: pz - eye.z,
+  };
 }
 
 /** Vertical product blocks along the shelf faces — makes fixtures look stocked.
@@ -1029,10 +1053,10 @@ export interface SceneInput {
   tripStops?: { productId: string; name: string; point: WorldPt }[];
   /** Visual theme — defaults to the modern look; RETRO_THEME adds the 2010s style. */
   theme?: MapTheme;
-  /** Build per-fixture screen hit polygons (edit mode / shelf tap picking). */
-  editHits?: boolean;
-  /** Stroke an outline around this element's cap (3D selection highlight). */
+  /** Stroke a selection outline around this element's cap (3D selection). */
   selectedId?: string | null;
+  /** Stroke a subtler preview outline around this element (hover picking). */
+  hoverId?: string | null;
 }
 
 /**
@@ -1134,7 +1158,6 @@ export function renderScene(
 
   /* ---- overlay: markers, pins, labels (always on top) ---- */
   const hits: SceneHits = { pins: [], aisles: [] };
-  if (input.editHits) hits.fixtures = buildFixtureHits(elements, cam, w, h);
   const pitchSin = Math.sin(cam.pitch);
 
   // entrance / exit / POI markers: ground disc + tall pole + glyph head —
@@ -1318,11 +1341,13 @@ export function renderScene(
     }
   }
 
-  // 3D selection highlight: outline the selected element's cap + tint it,
-  // so the side panel's selection is visible from any angle
-  if (input.selectedId) {
-    const sel = elements.find((el) => el.id === input.selectedId);
+  // 3D selection / hover preview: outline the element's cap so what is (or
+  // would be) selected is readable from any angle
+  if (input.selectedId || input.hoverId) {
+    const id = input.selectedId || input.hoverId;
+    const sel = elements.find((el) => el.id === id);
     const fp = sel ? elementFootprint(sel) : null;
+    const hoveredOnly = !input.selectedId && input.hoverId === id;
     if (sel && fp) {
       const capPoly = fp.base.map((p) => project(cam, w, h, { x: p.x, y: p.y, z: fp.h }));
       if (capPoly.every((p) => p !== null)) {
@@ -1331,11 +1356,13 @@ export function renderScene(
         ctx.moveTo(pts[0]!.x, pts[0]!.y);
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(228, 87, 46, 0.10)';
-        ctx.fill();
-        ctx.strokeStyle = '#e4572e';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([7, 4]);
+        if (!hoveredOnly) {
+          ctx.fillStyle = 'rgba(228, 87, 46, 0.10)';
+          ctx.fill();
+        }
+        ctx.strokeStyle = hoveredOnly ? 'rgba(228, 87, 46, 0.65)' : '#e4572e';
+        ctx.lineWidth = hoveredOnly ? 1.8 : 2.5;
+        if (!hoveredOnly) ctx.setLineDash([7, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -1344,10 +1371,10 @@ export function renderScene(
       const pr = project(cam, w, h, { x: g.x, y: g.y, z: 1.0 });
       if (pr) {
         ctx.beginPath();
-        ctx.arc(pr.x, pr.y, 15, 0, Math.PI * 2);
-        ctx.strokeStyle = '#e4572e';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([7, 4]);
+        ctx.arc(pr.x, pr.y, hoveredOnly ? 12 : 15, 0, Math.PI * 2);
+        ctx.strokeStyle = hoveredOnly ? 'rgba(228, 87, 46, 0.65)' : '#e4572e';
+        ctx.lineWidth = hoveredOnly ? 1.8 : 2.5;
+        if (!hoveredOnly) ctx.setLineDash([7, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
       }

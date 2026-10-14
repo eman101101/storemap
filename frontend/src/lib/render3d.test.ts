@@ -2,10 +2,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Floor, MapElement } from '../types';
 import {
-  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE, renderScene,
+  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE, pickFixture,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
   buildSceneBSP, traverseFaceBSP, buildContactShadows, MODERN_THEME, RETRO_THEME, NEAR,
-  screenToWorldFloor, pointInPoly,
+  screenToWorldFloor,
   type Face, type Camera3D,
 } from './render3d';
 
@@ -488,33 +488,65 @@ describe('screenToWorldFloor (3D edit-drag unprojection)', () => {
   });
 });
 
-describe('fixture hit polygons (3D picking)', () => {
-  // Canvas2D context stub: every method no-ops and chains, every property sets
-  const stubCtx = new Proxy(function stub() {}, {
-    get: () => () => stubCtx,
-    set: () => true,
-  }) as unknown as CanvasRenderingContext2D;
+describe('pickFixture (ray picking — nearest hit wins)', () => {
+  const W = 1280;
+  const H = 720;
+  let elementsOf: MapElement[] = [];
+  const at = (cam: Camera3D, p: { x: number; y: number; z: number }) => {
+    const s = project(cam, W, H, p)!;
+    return pickFixture(cam, W, H, s.x, s.y, elementsOf);
+  };
 
-  it('editHits builds a footprint polygon containing the projected shelf', () => {
-    const elements = [el('shelf', 'rect', { x: 10, y: 10, w: 12, h: 0.7, rot: 0 })];
-    const cam = fitCamera(floor);
-    const hits = renderScene(stubCtx, 1280, 720, cam, floor, elements, { editHits: true });
-    const hit = hits.fixtures!.find((f) => f.elementId === elements[0]!.id)!;
-    expect(hit).toBeTruthy();
-    const inside = pointInPoly(
-      project(cam, 1280, 720, { x: 16, y: 10.35, z: 0.75 })!.x,
-      project(cam, 1280, 720, { x: 16, y: 10.35, z: 0.75 })!.y,
-      hit.poly
-    );
-    expect(inside).toBe(true);
-    expect(pointInPoly(5, 5, hit.poly)).toBe(false);
+  // regression: the hull/mean-depth picker let the building-spanning outer
+  // wall swallow every click — ray picking must prefer what the ray hits first
+  it('picks the shelf through its front face, not the wall behind it', () => {
+    elementsOf = [
+      el('wall', 'polyline', [[9, 9], [21, 9]]),
+      el('shelf', 'rect', { x: 10, y: 10, w: 12, h: 0.7, rot: 0 }),
+    ];
+    const picked = at(fitCamera(floor), { x: 16, y: 10.7, z: 0.4 });
+    expect(picked!.elementId).toBe(elementsOf[1]!.id);
   });
 
-  it('point elements hit around their marker head', () => {
-    const elements = [el('entrance', 'point', { x: 20, y: 19 })];
+  it('picks the wall itself when clicked away from other fixtures', () => {
+    elementsOf = [
+      el('wall', 'polyline', [[9, 9], [21, 9]]),
+      el('shelf', 'rect', { x: 10, y: 10, w: 12, h: 0.7, rot: 0 }),
+    ];
     const cam = fitCamera(floor);
-    const hits = renderScene(stubCtx, 1280, 720, cam, floor, elements, { editHits: true });
-    const hit = hits.fixtures!.find((f) => f.elementId === elements[0]!.id)!;
-    expect(hit.poly).toHaveLength(4);
+    const s = project(cam, W, H, { x: 15, y: 9, z: 2.0 })!; // upper wall body
+    const picked = pickFixture(cam, W, H, s.x, s.y, elementsOf);
+    expect(picked!.elementId).toBe(elementsOf[0]!.id);
+  });
+
+  it('occlusion: a nearer shelf wins over a shelf behind it at low camera', () => {
+    elementsOf = [
+      el('shelf', 'rect', { x: 4, y: 20, w: 18, h: 0.7, rot: 0 }),   // far row (A)
+      el('shelf', 'rect', { x: 11, y: 25, w: 3, h: 0.7, rot: 0 }),   // near row (B)
+    ];
+    const cam = { yaw: -0.62, pitch: 0.18, dist: 8, tx: 16, ty: 20, tz: 0 };
+    // ray through the FAR row's face where the NEAR row blocks it
+    const blocked = at(cam, { x: 13, y: 20.7, z: 0.75 });
+    expect(blocked!.elementId).toBe(elementsOf[1]!.id);
+    // ray through the far row where the near row doesn't cover it
+    const clear = at(cam, { x: 5, y: 20.7, z: 0.75 });
+    expect(clear!.elementId).toBe(elementsOf[0]!.id);
+  });
+
+  it('point elements pick around their marker head', () => {
+    elementsOf = [el('entrance', 'point', { x: 20, y: 19 })];
+    const cam = fitCamera(floor);
+    const s = project(cam, W, H, { x: 20, y: 19, z: 2.0 })!;
+    const picked = pickFixture(cam, W, H, s.x + 5, s.y, elementsOf);
+    expect(picked!.elementId).toBe(elementsOf[0]!.id);
+  });
+
+  it('returns null when the ray misses everything or points at the sky', () => {
+    elementsOf = [el('shelf', 'rect', { x: 10, y: 10, w: 12, h: 0.7, rot: 0 })];
+    const cam = fitCamera(floor);
+    const far = pickFixture(cam, W, H, 10, 10, elementsOf);
+    expect(far).toBeNull();
+    const sky = pickFixture({ ...fitCamera(floor), pitch: 0.4 }, W, H, W / 2, 2, elementsOf);
+    expect(sky).toBeNull();
   });
 });
