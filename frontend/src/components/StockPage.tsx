@@ -1,26 +1,21 @@
 /**
- * StockPage — per-store stock tracking and integrations:
+ * StockPage — per-store stock tracking:
  *  · stock levels with adjust/count actions and a movement log
+ *  · CSV import/export for whatever stock software you use
  *  · API keys so independent systems can use the StockTrack v1 API
- *  · one-click connections to major stock software (Square, Shopify, …) + CSV
  */
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Modal, Field } from './ui';
-import type {
-  ApiKeyRow, IntegrationConnection, ProviderInfo, StockMovement, StockRow,
-} from '../types';
+import type { ApiKeyRow, StockMovement, StockRow } from '../types';
 
 export default function StockPage() {
   const { storeId } = useParams<{ storeId: string }>();
   const [stock, setStock] = useState<StockRow[] | null>(null);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [connections, setConnections] = useState<IntegrationConnection[]>([]);
   const [error, setError] = useState('');
-  const [connecting, setConnecting] = useState<ProviderInfo | null>(null);
   const [newKey, setNewKey] = useState<{ row: ApiKeyRow; key: string } | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
 
@@ -28,7 +23,6 @@ export default function StockPage() {
     if (!storeId) return;
     api.stock(storeId).then((r) => { setStock(r.stock); setMovements(r.movements); }).catch((e) => setError(e.message));
     api.apiKeys(storeId).then((r) => setKeys(r.keys.filter((k) => !k.revoked))).catch(() => {});
-    api.integrations(storeId).then((r) => { setProviders(r.providers); setConnections(r.connections); }).catch(() => {});
   };
   useEffect(load, [storeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -43,15 +37,14 @@ export default function StockPage() {
   if (!stock) return <main className="container"><p className="muted">Loading…</p></main>;
 
   const lowCount = stock.filter((s) => s.reorder_point != null && (s.quantity ?? 0) <= s.reorder_point).length;
-  const csvProvider = providers.find((p) => p.id === 'csv');
 
   return (
     <main className="container">
       <div className="page-head">
         <div>
-          <h1>Stock & integrations</h1>
+          <h1>Stock</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Track inventory, sync with your stock software, and give other systems API access.
+            Track inventory, move data in and out via CSV, and give other systems API access.
           </p>
         </div>
         <Link className="btn ghost sm" to="/dashboard">← Stores</Link>
@@ -91,55 +84,17 @@ export default function StockPage() {
           )}
         </div>
 
-        {/* ------- Integrations ------- */}
+        {/* ------- CSV interchange ------- */}
         <div className="card">
           <div className="row-between">
-            <h3 style={{ margin: 0 }}>Stock software</h3>
+            <h3 style={{ margin: 0 }}>Spreadsheet interchange</h3>
             <button className="btn sm" onClick={() => setCsvOpen(true)}>Import CSV</button>
           </div>
           <p className="muted" style={{ fontSize: 13 }}>
-            Connect your existing system once, then Sync pulls its products and stock levels in.
-            Export any time with <Link to={`/dashboard/stores/${storeId}`} onClick={(e) => e.preventDefault()}><code onClick={() => window.open(`/api/stores/${storeId}/catalog.csv`, '_blank')}>catalog.csv</code></Link>.
+            Import products (and stock counts) by pasting CSV from any spreadsheet or system.
+            Export any time with{' '}
+            <code style={{ cursor: 'pointer' }} onClick={() => window.open(`/api/stores/${storeId}/catalog.csv`, '_blank')}>catalog.csv</code>.
           </p>
-          <div className="badges" style={{ marginBottom: 10 }}>
-            {connections.map((c) => {
-              const p = providers.find((x) => x.id === c.provider);
-              return (
-                <span key={c.id} className="badge" title={c.last_error || ''}>
-                  ✓ {p?.name ?? c.provider}
-                  {c.last_sync_at ? ` · synced ${new Date(c.last_sync_at + 'Z').toLocaleString()}` : ''}
-                  {c.last_error ? ' · ⚠ last sync failed' : ''}
-                </span>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {providers.filter((p) => p.id !== 'csv').map((p) => {
-              const connected = connections.some((c) => c.provider === p.id);
-              const conn = connections.find((c) => c.provider === p.id);
-              return (
-                <div key={p.id} className="integration-tile">
-                  <b>{p.name}</b>
-                  <span className="muted" style={{ fontSize: 12 }}>{p.blurb}</span>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <button className="btn sm" onClick={() => setConnecting(p)}>{connected ? 'Settings' : 'Connect'}</button>
-                    {conn && (
-                      <>
-                        <button className="btn sm primary" onClick={async () => {
-                          try {
-                            const r = await api.syncIntegration(storeId!, conn.id);
-                            alert(`Imported ${r.imported} of ${r.total} items`);
-                            load();
-                          } catch (e) { setError(e instanceof Error ? e.message : 'Sync failed'); }
-                        }}>Sync now</button>
-                        <button className="btn sm danger" onClick={async () => { await api.disconnectIntegration(storeId!, conn.id); load(); }}>Remove</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
 
         {/* ------- API keys ------- */}
@@ -171,15 +126,6 @@ export default function StockPage() {
         </div>
       </div>
 
-      {connecting && (
-        <ConnectModal
-          provider={connecting}
-          storeId={storeId!}
-          connection={connections.find((c) => c.provider === connecting.id)}
-          onClose={() => setConnecting(null)}
-          onSaved={() => { setConnecting(null); load(); }}
-        />
-      )}
       {newKey && (
         <Modal title="API key created" onClose={() => { setNewKey(null); load(); }}>
           <p className="muted">Copy it now — it is shown <b>only once</b>.</p>
@@ -196,7 +142,7 @@ export default function StockPage() {
           </div>
         </Modal>
       )}
-      {csvOpen && csvProvider && (
+      {csvOpen && (
         <CsvModal storeId={storeId!} onClose={() => setCsvOpen(false)} onDone={() => { setCsvOpen(false); load(); }} />
       )}
     </main>
@@ -233,59 +179,6 @@ function StockRowEl({ row, storeId, onChanged, onError }: {
         </span>
       </td>
     </tr>
-  );
-}
-
-function ConnectModal({ provider, storeId, connection, onClose, onSaved }: {
-  provider: ProviderInfo; storeId: string; connection?: IntegrationConnection;
-  onClose: () => void; onSaved: () => void;
-}) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await api.connectIntegration(storeId, provider.id, values);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title={`Connect ${provider.name}`} onClose={onClose}>
-      <p className="muted" style={{ fontSize: 13 }}>{provider.blurb}. Credentials are stored server-side for this store only.</p>
-      <form onSubmit={submit}>
-        {provider.fields.map((f) => (
-          <Field key={f.key} label={f.label + (f.required ? ' *' : '')}>
-            {f.type === 'select' ? (
-              <select className="select" value={values[f.key] ?? f.default ?? ''} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
-                {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            ) : (
-              <input
-                className="input"
-                type={f.type === 'password' ? 'password' : 'text'}
-                required={f.required}
-                value={values[f.key] ?? ''}
-                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-              />
-            )}
-          </Field>
-        ))}
-        {error && <div className="error-note">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : connection ? 'Update connection' : 'Connect'}</button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

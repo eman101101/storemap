@@ -1,6 +1,9 @@
 # Design doc — "2010s 3D map" visual restyle (3D viewer)
 
-Status: **v1 SHIPPED as an optional theme** — the retro look from §1 A-E, G
+Status: **REMOVED (by product decision, after v1 shipped)** — the retro
+theme, its settings entry and the contact-shadow/gloss effects were taken
+out when dark-mode 3D landed; the dark look now follows the app appearance.
+Historical notes below. — the retro look from §1 A-E, G
 (sky/sun, warm lighting, two-tone gloss, contact shadows, floor, route gloss,
 labels, vignette) is implemented behind the in-app ◐ settings toggle
 ("Map style → Retro 2010s"), alongside light/dark app mode. Not yet done:

@@ -46,10 +46,9 @@ with **Google** or **Apple**.
   renders correctly instead of vanishing). Shelves look stocked: every pinned
   product draws a colored facing block on its shelf face. No WebGL, no three.js,
   a few KB of code, smooth on low-end devices.
-- **Themes** — light/dark/system appearance for the whole app, plus an optional
-  **Retro 2010s** 3D map style (saturated sky, warm sun, glossy fixtures,
-  contact shadows — see [docs/DESIGN-RETRO-3D.md](docs/DESIGN-RETRO-3D.md)).
-  Both live in the ◐ settings popover and are saved per device.
+- **Themes** — light/dark/system appearance for the whole app via the ◐ settings
+  popover, saved per device. Dark mode restyles the whole UI **and the 3D map**
+  (dim fixtures, dark backdrop, light labels).
 - Multi-floor support, entrance/exit markers, tap a shelf (2D) to see its layout
 - Aisle labels on the map (2D and 3D); hover an aisle's `≡` symbol for what's
   stocked along it
@@ -78,11 +77,17 @@ with **Google** or **Apple**.
 - Publish toggle, public link, printable QR code
 - Store profile: hours, address, phone, website, logo
 
-**Stock & integrations**
+**Product photos** (paid plan · included in local mode)
+- Attach a photo to any product from the editor; shoppers see thumbnails in
+  search results and the item sheet.
+- Included with **local mode** (self-hosted: `SELF_HOSTED=true`); on hosted
+  instances it requires the store's plan to be `pro`.
+
+**Stock**
 - Built-in stock tracking: per-product levels, adjust/set counts, full movement log
-- Connect your existing stock software and pull its catalog + stock in one click:
-  Square, Shopify, Lightspeed Retail (X-Series/Vend), Clover, Katana MRP, Zoho Inventory,
-  ERPNext, any other StockTrack endpoint, or a plain CSV
+- CSV interchange: paste-import products/stock, export `catalog.csv`
+- CSV interchange: paste-import products and stock counts from any spreadsheet or
+  system, and export the catalog any time (`catalog.csv`)
 - CSV export (`/api/stores/:id/catalog.csv`) in a standard interchange format
 - **StockTrack API** — an independent, key-based tracking API (`/api/v1`) any third party
   (POS, e-commerce, scripts, even another StoreMap store) can use to read and update stock
@@ -141,7 +146,7 @@ A full test suite guards the mapping functionality so it won't break:
 cd backend
 npm test               # 39 tests: API integration (auth, ownership, CRUD, search, uploads)
                        # + stock tracking, API keys & the v1 API, adapter normalisation,
-                       # CSV round-trips, sync endpoints, element validation units
+                       # CSV parser/round-trips, element validation units
 npm run smoke          # boots the real server and walks the whole user journey
 ```
 
@@ -226,6 +231,21 @@ NODE_ENV=production PUBLIC_BASE_URL=https://… SESSION_SECRET=… node src/inde
 Point a TLS-terminating proxy (Caddy/Nginx/your platform) at the port and set
 `TRUST_PROXY=true`.
 
+### Local mode & one-click deploy (self-hosting)
+
+Run your own instance and every paid-tier feature — product photos — is
+included:
+
+1. Deploy this repo to any Node/Docker host (Railway reads `railway.json`;
+   Fly uses `fly.toml`; `docker compose up` works locally).
+2. Set `SELF_HOSTED=true` (plus `SESSION_SECRET`, `PUBLIC_BASE_URL`,
+   `TRUST_PROXY=true` behind a proxy) and mount `/data`.
+3. First boot with an empty database seeds the demo maps automatically
+   (`SEED_DEMO=false` to skip). Sign in via **Open the demo maps** and edit.
+
+See [docs/HOSTING-RAILWAY.md](docs/HOSTING-RAILWAY.md) for the full
+Vercel-style walkthrough.
+
 ### Health check
 
 `GET /api/health` → `{"ok":true,…}` (used by the Docker HEALTHCHECK).
@@ -277,7 +297,8 @@ docs/IMPROVEMENTS.md  the prioritized improvement backlog — review of every pa
 | Public | `GET /api/public/stores?q=` · `GET /api/public/stores/:slug` · `GET /api/public/stores/:slug/search?q=` |
 | Media | `POST /api/uploads` (raw image bytes) · served at `/uploads/*` |
 | Stock (owner) | `GET /api/stores/:id/stock` · `POST /api/stores/:id/stock/{adjust,set}` · `GET/POST /api/stores/:id/keys` · `DELETE /api/stores/keys/:keyId` |
-| Integrations (owner) | `GET/POST /api/stores/:id/integrations` · `POST …/integrations/:id/sync` · `POST /api/stores/:id/integrations/csv` · `GET /api/stores/:id/catalog.csv` |
+| CSV (owner) | `POST /api/stores/:id/integrations/csv` · `GET /api/stores/:id/catalog.csv` |
+| Product images (owner) | `POST /api/products/:id/image` (raw bytes; paid plan or local mode) · `DELETE /api/products/:id/image` |
 | StockTrack v1 (API key) | `GET /api/v1/store` · `GET /api/v1/products` · `GET /api/v1/stock` · `POST /api/v1/products` · `POST /api/v1/stock/{adjust,set}` · `GET /api/v1/map` |
 
 ### StockTrack v1 — independent tracking API
@@ -300,6 +321,3 @@ curl -X POST -H "X-API-Key: skm_…" -H "Content-Type: application/json" \
   https://your-host/api/v1/products
 ```
 
-Stock software connects the other way: save credentials once under
-**Stock → Stock software**, hit **Sync now**, and products/quantities are pulled
-and upserted into the catalog automatically.

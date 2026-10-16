@@ -1,7 +1,6 @@
 import type {
   AuthInfo, Category, Floor, MapElementRow, Product, ProductLocation, PublicStorePayload,
-  Store, StoreFull, StoreSummary, StockRow, StockMovement, ApiKeyRow, ProviderInfo,
-  IntegrationConnection,
+  Store, StoreFull, StoreSummary, StockRow, StockMovement, ApiKeyRow,
 } from './types';
 
 export class ApiError extends Error {
@@ -42,6 +41,15 @@ export const api = {
       method: 'POST',
       body: json({ email, name }),
     }),
+  /** Upload a product photo (raw bytes); paid plan or local mode required. */
+  productImage: (productId: string, file: File) =>
+    request<{ url: string; product: Product }>(`/api/products/${productId}/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    }),
+  removeProductImage: (productId: string) =>
+    request<{ ok: true }>(`/api/products/${productId}/image`, { method: 'DELETE' }),
   /** One-click session as the demo-map owner (server-gated, dev only). */
   demoLogin: () => request<{ user: unknown }>('/api/auth/demo-login', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
@@ -154,20 +162,6 @@ export const api = {
   revokeApiKey: (keyId: string) =>
     request<{ ok: true }>(`/api/stores/keys/${keyId}`, { method: 'DELETE' }),
 
-  integrations: (storeId: string) =>
-    request<{ providers: ProviderInfo[]; connections: IntegrationConnection[] }>(`/api/stores/${storeId}/integrations`),
-  connectIntegration: (storeId: string, provider: string, credentials: Record<string, string>) =>
-    request<{ connection: IntegrationConnection }>(`/api/stores/${storeId}/integrations`, {
-      method: 'POST',
-      body: json({ provider, credentials }),
-    }),
-  disconnectIntegration: (storeId: string, integrationId: string) =>
-    request<{ ok: true }>(`/api/stores/${storeId}/integrations/${integrationId}`, { method: 'DELETE' }),
-  syncIntegration: (storeId: string, integrationId: string) =>
-    request<{ imported: number; total: number }>(`/api/stores/${storeId}/integrations/${integrationId}/sync`, {
-      method: 'POST',
-      body: json({}),
-    }),
   importCsv: (storeId: string, csv: string) =>
     request<{ imported: number; total: number }>(`/api/stores/${storeId}/integrations/csv`, {
       method: 'POST',

@@ -167,6 +167,12 @@ const MIGRATIONS = [
       ALTER TABLE stores ADD COLUMN views INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    name: '005-store-plan',
+    sql: `
+      ALTER TABLE stores ADD COLUMN plan TEXT NOT NULL DEFAULT 'free';
+    `,
+  },
 ];
 
 export function migrate() {

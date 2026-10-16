@@ -201,11 +201,9 @@ export function shade(hex: string, mult: number): string {
 }
 
 /**
- * Visual theme for the 3D scene. MODERN is the classic look; RETRO is the
- * optional "2010s 3D map" style (docs/DESIGN-RETRO-3D.md): saturated sky,
- * warm sun, two-tone gloss, contact shadows, glossy route, chunky labels.
- * Both are pure data — every themed function takes one as an optional arg
- * and defaults to MODERN, so existing callers and tests are unchanged.
+ * Visual theme for the 3D scene. LIGHT is the classic look; DARK follows the
+ * app's dark mode (dim fixtures, dark backdrop, light labels). Pure data —
+ * every themed function takes one as an optional arg and defaults to LIGHT.
  */
 export interface MapTheme {
   floorFill: string;
@@ -216,7 +214,10 @@ export interface MapTheme {
   light: V3;
   ambient: number; // brightness floor
   diffuse: number; // how strongly facing the light matters
-  retro: boolean;
+  /** fixture colors are multiplied by this (dark themes dim the palette) */
+  fixtureShade: number;
+  /** dark backdrop → light labels, dark aisle chips */
+  dark: boolean;
 }
 
 export const MODERN_THEME: MapTheme = {
@@ -227,18 +228,20 @@ export const MODERN_THEME: MapTheme = {
   light: { x: -0.38, y: -0.5, z: 0.78 },
   ambient: 0.55,
   diffuse: 0.45,
-  retro: false,
+  fixtureShade: 1,
+  dark: false,
 };
 
-export const RETRO_THEME: MapTheme = {
-  floorFill: '#e9dcba', // warm parchment
-  gridFill: '#d6c69a',
-  skyTop: '#7cb2e2', // saturated 2010s blue…
-  skyBottom: '#e6f0f9', // …fading to horizon haze
-  light: { x: -0.45, y: -0.42, z: 0.78 }, // warm sun, still upper-left
-  ambient: 0.42,
-  diffuse: 0.58, // punchier contrast than modern
-  retro: true,
+export const DARK_THEME: MapTheme = {
+  floorFill: '#2e3830',
+  gridFill: '#3d4a41',
+  skyTop: '#141b16',
+  skyBottom: '#212b24',
+  light: { x: -0.38, y: -0.5, z: 0.78 },
+  ambient: 0.62,
+  diffuse: 0.38,
+  fixtureShade: 0.82,
+  dark: true,
 };
 
 function lit(normal: V3, base: string, theme: MapTheme = MODERN_THEME, extra = 1): string {
@@ -283,18 +286,7 @@ export function boxFaces(
   for (let i = 0; i < base.length; i++) {
     const j = (i + 1) % base.length;
     const n = { x: b[j].y - b[i].y, y: -(b[j].x - b[i].x), z: 0 }; // outward for CW bases in y-down coords
-    if (theme.retro) {
-      // 2010s plastic gloss: light catches the upper band, base sits in shade
-      // (kept a notch below the top face so the cap stays the brightest plane)
-      const f = 0.62;
-      const mid = (p: V3, q: V3): V3 => ({ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, z: p.z + (q.z - p.z) * f });
-      const m1 = mid(wt[i], b[i]);
-      const m2 = mid(wt[j], b[j]);
-      faces.push({ pts: [wt[i], wt[j], m2, m1], fill: lit(n, color, theme, 1.05), alpha });
-      faces.push({ pts: [m1, m2, b[j], b[i]], fill: lit(n, color, theme, 0.66), alpha });
-    } else {
-      faces.push({ pts: [wt[i], wt[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
-    }
+    faces.push({ pts: [wt[i], wt[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
   }
   return faces;
 }
@@ -345,90 +337,11 @@ export function routeFaces(route: WorldPt[], theme: MapTheme = MODERN_THEME): Fa
       layer: 1,
     });
   }
-  if (!theme.retro) return faces;
-  // 2010s GPS gloss: narrow bright strip riding the ribbon's centerline
-  const hw2 = 0.09;
-  const z2 = z + 0.01;
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1];
-    const b = route[i];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-6) continue;
-    const nx = (-dy / len) * hw2;
-    const ny = (dx / len) * hw2;
-    faces.push({
-      pts: [
-        { x: a.x + nx, y: a.y + ny, z: z2 },
-        { x: b.x + nx, y: b.y + ny, z: z2 },
-        { x: b.x - nx, y: b.y - ny, z: z2 },
-        { x: a.x - nx, y: a.y - ny, z: z2 },
-      ],
-      fill: shade(ROUTE.ribbon, 1.32),
-      layer: 1,
-    });
-  }
-  // dashes above everything — the era's turn-by-turn look
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1];
-    const b = route[i];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-6) continue;
-    const ux = dx / len;
-    const uy = dy / len;
-    const nx = -uy * 0.05;
-    const ny = ux * 0.05;
-    for (let s = 0.6; s + 0.7 <= len; s += 1.3) {
-      const mx = a.x + ux * (s + 0.35);
-      const my = a.y + uy * (s + 0.35);
-      faces.push({
-        pts: [
-          { x: mx - ux * 0.35 + nx, y: my - uy * 0.35 + ny, z: 0.09 },
-          { x: mx + ux * 0.35 + nx, y: my + uy * 0.35 + ny, z: 0.09 },
-          { x: mx + ux * 0.35 - nx, y: my + uy * 0.35 - ny, z: 0.09 },
-          { x: mx - ux * 0.35 - nx, y: my - uy * 0.35 - ny, z: 0.09 },
-        ],
-        fill: '#fff2cf',
-        alpha: 0.95,
-        layer: 1,
-      });
-    }
-  }
-  return faces;
-}
-
-/**
- * 2010s contact shadows: one soft decal per solid rect fixture, offset away
- * from the theme's light by a height-scaled amount. Composed by the caller
- * (Map3D) next to the scene faces — never inside buildSceneFaces, whose exact
- * face counts are pinned by tests.
- */
-export function buildContactShadows(elements: MapElement[], theme: MapTheme = MODERN_THEME): Face[] {
-  const faces: Face[] = [];
-  const lLen = Math.hypot(theme.light.x, theme.light.y) || 1;
-  for (const el of elements) {
-    const h = TYPE_HEIGHT[el.type] ?? 0;
-    if (h <= 0.12 || el.shape !== 'rect') continue;
-    const r = el.geom as RectGeom;
-    if (r.w <= 0 || r.h <= 0) continue;
-    const d = h * 0.45;
-    const ox = (-theme.light.x / lLen) * d;
-    const oy = (-theme.light.y / lLen) * d;
-    faces.push({
-      pts: rectCorners(r).map((p) => ({ x: p.x + ox, y: p.y + oy, z: 0.05 })),
-      fill: '#1b2a20',
-      alpha: 0.16,
-      layer: 0.5,
-    });
-  }
   return faces;
 }
 
 function polyPrism(el: MapElement, pts: WorldPt[], height: number, theme: MapTheme = MODERN_THEME): Face[] {
-  const base = el.color || TYPE_COLOR[el.type];
+  const base = shade(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
   if (height <= 0.12) {
     // flat decal (zone tint) — above the floor tiles so tiling can't cover it
     return [{ pts: pts.map((p) => ({ x: p.x, y: p.y, z: height })), fill: base, alpha: 0.35, layer: 0.5 }];
@@ -540,7 +453,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: Map
   }
 
   for (const el of elements) {
-    const color = el.color || TYPE_COLOR[el.type];
+    const color = shade(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
     if (el.shape === 'rect') {
       const r = el.geom as RectGeom;
       const height = TYPE_HEIGHT[el.type] ?? 0;
@@ -608,6 +521,7 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: Map
   }
   return subdivideFaces(faces);
 }
+
 
 /* ---------------- depth ordering: axis-aligned BSP ---------------- */
 
@@ -1030,7 +944,7 @@ export function stockFaces(items: StockItem[], theme: MapTheme = MODERN_THEME): 
         { x: ox - tx * halfW, y: oy - ty * halfW, z: z0 },
         { x: ox + tx * halfW, y: oy + ty * halfW, z: z0 },
       ],
-      fill: shade(it.color, theme.retro ? 0.97 : 0.92),
+      fill: shade(it.color, 0.92),
     });
   }
   return faces;
@@ -1051,7 +965,7 @@ export interface SceneInput {
   bsp?: LayeredBSP[] | null;
   /** Multi-stop trip: numbered markers drawn in the overlay pass. */
   tripStops?: { productId: string; name: string; point: WorldPt }[];
-  /** Visual theme — defaults to the modern look; RETRO_THEME adds the 2010s style. */
+  /** Visual theme — LIGHT (default) or DARK, following the app appearance. */
   theme?: MapTheme;
   /** Stroke a selection outline around this element's cap (3D selection). */
   selectedId?: string | null;
@@ -1144,17 +1058,7 @@ export function renderScene(
       ctx.stroke();
     }
   }
-  if (theme.retro) {
-    // 2010s vignette — after the scene, before the overlay, so pins and labels
-    // stay crisp and untinted
-    const cx = w / 2;
-    const cy = h * 0.46;
-    const vg = ctx.createRadialGradient(cx, cy, Math.min(w, h) * 0.45, cx, cy, Math.max(w, h) * 0.78);
-    vg.addColorStop(0, 'rgba(24,34,54,0)');
-    vg.addColorStop(1, 'rgba(24,34,54,0.2)');
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, w, h);
-  }
+
 
   /* ---- overlay: markers, pins, labels (always on top) ---- */
   const hits: SceneHits = { pins: [], aisles: [] };
@@ -1196,7 +1100,7 @@ export function renderScene(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(glyph, top.x, top.y + 0.5);
-    if (el.label) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.retro);
+    if (el.label) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.dark);
   }
 
   // aisle symbols: floating disc above the aisle's midpoint; hovering it (see
@@ -1216,18 +1120,18 @@ export function renderScene(
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(top.x, top.y, 11, 0, Math.PI * 2);
-    ctx.fillStyle = '#f4f6f1';
+    ctx.fillStyle = theme.dark ? '#1a201b' : '#f4f6f1';
     ctx.fill();
-    ctx.strokeStyle = '#5d6e64';
+    ctx.strokeStyle = theme.dark ? '#9db0a0' : '#5d6e64';
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = '#33413a';
+    ctx.fillStyle = theme.dark ? '#e7ede4' : '#33413a';
     ctx.font = '800 12px ui-sans-serif, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('≡', top.x, top.y + 0.5);
     hits.aisles.push({ elementId: el.id, sx: top.x, sy: top.y });
-    if (el.label) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.retro);
+    if (el.label) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
   }
 
   // numbered trip stop markers (A1) — drawn above the route discs
@@ -1276,7 +1180,7 @@ export function renderScene(
       ctx.stroke();
       if (pin.focused) {
         drawFloorDisc(ctx, cam, w, h, { x: px, y: py }, 0.55, pin.color, pitchSin, true);
-        if (pin.label) drawLabel(ctx, dot.x, dot.y - 14, pin.label, 13, true, theme.retro);
+        if (pin.label) drawLabel(ctx, dot.x, dot.y - 14, pin.label, 13, true, theme.dark);
       }
       continue;
     }
@@ -1304,7 +1208,7 @@ export function renderScene(
     }
     if (pin.focused) {
       drawFloorDisc(ctx, cam, w, h, { x: pin.x, y: pin.y }, 0.55, pin.color, pitchSin, true);
-      if (pin.label) drawLabel(ctx, top?.x ?? base.x, (top?.y ?? base.y) - 14, pin.label, 13, true, theme.retro);
+      if (pin.label) drawLabel(ctx, top?.x ?? base.x, (top?.y ?? base.y) - 14, pin.label, 13, true, theme.dark);
     }
   }
 
@@ -1337,7 +1241,7 @@ export function renderScene(
       if (prev && Math.hypot(prev.x - pr.x, prev.y - pr.y) < 140) continue;
       drawnAt.set(key, { x: pr.x, y: pr.y });
       const size = Math.max(8.5, Math.min(14, 260 / pr.depth));
-      drawLabel(ctx, pr.x, pr.y, el.label, size, false, theme.retro);
+      drawLabel(ctx, pr.x, pr.y, el.label, size, false, theme.dark);
     }
   }
 
@@ -1420,26 +1324,14 @@ function drawLabel(
   text: string,
   size: number,
   bold = false,
-  retro = false
+  dark = false
 ) {
   ctx.font = `${bold ? '700 ' : ''}${size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  if (retro) {
-    // 2010s signpost: warm halo behind a crisp dark outline around cream text
-    ctx.lineWidth = Math.max(3.4, size / 3);
-    ctx.strokeStyle = 'rgba(255, 243, 196, 0.6)';
-    ctx.strokeText(text, x, y);
-    ctx.lineWidth = Math.max(2.2, size / 4.5);
-    ctx.strokeStyle = '#26313d';
-    ctx.strokeText(text, x, y);
-    ctx.fillStyle = '#fffdf6';
-    ctx.fillText(text, x, y);
-    return;
-  }
   ctx.lineWidth = Math.max(2.5, size / 4);
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.strokeStyle = dark ? 'rgba(16, 20, 15, 0.8)' : 'rgba(255,255,255,0.85)';
   ctx.strokeText(text, x, y);
-  ctx.fillStyle = '#333a33';
+  ctx.fillStyle = dark ? '#e7ede4' : '#333a33';
   ctx.fillText(text, x, y);
 }

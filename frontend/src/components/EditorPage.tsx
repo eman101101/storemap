@@ -10,7 +10,8 @@ import type {
 } from '../types';
 import { elementToRow, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
-import type { Camera3D } from '../lib/render3d';
+import { MODERN_THEME, DARK_THEME, type Camera3D } from '../lib/render3d';
+import { useTheme } from '../theme';
 import { Field, Modal } from './ui';
 
 const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] = [
@@ -81,6 +82,8 @@ export default function EditorPage() {
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
   const dragOrig3d = useRef<MapElement | null>(null);
+  const { resolved } = useTheme();
+  const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
 
   const history = useRef<{ past: { els: MapElement[]; label: string }[]; future: { els: MapElement[]; label: string }[] }>({
@@ -467,6 +470,7 @@ export default function EditorPage() {
               }}
               focusElement={focus3d}
               fitSignal={fitSignal}
+              theme={sceneTheme}
             />
           ) : (
             <MapCanvas
@@ -653,6 +657,7 @@ export default function EditorPage() {
             {sideTab === 'products' && (
               <ProductsPanel
                 storeId={store.id}
+                entitlements={store.entitlements ?? { productImages: false }}
                 products={products}
                 categories={categories}
                 locations={locations}
@@ -1295,9 +1300,10 @@ function ElementOutline({
 /* ---------------- Products panel ---------------- */
 
 function ProductsPanel({
-  storeId, products, categories, locations, onData, placingId, onStartPlacing, flashId, onQueueMany,
+  storeId, entitlements, products, categories, locations, onData, placingId, onStartPlacing, flashId, onQueueMany,
 }: {
   storeId: string;
+  entitlements: { productImages: boolean };
   products: Product[];
   categories: Category[];
   locations: ProductLocation[];
@@ -1493,6 +1499,7 @@ function ProductsPanel({
       {editing && (
         <ProductModal
           storeId={storeId}
+          entitlements={entitlements}
           categories={categories}
           product={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
@@ -1509,21 +1516,52 @@ function ProductsPanel({
 }
 
 function ProductModal({
-  storeId, categories, product, onClose, onSaved,
+  storeId, categories, product, onClose, onSaved, entitlements,
 }: {
   storeId: string;
   categories: Category[];
   product: Product | null;
   onClose: () => void;
   onSaved: (p: Product) => void;
+  entitlements?: { productImages: boolean };
 }) {
   const [name, setName] = useState(product?.name ?? '');
   const [brand, setBrand] = useState(product?.brand ?? '');
   const [sku, setSku] = useState(product?.sku ?? '');
   const [price, setPrice] = useState(product?.price != null ? String(product.price) : '');
   const [categoryId, setCategoryId] = useState(product?.category_id ?? '');
+  const [imageUrl, setImageUrl] = useState(product?.image_url ?? '');
+  const [imgBusy, setImgBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  const pickImage = async (file: File | undefined) => {
+    if (!file || !product) return; // images attach to saved products
+    setImgBusy(true);
+    setError('');
+    try {
+      const { product: updated } = await api.productImage(product.id, file);
+      setImageUrl(updated.image_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  const clearImage = async () => {
+    if (!product) return;
+    setImgBusy(true);
+    setError('');
+    try {
+      await api.removeProductImage(product.id);
+      setImageUrl('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setImgBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1576,6 +1614,28 @@ function ProductModal({
             </select>
           </Field>
         </div>
+        <Field label="Photo">
+          {entitlements?.productImages ? (
+            product ? (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                {imageUrl ? (
+                  <img src={imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)' }} />
+                ) : (
+                  <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
+                )}
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => pickImage(e.target.files?.[0])} style={{ fontSize: 12.5 }} />
+                {imageUrl && <button type="button" className="btn sm danger" disabled={imgBusy} onClick={clearImage}>Remove</button>}
+                {imgBusy && <span className="muted" style={{ fontSize: 12 }}>Uploading…</span>}
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Save the product first, then add its photo.</p>
+            )
+          ) : (
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              Product photos are part of the paid plan — or self-host StoreMap (local mode) to include them.
+            </p>
+          )}
+        </Field>
         {error && <div className="error-note">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>

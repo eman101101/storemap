@@ -24,14 +24,16 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 test.after(() => new Promise((resolve) => server.close(resolve)));
 
-async function call(path, { method = 'GET', body, cookie } = {}) {
+async function call(path, { method = 'GET', body, cookie, headers: extraHeaders } = {}) {
+  const isRaw = Buffer.isBuffer(body);
   const res = await fetch(base + path, {
     method,
     headers: {
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(body !== undefined && !isRaw ? { 'Content-Type': 'application/json' } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
+      ...(extraHeaders ?? {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isRaw ? new Uint8Array(body) : JSON.stringify(body),
   });
   let json = null;
   let text = null;
@@ -88,6 +90,52 @@ test('demo login issues a session for the demo-map owner (one click, no form)', 
   // the demo owner can actually edit: their store list is readable
   const mine = await call('/api/stores/mine', { cookie });
   assert.equal(mine.status, 200);
+});
+
+// Minimal 1×1 PNG for image upload tests.
+const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080600000' + '01f15c4890000000a49444154789c6360000002000154a24f400000000049454e44ae426082', 'hex');
+
+test('product images: gated on hosted free, open in local mode and on pro', async () => {
+  const cookie = await loginAs('img-owner@example.com');
+  const created = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Photo Mart' } });
+  const storeId = created.body.store.id;
+
+  // product must exist first
+  const prod = await call(`/api/stores/${storeId}/products`, {
+    method: 'POST', cookie, body: { name: 'Milk' },
+  });
+  const productId = prod.body.product.id;
+
+  // hosted default (free plan) → 402 with upgrade hint
+  const denied = await call(`/api/products/${productId}/image`, {
+    method: 'POST', cookie,
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG_BYTES,
+  });
+  assert.equal(denied.status, 402);
+  assert.equal(denied.body.upgrade, true);
+
+  // billing flips the plan (hosted plan changes don't come from the owner) → upload works
+  const { db } = await import('../src/db.js');
+  db.prepare("UPDATE stores SET plan = 'pro' WHERE id = ?").run(storeId);
+  const patched = await call(`/api/stores/${storeId}`, { method: 'PATCH', cookie, body: { hours: '9-5' } });
+  assert.equal(patched.body.store.plan, 'pro');
+  assert.equal(patched.body.store.entitlements.productImages, true);
+  const ok = await call(`/api/products/${productId}/image`, {
+    method: 'POST', cookie,
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG_BYTES,
+  });
+  assert.equal(ok.status, 200);
+  assert.ok(ok.body.url.startsWith('/uploads/'));
+
+  // non-image bytes with an image content-type are rejected
+  const bad = await call(`/api/products/${productId}/image`, {
+    method: 'POST', cookie,
+    headers: { 'Content-Type': 'image/png' },
+    body: Buffer.from('not a png at all........'),
+  });
+  assert.equal(bad.status, 400);
 });
 
 test('store lifecycle: create → defaults a floor → update → full payload', async () => {

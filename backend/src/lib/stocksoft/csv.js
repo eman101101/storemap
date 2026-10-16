@@ -49,3 +49,15 @@ export function toCsv(rows) {
   };
   return [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\r\n');
 }
+
+/** Map tolerant CSV headers onto the common product shape. */
+export function rowsFromCsv(text) {
+  return parseCsv(text).map((r) => ({
+    sku: r.sku || r.SKU || r.item_code || '',
+    barcode: r.barcode || r.upc || r.ean || '',
+    name: r.name || r.product_name || r.title || '',
+    brand: r.brand || r.manufacturer || '',
+    price: r.price != null && r.price !== '' ? Number(r.price) : r.rrp ? Number(r.rrp) : null,
+    quantity: r.quantity != null && r.quantity !== '' ? Number(r.quantity) : r.stock != null ? Number(r.stock) : undefined,
+  }));
+}

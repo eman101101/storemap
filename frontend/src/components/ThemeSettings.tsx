@@ -4,7 +4,7 @@
  * viewer's floating top bar; the choice is saved on this device.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useTheme, type MapThemeName, type ModePref } from '../theme';
+import { useTheme, type ModePref } from '../theme';
 
 function Segmented<T extends string>({
   options,
@@ -36,7 +36,7 @@ function Segmented<T extends string>({
 }
 
 export default function ThemeSettings() {
-  const { mode, setMode, mapTheme, setMapTheme } = useTheme();
+  const { mode, setMode } = useTheme();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -61,14 +61,14 @@ export default function ThemeSettings() {
       <button
         type="button"
         className="theme-gear"
-        aria-label="Appearance and map style"
+        aria-label="Appearance"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
         <span aria-hidden>◐</span>
       </button>
       {open && (
-        <div className="theme-pop" role="dialog" aria-label="Appearance and map style">
+        <div className="theme-pop" role="dialog" aria-label="Appearance">
           <div className="theme-row">
             <span className="theme-row-label">Appearance</span>
             <Segmented<ModePref>
@@ -82,19 +82,7 @@ export default function ThemeSettings() {
               onChange={setMode}
             />
           </div>
-          <div className="theme-row">
-            <span className="theme-row-label">Map style</span>
-            <Segmented<MapThemeName>
-              label="Map style"
-              options={[
-                { v: 'modern', label: 'Modern' },
-                { v: 'retro', label: 'Retro 2010s' },
-              ]}
-              value={mapTheme}
-              onChange={setMapTheme}
-            />
-          </div>
-          <p className="theme-note">Map style applies to the 3D view. Saved on this device.</p>
+          <p className="theme-note">Dark mode also restyles the 3D map. Saved on this device.</p>
         </div>
       )}
     </div>

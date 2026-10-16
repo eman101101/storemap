@@ -5,7 +5,7 @@ import Map3D from './Map3D';
 import type { MapElement, PublicStorePayload, StoreSummary } from '../types';
 import { parseElement } from '../types';
 import type { Camera3D } from '../lib/render3d';
-import { fitCamera, MODERN_THEME, RETRO_THEME } from '../lib/render3d';
+import { fitCamera, MODERN_THEME, DARK_THEME } from '../lib/render3d';
 import { useTheme } from '../theme';
 
 /** The landing hero shows the real demo store turning in 3D — the product IS the demo. */
@@ -26,8 +26,8 @@ function HeroMap() {
   }, []);
 
   const floor = data?.floors[0] ?? null;
-  const { mapTheme } = useTheme();
-  const sceneTheme = mapTheme === 'retro' ? RETRO_THEME : MODERN_THEME;
+  const { resolved } = useTheme();
+  const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const elements = useMemo(() => (data ? data.elements.map(parseElement) : []), [data]);
   const pins = useMemo(() => {
     if (!data || !floor) return [];

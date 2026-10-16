@@ -6,28 +6,22 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export type ModePref = 'light' | 'dark' | 'system';
-export type MapThemeName = 'modern' | 'retro';
 
 interface ThemeCtx {
   mode: ModePref;
   setMode: (m: ModePref) => void;
   /** What 'system' currently resolves to — for callers that need the actual mode. */
   resolved: 'light' | 'dark';
-  mapTheme: MapThemeName;
-  setMapTheme: (t: MapThemeName) => void;
 }
 
 const ThemeContext = createContext<ThemeCtx>({
   mode: 'system',
   setMode: () => {},
   resolved: 'light',
-  mapTheme: 'modern',
-  setMapTheme: () => {},
 });
 export const useTheme = () => useContext(ThemeContext);
 
 const MODE_KEY = 'storemap.mode';
-const MAP_KEY = 'storemap.mapTheme';
 
 function readStored<T extends string>(key: string, valid: readonly T[], fallback: T): T {
   try {
@@ -40,9 +34,6 @@ function readStored<T extends string>(key: string, valid: readonly T[], fallback
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ModePref>(() => readStored(MODE_KEY, ['light', 'dark', 'system'] as const, 'system'));
-  const [mapTheme, setMapThemeState] = useState<MapThemeName>(() =>
-    readStored(MAP_KEY, ['modern', 'retro'] as const, 'modern')
-  );
   const [sysDark, setSysDark] = useState(() =>
     typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)').matches : false
   );
@@ -69,17 +60,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       /* private mode */
     }
   };
-  const setMapTheme = (t: MapThemeName) => {
-    setMapThemeState(t);
-    try {
-      localStorage.setItem(MAP_KEY, t);
-    } catch {
-      /* private mode */
-    }
-  };
-
   return (
-    <ThemeContext.Provider value={{ mode, setMode, resolved, mapTheme, setMapTheme }}>
+    <ThemeContext.Provider value={{ mode, setMode, resolved }}>
       {children}
     </ThemeContext.Provider>
   );

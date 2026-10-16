@@ -10,7 +10,7 @@ import type {
 import { parseElement } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
-import { fitCamera, MODERN_THEME, RETRO_THEME, type Camera3D } from '../lib/render3d';
+import { fitCamera, MODERN_THEME, DARK_THEME, type Camera3D } from '../lib/render3d';
 import { useAuth } from '../App';
 import { useTheme } from '../theme';
 import ThemeSettings from './ThemeSettings';
@@ -58,8 +58,8 @@ export default function ViewerPage() {
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { mapTheme } = useTheme();
-  const sceneTheme = mapTheme === 'retro' ? RETRO_THEME : MODERN_THEME;
+  const { resolved } = useTheme();
+  const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
 
   /** One tap from the shopper view into the owner's editor (login first if needed). */
   const goEdit = () => {
@@ -432,7 +432,9 @@ export default function ViewerPage() {
                         onPointerEnter={() => setActiveIdx(idx)}
                         onClick={() => focusResult(p)}
                       >
-                        <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />
+                        {p.image_url
+                          ? <img src={p.image_url} alt="" width={30} height={30} style={{ borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                          : <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />}
                         <span className="rname">
                           <b>{name}</b>
                           <span>
@@ -505,7 +507,9 @@ export default function ViewerPage() {
         {/* A4: selected-item sheet */}
         {sheetProduct && (
           <div className="product-sheet card">
-            <span className="dot" style={{ background: sheetProduct.category_color || '#2f6f3e' }} />
+            {sheetProduct.image_url
+              ? <img src={sheetProduct.image_url} alt="" width={40} height={40} style={{ borderRadius: 8, objectFit: 'cover' }} />
+              : <span className="dot" style={{ background: sheetProduct.category_color || '#2f6f3e' }} />}
             <div className="sheet-info">
               <b>{sheetProduct.name}</b>
               <span>

@@ -25,6 +25,9 @@ export interface Store {
   hours: string;
   logo_url: string;
   is_public: boolean;
+  /** 'free' | 'pro' — pro unlocks paid-tier features on hosted instances. */
+  plan: string;
+  entitlements?: { productImages: boolean };
   created_at: string;
   updated_at: string;
 }
@@ -162,7 +165,7 @@ export interface SearchResult {
   floor_name: string | null;
 }
 
-/* ---------------- stock tracking & integrations ---------------- */
+/* ---------------- stock tracking ---------------- */
 
 export interface StockRow {
   product_id: string;
@@ -204,17 +207,3 @@ export interface ProviderField {
   default?: string;
 }
 
-export interface ProviderInfo {
-  id: string;
-  name: string;
-  blurb: string;
-  fields: ProviderField[];
-}
-
-export interface IntegrationConnection {
-  id: string;
-  provider: string;
-  last_sync_at: string | null;
-  last_error: string;
-  created_at: string;
-}

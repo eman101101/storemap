@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import express from 'express';
 import { db, newId } from '../db.js';
 import { requireAuth } from '../auth/session.js';
-import { handler, sendJson, badRequest } from '../lib/http.js';
+import { handler, sendJson, badRequest, rateLimit } from '../lib/http.js';
 import { str, num } from '../lib/validate.js';
 import { ownedStore, ownedFloor, touchStore } from '../lib/ownership.js';
+import { productImagesEnabled } from '../lib/entitlements.js';
+import { saveImage } from '../lib/storage.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -114,6 +118,57 @@ function ownedProduct(req, res, id) {
   }
   return row;
 }
+
+const IMAGE_TYPES = {
+  'image/png': { ext: '.png', magic: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  'image/jpeg': { ext: '.jpg', magic: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  'image/webp': { ext: '.webp', magic: (b) => b.slice(0, 4).toString('ascii') === 'RIFF' && b.slice(8, 12).toString('ascii') === 'WEBP' },
+};
+
+/**
+ * POST /api/products/:id/image — raw image bytes; sets products.image_url.
+ * Paid-tier feature: enabled on self-hosted (local mode) instances and for
+ * stores on the pro plan.
+ */
+router.post(
+  '/products/:id/image',
+  requireAuth,
+  rateLimit({ windowMs: 60_000, max: 30 }),
+  express.raw({ type: () => true, limit: '10mb' }),
+  handler(async (req, res) => {
+    const product = ownedProduct(req, res, req.params.id);
+    if (!product) return;
+    const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(product.store_id);
+    if (!productImagesEnabled(store)) {
+      return sendJson(res, 402, {
+        error: 'Product photos are part of the paid plan. Self-hosted (local mode) instances have them included.',
+        upgrade: true,
+      });
+    }
+    const type = String(req.headers['content-type'] || '').split(';')[0].trim();
+    const spec = IMAGE_TYPES[type];
+    if (!spec) return badRequest(res, 'Only PNG, JPEG or WebP images are accepted');
+    const buf = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!buf || !buf.length) return badRequest(res, 'Empty upload');
+    if (buf.length > config.maxUploadBytes) return badRequest(res, 'Image exceeds 10 MB limit');
+    if (!spec.magic(buf)) return badRequest(res, 'File content does not match its image type');
+
+    const { url } = await saveImage(buf, spec.ext);
+    db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(url, product.id);
+    touchStore(product.store_id);
+    sendJson(res, 200, { url, product: productJson(db.prepare(PRODUCT_JOIN).get(product.id)) });
+  })
+);
+
+router.delete('/products/:id/image', requireAuth, handler(async (req, res) => {
+  const product = ownedProduct(req, res, req.params.id);
+  if (!product) return;
+  const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(product.store_id);
+  if (!productImagesEnabled(store)) return sendJson(res, 402, { error: 'Product photos are a paid feature', upgrade: true });
+  db.prepare('UPDATE products SET image_url = "" WHERE id = ?').run(product.id);
+  touchStore(product.store_id);
+  sendJson(res, 200, { ok: true });
+}));
 
 router.patch('/products/:id', requireAuth, handler(async (req, res) => {
   const product = ownedProduct(req, res, req.params.id);

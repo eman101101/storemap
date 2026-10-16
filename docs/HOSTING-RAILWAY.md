@@ -23,6 +23,13 @@ dashboard). Render at the end for completeness. Fly.io remains the
 ---
 
 ## 0. Prerequisite: code on GitHub
+> **One-click setup:** the repo ships `railway.json` (Dockerfile build,
+> `/api/health` healthcheck, single replica) and a local mode
+> (`SELF_HOSTED=true`) that seeds the demo maps on first boot — a fresh
+> deploy is explorable immediately. To publish a *Deploy on Railway*
+> button, create a template from your fork at railway.com → New Template;
+> everything else below stays the same.
+
 
 The repo must be on GitHub first (Railway deploys from there):
 

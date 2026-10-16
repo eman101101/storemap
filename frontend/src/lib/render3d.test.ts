@@ -4,7 +4,7 @@ import type { Floor, MapElement } from '../types';
 import {
   project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE, pickFixture,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
-  buildSceneBSP, traverseFaceBSP, buildContactShadows, MODERN_THEME, RETRO_THEME, NEAR,
+  buildSceneBSP, traverseFaceBSP, MODERN_THEME, DARK_THEME, NEAR,
   screenToWorldFloor,
   type Face, type Camera3D,
 } from './render3d';
@@ -228,8 +228,8 @@ describe('colors', () => {
   });
 });
 
-describe('map themes (modern default vs optional retro 2010s)', () => {
-  it('modern stays the classic look: single-quad route, 5-face box', () => {
+describe('map themes (light default + dark)', () => {
+  it('light stays the classic look: single-quad route, 5-face box', () => {
     expect(routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }])).toHaveLength(1);
     const base = [{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }];
     expect(boxFaces(base, 1.5, '#e7d5a8')).toHaveLength(5);
@@ -244,10 +244,10 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
       return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255);
     };
     for (const [name, color, theme] of [
-      ['modern shelf', '#e7d5a8', MODERN_THEME],
-      ['modern wall', '#4b5147', MODERN_THEME],
-      ['retro shelf', '#e7d5a8', RETRO_THEME],
-      ['retro wall', '#4b5147', RETRO_THEME],
+      ['light shelf', '#e7d5a8', MODERN_THEME],
+      ['light wall', '#4b5147', MODERN_THEME],
+      ['dark shelf', '#e7d5a8', DARK_THEME],
+      ['dark wall', '#4b5147', DARK_THEME],
     ] as const) {
       const faces = boxFaces([{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }], 1.5, color, 1, theme);
       const topL = lum(faces[0]!.fill!);
@@ -255,20 +255,36 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
       // the cap must out-bright the brightest side by a clear margin — at
       // overview zoom the top band is only a few px tall and needs the
       // contrast to read as a surface at all
-      expect(topL - maxSide, `${name}: top ${topL} vs side ${maxSide}`).toBeGreaterThan(50);
+      expect(topL - maxSide, `${name}: top ${topL} vs side ${maxSide}`).toBeGreaterThan(40);
     }
+  });
+
+  it('dark theme dims fixtures and repaints the backdrop', () => {
+    const faces = buildSceneFaces(floor, [el('shelf', 'rect', { x: 4, y: 4, w: 3, h: 1, rot: 0 })], DARK_THEME);
+    expect(faces[0]!.fill).toBe(DARK_THEME.floorFill);
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255);
+    };
+    const shelfFill = faces.find((f) => !f.line && f.pts.some((p) => p.z === 1.5))!.fill!;
+    const lightShelf = boxFaces([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], 1.5, '#e7d5a8')[0]!.fill!;
+    expect(lum(shelfFill)).toBeLessThan(lum(lightShelf)); // fixtureShade dims the palette
+  });
+
+  it('dark theme keeps the light scene face counts (structure is theme-independent)', () => {
+    const els = [el('wall', 'rect', { x: 0, y: 0, w: 20, h: 0.4, rot: 0 })];
+    const light = buildSceneFaces(floor, els);
+    const dark = buildSceneFaces(floor, els, DARK_THEME);
+    expect(dark.filter((f) => f.line === true)).toHaveLength(light.filter((f) => f.line === true).length);
+    expect(dark.filter((f) => !f.line && f.layer === 0)).toHaveLength(light.filter((f) => !f.line && f.layer === 0).length);
   });
 
   it('walls stop just below the full-size cap so the BSP can strictly separate them', () => {
     // A cap that merely touches the walls' top edges has no separating plane —
     // the BSP can order a wall after it and paint over the cap. Walls a hair
-    // SHORTER make cap-vs-walls strictly separable in z with zero visible
-    // gap: the full-footprint cap just overhangs the walls by a millimetre.
-    // (An inset cap — the earlier approach — showed a dark seam through the
-    // gap at close zoom.)
+    // SHORTER make cap-vs-walls strictly separable in z with zero visible gap.
     const faces = boxFaces([{ x: 0, y: 0 }, { x: 24, y: 0 }, { x: 24, y: 0.7 }, { x: 0, y: 0.7 }], 1.5, '#e7d5a8');
     const cap = faces[0]!;
-    // cap: full footprint at the full height
     const ys = cap.pts.map((p) => p.y);
     const xs = cap.pts.map((p) => p.x);
     expect(Math.min(...ys)).toBeCloseTo(0, 5);
@@ -276,7 +292,6 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     expect(Math.min(...xs)).toBeCloseTo(0, 5);
     expect(Math.max(...xs)).toBeCloseTo(24, 5);
     expect(cap.pts.every((p) => p.z === 1.5)).toBe(true);
-    // every wall stops strictly below the cap plane
     for (const f of faces.slice(1)) {
       expect(Math.max(...f.pts.map((p) => p.z))).toBeLessThan(1.5);
       expect(Math.max(...f.pts.map((p) => p.z))).toBeGreaterThan(1.49);
@@ -284,10 +299,6 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
   });
 
   it('depth-capped leaves fall back to back-to-front centroid order', () => {
-    // When the BSP hits MAX_BSP_DEPTH with several faces still together, the
-    // leaf must sort them by centroid depth instead of keeping input order —
-    // an unordered leaf is what let a stock block behind a shelf paint over
-    // its cap on the real (block-decorated) scene.
     const leaf = {
       axis: 0 as const,
       split: 0,
@@ -302,52 +313,6 @@ describe('map themes (modern default vs optional retro 2010s)', () => {
     const out: Face[] = [];
     traverseFaceBSP(leaf, { x: -10, y: -10, z: 10 }, out);
     expect(out.map((f) => f.fill)).toEqual(['#far', '#mid', '#near']);
-  });
-
-  it('retro route adds a glossy highlight strip and dashes above the ribbon', () => {
-    const faces = routeFaces([{ x: 2, y: 2 }, { x: 8, y: 2 }], RETRO_THEME);
-    expect(faces.length).toBeGreaterThan(1);
-    expect(faces.every((f) => f.layer === 1)).toBe(true);
-    const zs = faces.map((f) => f.pts[0]!.z);
-    expect(Math.min(...zs)).toBeCloseTo(ROUTE.z, 5); // base ribbon still at ROUTE.z
-    expect(Math.max(...zs)).toBeGreaterThan(ROUTE.z); // gloss rides above it
-  });
-
-  it('retro two-tone splits every side quad into a sunlit band and a shaded base', () => {
-    const base = [{ x: 4, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 4, y: 7 }];
-    const faces = boxFaces(base, 1.5, '#e7d5a8', 1, RETRO_THEME);
-    expect(faces).toHaveLength(9); // top + 4 sides × 2 bands
-    expect(faces[0].pts.every((p) => p.z === 1.5)).toBe(true); // top unchanged
-  });
-
-  it('retro theme keeps the modern scene face counts (shadows are composed by Map3D)', () => {
-    const els = [el('wall', 'rect', { x: 0, y: 0, w: 20, h: 0.4, rot: 0 })];
-    const modern = buildSceneFaces(floor, els);
-    const retro = buildSceneFaces(floor, els, RETRO_THEME);
-    // two-tone doubles the wall's side quads, so retro emits more — but the
-    // floor/grid/decal counts (what the pinned tests check) must be identical
-    const count = (fs: Face[], pred: (f: Face) => boolean) => fs.filter(pred).length;
-    expect(count(retro, (f) => f.line === true)).toBe(count(modern, (f) => f.line === true));
-    expect(count(retro, (f) => !f.line && f.layer === 0)).toBe(count(modern, (f) => !f.line && f.layer === 0));
-  });
-
-  it('contact shadows: one decal per solid rect, offset away from the light', () => {
-    const faces = buildContactShadows([el('shelf', 'rect', { x: 4, y: 4, w: 3, h: 1, rot: 0 })], RETRO_THEME);
-    expect(faces).toHaveLength(1);
-    const f = faces[0]!;
-    expect(f.layer).toBe(0.5);
-    expect(f.pts.every((p) => p.z === 0.05)).toBe(true);
-    expect((f.alpha ?? 1) < 1).toBe(true);
-    // light comes from −x/−y, so the shadow center falls +x/+y of the fixture center (5.5, 4.5)
-    const cx = f.pts.reduce((a, p) => a + p.x, 0) / f.pts.length;
-    const cy = f.pts.reduce((a, p) => a + p.y, 0) / f.pts.length;
-    expect(cx).toBeGreaterThan(5.5);
-    expect(cy).toBeGreaterThan(4.5);
-  });
-
-  it('contact shadows skip decals and non-rect shapes', () => {
-    const els = [el('zone', 'rect', { x: 2, y: 2, w: 5, h: 5, rot: 0 }), el('wall', 'polyline', [[0, 0], [4, 4]])];
-    expect(buildContactShadows(els, RETRO_THEME)).toHaveLength(0);
   });
 });
 

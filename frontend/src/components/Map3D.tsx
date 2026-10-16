@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
 import {
-  buildSceneBSP, buildSceneFaces, buildContactShadows, camFromEyeLook, fitCamera, pathSampler,
+  buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler,
   renderScene, screenToWorldFloor, pickFixture, shade, routeFaces, stockFaces, MODERN_THEME,
   type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem,
 } from '../lib/render3d';
@@ -29,7 +29,7 @@ interface Props {
   /** Camera lives in the parent so toggling 2D↔3D doesn't reset the angle. */
   camera: Camera3D | null;
   onCamera: (c: Camera3D) => void;
-  /** Visual theme for the scene — defaults to modern; RETRO_THEME is the 2010s look. */
+  /** Visual theme for the scene — light (default) or dark, following app appearance. */
   theme?: MapTheme;
   /** Viewer tap on a fixture (e.g. open a shelf's layout) — parity with the 2D map. */
   onElementClick?: (el: MapElement) => void;
@@ -148,7 +148,6 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   // any camera angle. Rebuilt only when the data changes, never per frame.
   const bspInput = useMemo(() => {
     const faces = [...sceneFaces, ...stockFaces(stocking, theme)];
-    if (theme.retro) faces.push(...buildContactShadows(elements, theme));
     if (route && route.length > 1) faces.push(...routeFaces(route, theme));
     return faces;
   }, [sceneFaces, stocking, route, theme, elements]);

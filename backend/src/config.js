@@ -35,6 +35,13 @@ export const config = {
   // One-click "open the demo maps" login target — the account that owns the
   // seeded demo stores (seed-demo.mjs). Overridable via DEMO_LOGIN_EMAIL.
   demoLoginEmail: (env.DEMO_LOGIN_EMAIL || 'annex@storemap.demo').toLowerCase(),
+  // Self-hosted "local mode": the operator runs their own instance. Local
+  // mode enables paid-tier features (product images) for every store and
+  // seeds demo content on first boot. Set SELF_HOSTED=true on self-hosts.
+  selfHosted: env.SELF_HOSTED === 'true',
+  // First boot of a self-hosted instance auto-seeds the demo maps
+  // (disable with SEED_DEMO=false).
+  seedDemo: env.SEED_DEMO !== 'false',
   maxUploadBytes: 10 * 1024 * 1024,
 
   // ---- Stage 0 cloud storage / CDN (docs/INFRASTRUCTURE.md) ----

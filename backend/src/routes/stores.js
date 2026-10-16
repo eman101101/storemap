@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { Router } from 'express';
 import { db, newId } from '../db.js';
 import { geocode } from '../lib/geocode.js';
@@ -5,6 +6,7 @@ import { requireAuth } from '../auth/session.js';
 import { handler, sendJson, badRequest, slugify } from '../lib/http.js';
 import { str, num } from '../lib/validate.js';
 import { ownedStore, touchStore } from '../lib/ownership.js';
+import { entitlementsFor } from '../lib/entitlements.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -22,7 +24,12 @@ function uniqueSlug(name) {
 const EDITABLE_FIELDS = ['name', 'address', 'description', 'phone', 'website', 'hours', 'logo_url'];
 
 function storeJson(row) {
-  return { ...row, is_public: Boolean(row.is_public) };
+  return {
+    ...row,
+    is_public: Boolean(row.is_public),
+    plan: row.plan || 'free',
+    entitlements: entitlementsFor(row),
+  };
 }
 
 // ---- Store CRUD ----
@@ -116,6 +123,13 @@ router.patch('/:id', handler(async (req, res) => {
   }
   if (req.body?.is_public !== undefined) {
     updates.is_public = req.body.is_public ? 1 : 0;
+  }
+  // Plan changes are self-serve in local mode; hosted instances get them from billing.
+  if (req.body?.plan !== undefined) {
+    if (!config.selfHosted) return sendJson(res, 402, { error: 'Plan changes are managed by billing on hosted instances' });
+    const plan = String(req.body.plan);
+    if (!['free', 'pro'].includes(plan)) return badRequest(res, 'Invalid plan');
+    updates.plan = plan;
   }
   // Note: slug intentionally stays stable after creation so public links never break.
   const keys = Object.keys(updates);
