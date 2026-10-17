@@ -83,6 +83,12 @@ export default function EditorPage() {
   const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
   const [showControls, setShowControls] = useState(false);
   const dragOrig3d = useRef<MapElement | null>(null);
+  // gesture-start snapshot: containment for pin-follow is evaluated against
+  // where the shelf was when the gesture BEGAN, so a shelf dragged across other
+  // shelves can't Hoover up their products
+  const pinGestureBase = useRef<MapElement[] | null>(null);
+  const pinSaveTimer = useRef<number | null>(null);
+  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string }[]>([]);
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
@@ -131,45 +137,52 @@ export default function EditorPage() {
   const changeElements = useCallback(
     (nextFloorEls: MapElement[], mode: 'begin' | 'live' | 'push', label = 'edit') => {
       if (!floor) return;
-      // shelves carry their products: a move/rotate applies the same transform
-      // to every pin inside the shelf's previous footprint (resize leaves pins)
+      // shelves carry their products: the total gesture transform (vs where the
+      // shelf was when the gesture began) applies to every pin inside that
+      // starting footprint. Containment per live frame would let a shelf
+      // dragged across the store Hoover up other shelves' products.
+      if (mode === 'begin' || pinGestureBase.current === null) {
+        pinGestureBase.current = mode === 'begin' ? elements : elements;
+      }
+      const baseEls = pinGestureBase.current ?? [];
       const pinFollows: { location: ProductLocation; x: number; y: number }[] = [];
+      const baseById = new Map(baseEls.map((e) => [e.id, e]));
       const prevById = new Map(elements.map((e) => [e.id, e]));
       for (const el of nextFloorEls) {
+        const start = baseById.get(el.id);
         const before = prevById.get(el.id);
-        if (!before || before.type !== 'shelf' || el.type !== 'shelf') continue;
+        if (!start || !before || before.type !== 'shelf' || el.type !== 'shelf') continue;
         if (before.shape !== 'rect' || el.shape !== 'rect') continue;
-        const og = before.geom as RectGeom;
+        const bg = start.geom as RectGeom;
         const ng = el.geom as RectGeom;
-        const dxT = ng.x - og.x;
-        const dyT = ng.y - og.y;
-        const dRot = (ng.rot ?? 0) - (og.rot ?? 0);
+        const dxT = ng.x - bg.x;
+        const dyT = ng.y - bg.y;
+        const dRot = (ng.rot ?? 0) - (bg.rot ?? 0);
         if (!dxT && !dyT && !dRot) continue;
-        const cx = og.x + og.w / 2;
-        const cy = og.y + og.h / 2;
+        const bcx = bg.x + bg.w / 2;
+        const bcy = bg.y + bg.h / 2;
         const ncx = ng.x + ng.w / 2;
         const ncy = ng.y + ng.h / 2;
         const a = (dRot * Math.PI) / 180;
         const cos = Math.cos(a);
         const sin = Math.sin(a);
-        const ca = (og.rot ?? 0) * (Math.PI / 180);
+        const ca = (bg.rot ?? 0) * (Math.PI / 180);
         const cca = Math.cos(ca);
         const csa = Math.sin(ca);
         for (const loc of locations) {
           if (loc.floor_id !== floor.id) continue;
-          const lx = loc.x - cx;
-          const ly = loc.y - cy;
-          // inside the shelf's previous footprint (local frame, small tolerance)?
-          const shx = og.w / 2 + lx * cca + ly * csa;
-          const shy = og.h / 2 + -lx * csa + ly * cca;
-          if (shx < -0.25 || shx > og.w + 0.25 || shy < -0.25 || shy > og.h + 0.25) continue;
-          // rotate with the shelf, then apply the center shift
+          const lx = loc.x - bcx;
+          const ly = loc.y - bcy;
+          // inside the shelf's starting footprint (local frame, small tolerance)?
+          const shx = bg.w / 2 + lx * cca + ly * csa;
+          const shy = bg.h / 2 + -lx * csa + ly * cca;
+          if (shx < -0.25 || shx > bg.w + 0.25 || shy < -0.25 || shy > bg.h + 0.25) continue;
+          // total gesture transform: rotate about the start center, then shift
           const nx = ncx + lx * cos - ly * sin;
           const ny = ncy + lx * sin + ly * cos;
           pinFollows.push({ location: loc, x: Math.round(nx * 100) / 100, y: Math.round(ny * 100) / 100 });
         }
       }
-      const pinMovesKey = pinFollows.map((f) => f.location.id).join(',');
       const before = elements.filter((e) => e.floor_id === floor.id);
       if (mode !== 'live') {
         history.current.past.push({ els: before, label });
@@ -183,12 +196,21 @@ export default function EditorPage() {
         const movedIds = new Set(pinFollows.map((f) => f.location.id));
         const posById = new Map(pinFollows.map((f) => [f.location.id, f]));
         setLocations((prev) => prev.map((l) => (movedIds.has(l.id) ? { ...l, x: posById.get(l.id)!.x, y: posById.get(l.id)!.y } : l)));
-        if (mode === 'push') {
-          for (const f of pinFollows) {
-            api.setProductLocation(f.location.product_id, { floor_id: floor.id, x: f.x, y: f.y })
+        // move gestures end on 'live' (no push), so pin persistence is a
+        // trailing debounced save of the latest positions — mirrors the
+        // elements autosave timing
+        pendingPinSaves.current = [
+          ...pendingPinSaves.current.filter((s) => !movedIds.has(s.productId)),
+          ...pinFollows.map((f) => ({ productId: f.location.product_id, x: f.x, y: f.y, floorId: floor.id })),
+        ];
+        if (pinSaveTimer.current) window.clearTimeout(pinSaveTimer.current);
+        pinSaveTimer.current = window.setTimeout(() => {
+          for (const s of pendingPinSaves.current) {
+            api.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y })
               .catch(() => { /* keep the optimistic position */ });
           }
-        }
+          pendingPinSaves.current = [];
+        }, 700);
       }
       dirtyRef.current = true;
       setSaveState('dirty');
@@ -1525,7 +1547,8 @@ function ProductsPanel({
             No products yet. Add your top sellers first — shoppers search by these names.
           </p>
         ) : (
-          filtered.map((p) => {
+          <div className="products-scroll">
+          {filtered.map((p) => {
             const loc = locations.find((l) => l.product_id === p.id);
             return (
               <div
@@ -1566,7 +1589,8 @@ function ProductsPanel({
                 <button className="btn sm danger" title="Delete product" onClick={() => removeProduct(p.id)}>✕</button>
               </div>
             );
-          })
+          })}
+          </div>
         )}
       </div>
 

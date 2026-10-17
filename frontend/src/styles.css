@@ -713,3 +713,13 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
   flex-shrink: 0; min-width: 118px; font-size: 11px;
   background: var(--chip); border-radius: 6px; padding: 2px 6px;
 }
+
+/* Products panel: scrollable list so long catalogs don't stretch the page */
+.products-scroll {
+  max-height: min(52dvh, 560px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+}
