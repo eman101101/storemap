@@ -246,7 +246,8 @@ function StoreChecklist({ store }: { store: StoreSummary }) {
 
 function QrModal({ store, onClose }: { store: StoreSummary; onClose: () => void }) {
   const [src, setSrc] = useState('');
-  const url = `${window.location.origin}/s/${store.slug}`;
+  // server-canonical url — QR codes can't be hijacked by an embedding host
+  const url = store.shareUrl || `${window.location.origin}/s/${store.slug}`;
   useEffect(() => {
     let cancelled = false;
     (async () => {

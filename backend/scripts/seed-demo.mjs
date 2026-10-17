@@ -299,7 +299,7 @@ if (annexShelves === 0) {
   arect('zone', 2.5, 27.5, 13, 5, 'Checkout');
   for (let i = 0; i < 3; i++) arect('shelf', 4 + i * 4, 28.6, 2.6, 1.2, `Checkout ${i + 1}`);
   apoint('poi', 44.5, 3.5, 'Loading dock');
-  arect('zone', 33, 1, 14, 6, 'Loading dock');
+  arect('zone', 33, 1, 14, 6); // the POI pole carries the label — zone + pole would double it
 
   /* ---- hall shelving: border + four aisle pairs ---- */
   arect('shelf', 0.55, 2.5, 1.1, 30, 'West wall');

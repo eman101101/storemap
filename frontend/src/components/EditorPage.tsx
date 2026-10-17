@@ -81,6 +81,7 @@ export default function EditorPage() {
   });
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
+  const [showControls, setShowControls] = useState(false);
   const dragOrig3d = useRef<MapElement | null>(null);
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
@@ -130,6 +131,45 @@ export default function EditorPage() {
   const changeElements = useCallback(
     (nextFloorEls: MapElement[], mode: 'begin' | 'live' | 'push', label = 'edit') => {
       if (!floor) return;
+      // shelves carry their products: a move/rotate applies the same transform
+      // to every pin inside the shelf's previous footprint (resize leaves pins)
+      const pinFollows: { location: ProductLocation; x: number; y: number }[] = [];
+      const prevById = new Map(elements.map((e) => [e.id, e]));
+      for (const el of nextFloorEls) {
+        const before = prevById.get(el.id);
+        if (!before || before.type !== 'shelf' || el.type !== 'shelf') continue;
+        if (before.shape !== 'rect' || el.shape !== 'rect') continue;
+        const og = before.geom as RectGeom;
+        const ng = el.geom as RectGeom;
+        const dxT = ng.x - og.x;
+        const dyT = ng.y - og.y;
+        const dRot = (ng.rot ?? 0) - (og.rot ?? 0);
+        if (!dxT && !dyT && !dRot) continue;
+        const cx = og.x + og.w / 2;
+        const cy = og.y + og.h / 2;
+        const ncx = ng.x + ng.w / 2;
+        const ncy = ng.y + ng.h / 2;
+        const a = (dRot * Math.PI) / 180;
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        const ca = (og.rot ?? 0) * (Math.PI / 180);
+        const cca = Math.cos(ca);
+        const csa = Math.sin(ca);
+        for (const loc of locations) {
+          if (loc.floor_id !== floor.id) continue;
+          const lx = loc.x - cx;
+          const ly = loc.y - cy;
+          // inside the shelf's previous footprint (local frame, small tolerance)?
+          const shx = og.w / 2 + lx * cca + ly * csa;
+          const shy = og.h / 2 + -lx * csa + ly * cca;
+          if (shx < -0.25 || shx > og.w + 0.25 || shy < -0.25 || shy > og.h + 0.25) continue;
+          // rotate with the shelf, then apply the center shift
+          const nx = ncx + lx * cos - ly * sin;
+          const ny = ncy + lx * sin + ly * cos;
+          pinFollows.push({ location: loc, x: Math.round(nx * 100) / 100, y: Math.round(ny * 100) / 100 });
+        }
+      }
+      const pinMovesKey = pinFollows.map((f) => f.location.id).join(',');
       const before = elements.filter((e) => e.floor_id === floor.id);
       if (mode !== 'live') {
         history.current.past.push({ els: before, label });
@@ -139,10 +179,21 @@ export default function EditorPage() {
       }
       const others = elements.filter((e) => e.floor_id !== floor.id);
       setElements([...others, ...nextFloorEls]);
+      if (pinFollows.length) {
+        const movedIds = new Set(pinFollows.map((f) => f.location.id));
+        const posById = new Map(pinFollows.map((f) => [f.location.id, f]));
+        setLocations((prev) => prev.map((l) => (movedIds.has(l.id) ? { ...l, x: posById.get(l.id)!.x, y: posById.get(l.id)!.y } : l)));
+        if (mode === 'push') {
+          for (const f of pinFollows) {
+            api.setProductLocation(f.location.product_id, { floor_id: floor.id, x: f.x, y: f.y })
+              .catch(() => { /* keep the optimistic position */ });
+          }
+        }
+      }
       dirtyRef.current = true;
       setSaveState('dirty');
     },
-    [elements, floor]
+    [elements, floor, locations]
   );
 
   // 3D drag: deltas are relative to the drag start, applied to the element as
@@ -511,6 +562,47 @@ export default function EditorPage() {
               zoomCommand={zoomCmd}
             />
           )}
+          <button
+            className="btn controls-btn"
+            onClick={() => setShowControls((v) => !v)}
+            title="Show controls"
+          >
+            ⌨ Controls
+          </button>
+          {showControls && (
+            <div className="controls-card card" role="dialog" aria-label="Editor controls">
+              <div className="row-between" style={{ marginBottom: 6 }}>
+                <b>{view3d ? '3D controls' : '2D controls'}</b>
+                <button className="route-badge-x" onClick={() => setShowControls(false)} aria-label="Close controls">✕</button>
+              </div>
+              {(view3d
+                ? [
+                    ['Click fixture', 'select it (outline + panel)'],
+                    ['Drag fixture', 'move on the floor (snapped)'],
+                    ['Drag empty space', 'orbit'],
+                    ['Middle mouse drag', 'pan the camera'],
+                    ['Wheel / pinch', 'zoom'],
+                    ['R · Del · arrows', 'rotate · delete · nudge'],
+                    ['Esc', 'deselect'],
+                  ]
+                : [
+                    ['Tool + drag', 'draw shelves, walls, zones…'],
+                    ['Click element', 'select; drag to move; handles resize'],
+                    ['Round handle / R / panel', 'rotate (Shift = 15° snap)'],
+                    ['Click a product pin', 'select the product'],
+                    ['Del · arrows', 'delete · nudge (Shift = 1 m)'],
+                    ['Cmd/Ctrl+Z', 'undo · Shift+Z redo'],
+                    ['Drag empty space', 'pan · wheel zooms'],
+                    ['Shift-click', 'multi-select'],
+                  ]
+              ).map(([k, d]) => (
+                <div className="controls-row" key={k}>
+                  <code>{k}</code>
+                  <span>{d}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="view-toggle" style={{ position: 'absolute', top: 10, left: 12, zIndex: 5, boxShadow: 'var(--shadow)' }}>
             <button className={!view3d ? 'active' : ''} aria-pressed={!view3d} onClick={() => switchView3d(false)} title="2D editor">
               2D
@@ -521,7 +613,7 @@ export default function EditorPage() {
           </div>
           {view3d && (
             <div className="map-hint" style={{ left: '50%', transform: 'translateX(-50%)' }}>
-              3D: click to select · drag a fixture to move · drag empty space to orbit · R rotates · Del deletes
+              Click to select · drag a fixture to move · drag empty space to orbit · middle-drag pans · R rotates · Del deletes
             </div>
           )}
           {view3d && tool !== 'select' && (
@@ -1658,7 +1750,9 @@ function StorePanel({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [qrSrc, setQrSrc] = useState('');
-  const publicUrl = `${window.location.origin}/s/${store.slug}`;
+  // QR encodes the server-canonical public url — never window.location,
+  // so an embedding host can't hijack the code to its own domain.
+  const publicUrl = store.shareUrl || `${window.location.origin}/s/${store.slug}`;
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm({ ...form, [k]: e.target.value });
 

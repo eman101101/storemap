@@ -1217,15 +1217,13 @@ export function renderScene(
     const drawnAt = new Map<string, { x: number; y: number }>();
     for (const el of elements) {
       if (!el.label) continue;
+      if (el.shape === 'point') continue; // markers label themselves next to the pole — a second pass would double them
       let c: WorldPt | null = null;
       let topZ = 0;
       if (el.shape === 'rect') {
         const r = el.geom as RectGeom;
         c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
         topZ = TYPE_HEIGHT[el.type] ?? 0;
-      } else if (el.shape === 'point') {
-        c = el.geom as PointGeom;
-        topZ = 1.5;
       } else if (el.shape === 'polygon') {
         const pts = polyPoints(el) as WorldPt[];
         c = pts.reduce((a, p) => ({ x: a.x + p.x / pts.length, y: a.y + p.y / pts.length }), { x: 0, y: 0 });

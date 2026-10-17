@@ -29,6 +29,9 @@ function storeJson(row) {
     is_public: Boolean(row.is_public),
     plan: row.plan || 'free',
     entitlements: entitlementsFor(row),
+    // canonical public link — QR codes must encode THIS url, not window.origin
+    // (an iframe/phishing host could otherwise mint codes to its own domain)
+    shareUrl: `${config.publicBaseUrl}/s/${row.slug}`,
   };
 }
 

@@ -107,6 +107,7 @@ export default function MapCanvas(props: Props) {
   const pointers = useRef(new Map<number, WorldPt>());
   const pinch = useRef<{ dist: number; vp: Viewport; mid: WorldPt } | null>(null);
   const [draftRect, setDraftRect] = useState<RectGeom | null>(null);
+  const pendingPin = useRef<string | null>(null);
   const [cursorWorld, setCursorWorld] = useState<WorldPt | null>(null);
   const drawing = useRef(false); // suppress click-commit right after a pinch
 
@@ -370,6 +371,21 @@ export default function MapCanvas(props: Props) {
         interaction.current = { kind: 'pan', start: { x: e.clientX, y: e.clientY }, vp: viewport, moved: false };
         return;
       }
+      // a click (no drag) straight on a product pin selects the product — even
+      // in the default Fixtures filter. Recorded as PENDING: if the pointer
+      // turns into a real element drag, the shelf wins and the pin selection
+      // is dropped.
+      pendingPin.current = null;
+      if (e.button === 0 && !isPanButton) {
+        const grabR = Math.max(0.5, 12 / viewport.scale);
+        let bestPin: MapPin | null = null;
+        let bestD = grabR;
+        for (const p of pins) {
+          const d = Math.hypot(p.location.x - w.x, p.location.y - w.y);
+          if (d < bestD) { bestD = d; bestPin = p; }
+        }
+        if (bestPin) pendingPin.current = bestPin.product.id;
+      }
       const hit = hitElement(w);
       if (hit && e.button === 0 && e.shiftKey && onMultiSelect) {
         // B2: shift-click toggles membership in the multi-selection
@@ -526,6 +542,13 @@ export default function MapCanvas(props: Props) {
         const hit = hitElement(toWorld(e));
         if (hit) onElementClick?.(hit);
       }
+    }
+    // a still pointer that started on a pin = product select (works in any filter)
+    if (pendingPin.current) {
+      const startedGesture = it && it.kind !== 'pan';
+      const dragged = startedGesture && (it as { moved?: boolean }).moved;
+      if (!dragged) onPinSelect?.(pendingPin.current);
+      pendingPin.current = null;
     }
     interaction.current = null;
   };
@@ -920,7 +943,12 @@ function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; lab
     { t: 'sw', p: corners[3] }, { t: 'w', p: edgeMids[3] },
   ];
   const a = (r.rot * Math.PI) / 180;
-  const rotHandle = { x: cx - Math.sin(a) * (r.h / 2 + 26 / scale), y: cy - Math.cos(a) * (r.h / 2 + 26 / scale) };
+  // handle orbits the center CLOCKWISE with the rect (SVG rotate() is CW in
+  // y-down coords) — the old -sin() put it on the mirrored side, drifting out
+  // of place as soon as rot !== 0
+  const D = r.h / 2 + 26 / scale;
+  const rotHandle = { x: cx + Math.sin(a) * D, y: cy - Math.cos(a) * D };
+  const rotStem = { x: cx + (r.h / 2) * Math.sin(a), y: cy - (r.h / 2) * Math.cos(a) };
   return (
     <g pointerEvents="none">
       <polygon
@@ -948,7 +976,7 @@ function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; lab
           style={{ cursor: 'nwse-resize' }}
         />
       ))}
-      <line x1={cx} y1={cy - r.h / 2} x2={rotHandle.x} y2={rotHandle.y} stroke="#2f6f3e" strokeWidth={1.4} vectorEffect="non-scaling-stroke" transform={r.rot ? `rotate(${r.rot} ${cx} ${cy})` : undefined} />
+      <line x1={rotStem.x} y1={rotStem.y} x2={rotHandle.x} y2={rotHandle.y} stroke="#2f6f3e" strokeWidth={1.4} vectorEffect="non-scaling-stroke" />
       <circle
         data-handle="rot"
         cx={rotHandle.x}

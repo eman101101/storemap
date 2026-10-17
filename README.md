@@ -243,8 +243,9 @@ included:
 3. First boot with an empty database seeds the demo maps automatically
    (`SEED_DEMO=false` to skip). Sign in via **Open the demo maps** and edit.
 
-See [docs/HOSTING-RAILWAY.md](docs/HOSTING-RAILWAY.md) for the full
-Vercel-style walkthrough.
+Step-by-step tutorials for Railway, Fly, Render and a VPS + Cloudflare
+tunnel: [docs/TUTORIAL-SELF-HOST.md](docs/TUTORIAL-SELF-HOST.md).
+Railway specifics: [docs/HOSTING-RAILWAY.md](docs/HOSTING-RAILWAY.md).
 
 ### Health check
 

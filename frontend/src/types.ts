@@ -27,6 +27,8 @@ export interface Store {
   is_public: boolean;
   /** 'free' | 'pro' — pro unlocks paid-tier features on hosted instances. */
   plan: string;
+  /** Canonical public link (server-built from PUBLIC_BASE_URL) — QR codes encode this. */
+  shareUrl?: string;
   entitlements?: { productImages: boolean };
   created_at: string;
   updated_at: string;

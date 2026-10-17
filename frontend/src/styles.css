@@ -466,7 +466,7 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 
 /* ---------- Editor: outline / multi-select / csv / warnings ---------- */
 .multi-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-.outline-list { margin-top: 8px; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.outline-list { margin-top: 8px; max-height: max(240px, calc(100dvh - 340px)); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px; }
 .outline-row { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .outline-row.locked { background: var(--chip); }
 .outline-pick {
@@ -691,3 +691,25 @@ html[data-mode='dark'] .floor-tab.active { border-color: #33503a; }
 html[data-mode='dark'] .modal-backdrop { background: rgba(0, 0, 0, 0.62); }
 html[data-mode='dark'] .route-casing { stroke: #10140f; }
 html[data-mode='dark'] .store-status.live { color: #6cc180; }
+
+/* ---------- Editor controls card (2D / 3D) ---------- */
+.controls-btn {
+  position: absolute; top: 10px; right: 12px; z-index: 6;
+  box-shadow: var(--shadow); font-size: 12px; padding: 6px 10px;
+}
+.controls-card {
+  position: absolute; top: 46px; right: 12px; z-index: 7;
+  width: 320px; max-width: calc(100% - 24px);
+  padding: 12px 14px; box-shadow: 0 14px 40px rgba(0,0,0,0.18);
+  animation: fadeIn 0.12s ease;
+}
+.controls-row {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 5px 0; border-bottom: 1px solid var(--line);
+  font-size: 12.5px; color: var(--ink);
+}
+.controls-row:last-child { border-bottom: none; }
+.controls-row code {
+  flex-shrink: 0; min-width: 118px; font-size: 11px;
+  background: var(--chip); border-radius: 6px; padding: 2px 6px;
+}

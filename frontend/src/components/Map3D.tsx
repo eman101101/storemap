@@ -117,6 +117,8 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const pinch = useRef<{ dist: number; startDist: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
   // 3D edit drag: which fixture, where the pointer grabbed the floor plane
   const elDrag = useRef<{ id: string; startFloor: WorldPt; began: boolean; moved: boolean; lastDx: number; lastDy: number } | null>(null);
+  // middle-mouse ground pan (same math as the two-finger pan)
+  const midPan = useRef<{ sx: number; sy: number; tx: number; ty: number; yaw: number } | null>(null);
   const camRef = useRef(cam);
   camRef.current = cam;
   const floorRef = useRef(floor);
@@ -384,6 +386,17 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     });
   }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme, edit, selectedId, hoverPick]);
 
+  // middle-click autoscroll guard — pointerdown preventDefault can't stop it
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const guard = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    el.addEventListener('mousedown', guard);
+    return () => el.removeEventListener('mousedown', guard);
+  }, []);
+
   // wheel zoom (non-passive so preventDefault works)
   useEffect(() => {
     const el = canvasRef.current;
@@ -411,6 +424,14 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       canvasRef.current?.setPointerCapture(e.pointerId);
     } catch {
       // synthetic/untracked pointer — capture is best-effort
+    }
+    // middle mouse: pan the camera target (preventDefault stops autoscroll via the matching mousedown guard)
+    if (e.button === 1) {
+      e.preventDefault();
+      midPan.current = { sx: e.clientX, sy: e.clientY, tx: cam.tx, ty: cam.ty, yaw: cam.yaw };
+      stopFlySignal();
+      tweenSignal.current.cancelled = true;
+      return;
     }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     stopFlySignal();
@@ -453,6 +474,19 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // middle-mouse pan runs regardless of pointer bookkeeping
+    const mp = midPan.current;
+    if (mp) {
+      const dxs = e.clientX - mp.sx;
+      const dys = e.clientY - mp.sy;
+      const k = camRef.current.dist * 0.0016;
+      const rx = Math.cos(mp.yaw);
+      const ry = -Math.sin(mp.yaw);
+      const ux = Math.sin(mp.yaw);
+      const uy = Math.cos(mp.yaw);
+      setCam({ ...camRef.current, tx: mp.tx - (rx * dxs + ux * dys) * k, ty: mp.ty - (ry * dxs + uy * dys) * k });
+      return;
+    }
     if (!pointers.current.has(e.pointerId)) {
       // hover (no buttons): aisle symbol tooltip in viewer, move-cursor in edit
       if (pointers.current.size === 0 && !drag.current && !elDrag.current && !flying) {
@@ -541,6 +575,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   };
 
   const endPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button === 1) midPan.current = null;
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
     // finish an element drag
@@ -596,7 +631,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         ref={canvasRef}
         style={{
           width: '100%', height: '100%', display: 'block', touchAction: 'none',
-          cursor: drag.current || elDrag.current ? 'grabbing' : hoverPick && edit ? 'move' : hoverShelf && onElementClick ? 'pointer' : hoverAisle ? 'pointer' : 'grab',
+          cursor: drag.current || elDrag.current || midPan.current ? 'grabbing' : hoverPick && edit ? 'move' : hoverShelf && onElementClick ? 'pointer' : hoverAisle ? 'pointer' : 'grab',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
