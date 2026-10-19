@@ -102,7 +102,7 @@ export default function Landing() {
             <Link to="/s/freshmart-downtown" className="btn">
               ▶ See the live demo
             </Link>
-            <a href="https://github.com/eman101101/storemap/tree/cloudflare-deploy" target="_blank" rel="noreferrer" className="btn">
+            <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer" className="btn">
               🖥 Host your own
             </a>
           </div>
@@ -165,7 +165,7 @@ export default function Landing() {
         )}
       </section>
 
-      <footer className="footer">StoreMap — in-store navigation for humans. · <a href="https://github.com/eman101101/storemap/tree/cloudflare-deploy" target="_blank" rel="noreferrer">Self-host your own</a></footer>
+      <footer className="footer">StoreMap — in-store navigation for humans. · <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Self-host your own</a></footer>
     </main>
   );
 }

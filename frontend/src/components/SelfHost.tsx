@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 
 /**
  * The main-branch version of the self-host page: an overview that links to the
- * `cloudflare-deploy` branch, where the up-to-date local-host steps, the
+ * ``storemaplocal` repo, where the up-to-date local-host steps, the
  * Cloudflare Workers port and the one-click deploy live.
  */
 
 const REPO = 'https://github.com/eman101101/storemap';
-const BRANCH = `${REPO}/tree/cloudflare-deploy`;
+const BRANCH = "https://github.com/eman101101/storemaplocal";
 
 function BranchCard({ href, num, title, children }: { href: string; num: string; title: string; children: ReactNode }) {
   return (
@@ -16,7 +16,7 @@ function BranchCard({ href, num, title, children }: { href: string; num: string;
       <span className="num">{num}</span>
       <b>{title}</b>
       <span>{children}</span>
-      <span className="tut-branch-cta">Open on the cloudflare-deploy branch →</span>
+      <span className="tut-branch-cta">Open the storemaplocal repo →</span>
     </a>
   );
 }
@@ -40,7 +40,7 @@ export default function SelfHost() {
           <b>Heads-up:</b> the newest self-hosting code — the current local-host steps and the
           Cloudflare Workers deployment (D1 + R2, one-click deploy button) — lives on the{' '}
           <a href={BRANCH} target="_blank" rel="noreferrer">
-            <code>cloudflare-deploy</code> branch
+            <code>storemaplocal</code> repo
           </a>
           . The options below link straight to it; merge it into <code>main</code> when you're ready
           to make them official.
@@ -76,7 +76,7 @@ export default function SelfHost() {
           <p>
             Every self-hosted instance includes the paid-tier features. Three ways to sign in —
             all documented on the{' '}
-            <a href={BRANCH} target="_blank" rel="noreferrer">cloudflare-deploy branch</a>:
+            <a href={BRANCH} target="_blank" rel="noreferrer">storemaplocal repo</a>:
           </p>
           <div className="tut-callout">
             <ul>
@@ -89,7 +89,7 @@ export default function SelfHost() {
 
         <footer className="tut-foot">
           Source: <a href={REPO} target="_blank" rel="noreferrer">github.com/eman101101/storemap</a> ·{' '}
-          feature branch: <a href={BRANCH} target="_blank" rel="noreferrer">cloudflare-deploy</a>.
+          self-host edition: <a href={BRANCH} target="_blank" rel="noreferrer">storemaplocal</a>.
           <div className="hero-actions" style={{ marginTop: 18 }}>
             <Link to="/" className="btn primary">Browse the demo maps</Link>
             <Link to="/login" className="btn">Sign in and build your map</Link>
