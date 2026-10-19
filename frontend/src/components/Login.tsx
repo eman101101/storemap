@@ -103,7 +103,7 @@ export default function Login() {
         {!providers.google && !providers.apple && (
           <p className="muted" style={{ fontSize: 12.5 }}>
             Google &amp; Apple sign-in activate automatically once OAuth credentials are configured
-            on the server (see README.md).
+            on the server. Self-hosting? The <a href="https://github.com/eman101101/storemap/tree/cloudflare-deploy" target="_blank" rel="noreferrer">self-host guide</a> has the recipes.
           </p>
         )}
 
