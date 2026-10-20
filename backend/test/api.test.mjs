@@ -426,3 +426,48 @@ test('upload endpoint validates content type and magic bytes', async () => {
   });
   assert.equal(wrongType.status, 400);
 });
+
+test('search: FTS5 index — prefix, category, updates stay in sync', async () => {
+  const cookie = await loginAs('fts@example.com');
+  const { body } = await call('/api/stores', { method: 'POST', cookie, body: { name: 'FTS Market' } });
+  const storeId = body.store.id;
+  await call(`/api/stores/${storeId}`, { method: 'PATCH', cookie, body: { is_public: true } });
+  const cat = await call(`/api/stores/${storeId}/categories`, {
+    method: 'POST', cookie, body: { name: 'Fromage', color: '#3b6fd4' },
+  });
+  const p1 = await call(`/api/stores/${storeId}/products`, {
+    method: 'POST', cookie, body: { name: 'Crème Fraîche', brand: 'Normandie', sku: 'CFT-1' },
+  });
+  const p2 = await call(`/api/stores/${storeId}/products`, {
+    method: 'POST', cookie, body: { name: 'Cheddar Block', brand: 'Meadow', category_id: cat.body.category.id },
+  });
+  const search = (q) => call(`/api/public/stores/fts-market/search?q=${encodeURIComponent(q)}`);
+
+  // word-prefix match (the FTS path) and diacritics folding
+  assert.equal((await search('fra')).body.results.length, 1);
+  assert.equal((await search('creme')).body.results[0]?.name, 'Crème Fraîche');
+  // brand and sku columns are indexed too
+  assert.equal((await search('normandie')).body.results.length, 1);
+  assert.equal((await search('cft')).body.results.length, 1);
+  // category names are denormalized into the index
+  assert.equal((await search('fromage')).body.results.length, 1);
+  assert.equal((await search('fromage')).body.results[0]?.name, 'Cheddar Block');
+
+  // product renames flow through the update trigger
+  await call(`/api/products/${p1.body.product.id}`, {
+    method: 'PATCH', cookie, body: { name: 'Kefir 1L' },
+  });
+  assert.equal((await search('fra')).body.results.length, 0, 'old name no longer matches');
+  assert.equal((await search('kef')).body.results.length, 1, 'new name matches');
+
+  // category rename triggers a store reindex
+  await call(`/api/categories/${cat.body.category.id}`, {
+    method: 'PATCH', cookie, body: { name: 'Cheese' },
+  });
+  assert.equal((await search('cheese')).body.results.length, 1, 'renamed category matches');
+  assert.equal((await search('fromage')).body.results.length, 0, 'old category name is gone');
+
+  // deletes leave the index
+  await call(`/api/products/${p2.body.product.id}`, { method: 'DELETE', cookie });
+  assert.equal((await search('cheddar')).body.results.length, 0);
+});
