@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { api } from '../api';
 import { useAuth } from '../App';
 import { Modal, Field } from './ui';
+import { TeamModal } from './Team';
 import type { StoreSummary } from '../types';
 
 /** Stable per-store accent color for the card header strip. */
@@ -15,6 +16,7 @@ export default function Dashboard() {
   const [stores, setStores] = useState<StoreSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [qrStore, setQrStore] = useState<StoreSummary | null>(null);
+  const [teamStore, setTeamStore] = useState<StoreSummary | null>(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,7 +94,7 @@ export default function Dashboard() {
       ) : (
         <div className="grid-stores">
           {stores.map((s) => (
-            <StoreCard key={s.id} store={s} onChanged={load} onQR={() => setQrStore(s)} />
+            <StoreCard key={s.id} store={s} onChanged={load} onQR={() => setQrStore(s)} onTeam={() => setTeamStore(s)} />
           ))}
         </div>
       )}
@@ -107,11 +109,12 @@ export default function Dashboard() {
         />
       )}
       {qrStore && <QrModal store={qrStore} onClose={() => setQrStore(null)} />}
+      {teamStore && <TeamModal storeId={teamStore.id} onClose={() => setTeamStore(null)} />}
     </main>
   );
 }
 
-function StoreCard({ store, onChanged, onQR }: { store: StoreSummary; onChanged: () => void; onQR: () => void }) {
+function StoreCard({ store, onChanged, onQR, onTeam }: { store: StoreSummary; onChanged: () => void; onQR: () => void; onTeam: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -188,6 +191,7 @@ function StoreCard({ store, onChanged, onQR }: { store: StoreSummary; onChanged:
           >
             {copying ? '…' : '⧉'}
           </button>
+          <button className="btn sm ghost" title="Team — employees & roles" onClick={onTeam}>👥</button>
           <button
             className="btn sm ghost"
             title="Export a transfer file (map, catalog, images) — import it on another StoreMap instance"

@@ -208,6 +208,36 @@ const MIGRATIONS = [
       END;
     `,
   },
+  {
+    // Step 1 — store organization: employees join stores with scoped roles
+    // (INFRASTRUCTURE.md §9). Owners stay implicit via stores.owner_id; these
+    // tables hold everyone else (managers, stock editors, viewers) + invites.
+    name: '007-store-members',
+    sql: `
+      CREATE TABLE IF NOT EXISTS store_members (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('owner','manager','stock','viewer')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (store_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_members_store ON store_members(store_id);
+      CREATE INDEX IF NOT EXISTS idx_members_user ON store_members(user_id);
+
+      CREATE TABLE IF NOT EXISTS invitations (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('manager','stock','viewer')),
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        accepted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_invitations_store ON invitations(store_id);
+    `,
+  },
 ];
 
 export function migrate() {

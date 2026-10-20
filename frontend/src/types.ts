@@ -134,8 +134,19 @@ export interface ProductLocation {
   meta: string;
 }
 
+export type MemberRole = 'owner' | 'manager' | 'stock' | 'viewer';
+
+export interface StoreMember {
+  user_id: string;
+  email: string;
+  name: string;
+  role: MemberRole;
+  joined_at?: string;
+}
+
 export interface StoreFull {
   store: Store;
+  role?: MemberRole;
   floors: Floor[];
   elements: MapElementRow[];
   categories: Category[];

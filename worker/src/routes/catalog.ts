@@ -9,6 +9,7 @@ import { ownedStore, ownedFloor, touchStore } from '../ownership';
 import { productImagesEnabled } from '../entitlements';
 import { saveImage } from '../storage';
 import { reindexStoreFts } from '../search';
+import { roleForStore } from '../members';
 
 const app = new Hono<AppEnv>();
 
@@ -32,7 +33,7 @@ async function ownedCategory(c: any, env: Env, id: unknown): Promise<Record<stri
     'SELECT c.*, s.owner_id FROM categories c JOIN stores s ON s.id = c.store_id WHERE c.id = ?',
     String(id)
   );
-  if (!row || row.owner_id !== c.get('user').id) return badRequest(c, 'Category not found');
+  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Category not found');
   return row;
 }
 
@@ -42,7 +43,7 @@ async function ownedProduct(c: any, env: Env, id: unknown): Promise<Record<strin
     'SELECT p.*, s.owner_id FROM products p JOIN stores s ON s.id = p.store_id WHERE p.id = ?',
     String(id)
   );
-  if (!row || row.owner_id !== c.get('user').id) return badRequest(c, 'Product not found');
+  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Product not found');
   return row;
 }
 
@@ -279,7 +280,7 @@ app.delete('/locations/:id', requireAuth, async (c) => {
      JOIN stores s ON s.id = p.store_id WHERE l.id = ?`,
     String(c.req.param('id'))
   );
-  if (!row || row.owner_id !== c.get('user').id) return badRequest(c, 'Location not found');
+  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Location not found');
   await run(env, 'DELETE FROM product_locations WHERE id = ?', row.id);
   return json(c, 200, { ok: true });
 });

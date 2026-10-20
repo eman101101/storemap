@@ -6,6 +6,7 @@ import { handler, sendJson, badRequest, rateLimit } from '../lib/http.js';
 import { str, num } from '../lib/validate.js';
 import { ownedStore, ownedFloor, touchStore } from '../lib/ownership.js';
 import { reindexStoreFts } from '../lib/search.js';
+import { roleForStore } from '../lib/members.js';
 import { productImagesEnabled } from '../lib/entitlements.js';
 import { saveImage } from '../lib/storage.js';
 import { config } from '../config.js';
@@ -39,7 +40,7 @@ function ownedCategory(req, res, id) {
   const row = db
     .prepare('SELECT c.*, s.owner_id FROM categories c JOIN stores s ON s.id = c.store_id WHERE c.id = ?')
     .get(String(id));
-  if (!row || row.owner_id !== req.user.id) {
+  if (!row || !roleForStore(req.user.id, row.store_id)) {
     badRequest(res, 'Category not found');
     return null;
   }
@@ -117,7 +118,7 @@ function ownedProduct(req, res, id) {
   const row = db
     .prepare('SELECT p.*, s.owner_id FROM products p JOIN stores s ON s.id = p.store_id WHERE p.id = ?')
     .get(String(id));
-  if (!row || row.owner_id !== req.user.id) {
+  if (!row || !roleForStore(req.user.id, row.store_id)) {
     badRequest(res, 'Product not found');
     return null;
   }
@@ -255,7 +256,7 @@ router.delete('/locations/:id', requireAuth, handler(async (req, res) => {
               JOIN products p ON p.id = l.product_id
               JOIN stores s ON s.id = p.store_id WHERE l.id = ?`)
     .get(String(req.params.id));
-  if (!row || row.owner_id !== req.user.id) return badRequest(res, 'Location not found');
+  if (!row || !roleForStore(req.user.id, row.store_id)) return badRequest(res, 'Location not found');
   db.prepare('DELETE FROM product_locations WHERE id = ?').run(row.id);
   sendJson(res, 200, { ok: true });
 }));

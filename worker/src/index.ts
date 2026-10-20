@@ -18,6 +18,7 @@ import publicRoutes from './routes/public';
 import uploadRoutes from './routes/uploads';
 import stockRoutes from './routes/stock';
 import { csv, v1 } from './routes/data';
+import memberRoutes from './routes/members';
 import { sitemap, robots, serveSpa } from './seo';
 
 type AppEnvFull = AppEnv & { Variables: { user: any; config: any; store: any; body: any } };
@@ -60,6 +61,7 @@ app.route('/api/floors', floorRoutes);
 app.route('/api/public', publicRoutes);
 app.route('/api/v1', v1);
 app.route('/api', catalogRoutes);
+app.route('/api', memberRoutes); // members + invitations
 app.route('/api/uploads', uploadRoutes);
 
 app.all('/api/*', (c) => json(c, 404, { error: 'Unknown API endpoint' }));

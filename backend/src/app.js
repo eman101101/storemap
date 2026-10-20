@@ -15,6 +15,7 @@ import uploadRoutes from './routes/uploads.js';
 import stockRoutes from './routes/stock.js';
 import integrationRoutes from './routes/integrations.js';
 import v1Routes from './routes/v1.js';
+import memberRoutes from './routes/members.js';
 
 export function createApp() {
   migrate();
@@ -57,6 +58,7 @@ export function createApp() {
   app.use('/api/stores', storeRoutes);
   app.use('/api/stores', stockRoutes);
   app.use('/api/stores', integrationRoutes);
+app.use('/api', memberRoutes); // members + invitations (organizes /api/stores/:id/members & /api/invitations)
   app.use('/api/floors', floorRoutes);
   // public before the catch-all catalog router (which is mounted at /api with auth)
   app.use('/api/public', publicRoutes);

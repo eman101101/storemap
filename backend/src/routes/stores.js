@@ -8,6 +8,7 @@ import { str, num } from '../lib/validate.js';
 import { ownedStore, touchStore } from '../lib/ownership.js';
 import { entitlementsFor } from '../lib/entitlements.js';
 import { buildExportBundle, importBundle, TransferError } from '../lib/transfer.js';
+import { storesForUser, roleForStore } from '../lib/members.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -38,12 +39,12 @@ function storeJson(row) {
 
 // ---- Store CRUD ----
 router.get('/mine', handler(async (req, res) => {
-  const rows = db
-    .prepare(`SELECT s.*,
-      (SELECT COUNT(*) FROM floors f WHERE f.store_id = s.id) AS floor_count,
-      (SELECT COUNT(*) FROM products p WHERE p.store_id = s.id) AS product_count
-      FROM stores s WHERE s.owner_id = ? ORDER BY s.created_at DESC`)
-    .all(req.user.id);
+  // stores the caller owns OR is a member of (employees see their workplace)
+  const rows = storesForUser(req.user.id).map((s) => ({
+    ...s,
+    floor_count: db.prepare('SELECT COUNT(*) c FROM floors WHERE store_id = ?').get(s.id).c,
+    product_count: db.prepare('SELECT COUNT(*) c FROM products WHERE store_id = ?').get(s.id).c,
+  }));
   sendJson(res, 200, { stores: rows.map(storeJson) });
 }));
 
@@ -52,7 +53,7 @@ router.get('/mine', handler(async (req, res) => {
  * local). `?media=0` skips embedding images for a small metadata-only file.
  */
 router.get('/:id/export', requireAuth, handler(async (req, res) => {
-  const store = await ownedStore(req, res, req.params.id);
+  const store = await ownedStore(req, res, req.params.id, 'manager');
   if (!store) return;
   const bundle = buildExportBundle(store, { withMedia: req.query.media !== '0' });
   res.setHeader('Content-Disposition', `attachment; filename="${store.slug}-storemap.json"`);
@@ -97,7 +98,9 @@ router.post('/', handler(async (req, res) => {
 }));
 
 router.get('/:id/full', handler(async (req, res) => {
-  const store = ownedStore(req, res, req.params.id);
+  const store = ownedStore(req, res, req.params.id, 'viewer');
+  if (!store) return;
+  const role = roleForStore(req.user.id, store.id);
   if (!store) return;
   // ETag: editors reopen stores constantly — unchanged data answers 304.
   const counts = db
@@ -134,6 +137,7 @@ router.get('/:id/full', handler(async (req, res) => {
     : [];
   sendJson(res, 200, {
     store: storeJson(store),
+    role,
     floors,
     elements,
     categories,
@@ -143,7 +147,7 @@ router.get('/:id/full', handler(async (req, res) => {
 }));
 
 router.patch('/:id', handler(async (req, res) => {
-  const store = ownedStore(req, res, req.params.id);
+  const store = ownedStore(req, res, req.params.id, 'manager');
   if (!store) return;
   const updates = {};
   for (const field of EDITABLE_FIELDS) {
@@ -175,7 +179,7 @@ router.patch('/:id', handler(async (req, res) => {
 }));
 
 router.delete('/:id', handler(async (req, res) => {
-  const store = ownedStore(req, res, req.params.id);
+  const store = ownedStore(req, res, req.params.id, 'owner');
   if (!store) return;
   db.prepare('DELETE FROM stores WHERE id = ?').run(store.id);
   sendJson(res, 200, { ok: true });
@@ -183,7 +187,7 @@ router.delete('/:id', handler(async (req, res) => {
 
 // ---- Floors ----
 router.post('/:id/floors', handler(async (req, res) => {
-  const store = ownedStore(req, res, req.params.id);
+  const store = ownedStore(req, res, req.params.id, 'manager');
   if (!store) return;
   const name = str(req.body?.name, { max: 80 }) || `Floor ${db.prepare('SELECT COUNT(*) c FROM floors WHERE store_id = ?').get(store.id).c + 1}`;
   const width = num(req.body?.width_m) ?? 40;
@@ -212,7 +216,7 @@ function maybeGeocode(storeId, address) {
  * Publish state is NOT copied — clones start as drafts.
  */
 router.post('/:id/duplicate', handler(async (req, res) => {
-  const store = ownedStore(req, res, req.params.id);
+  const store = ownedStore(req, res, req.params.id, 'manager');
   if (!store) return;
   const name = str(req.body?.name, { max: 100, allowEmpty: false }) || `${store.name} (copy)`;
   const cloneId = newId();

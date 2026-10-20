@@ -1,4 +1,4 @@
-import type {
+import type { StoreMember, MemberRole,
   AuthInfo, Category, Floor, MapElementRow, Product, ProductLocation, PublicStorePayload,
   Store, StoreFull, StoreSummary, StockRow, StockMovement, ApiKeyRow,
 } from './types';
@@ -72,6 +72,22 @@ export const api = {
   /** Restore a transfer bundle as a new draft store on this instance. */
   importStore: (file: File) =>
     request<{ store: Store }>('/api/stores/import', { method: 'POST', body: file }),
+
+  // Team (store organization)
+  members: (storeId: string) =>
+    request<{ members: StoreMember[]; role: MemberRole }>(`/api/stores/${storeId}/members`),
+  inviteMember: (storeId: string, email: string, role: string) =>
+    request<{ inviteUrl: string; role: string; email: string }>(`/api/stores/${storeId}/members/invite`, {
+      method: 'POST', body: json({ email, role }),
+    }),
+  updateMemberRole: (storeId: string, userId: string, role: string) =>
+    request<{ ok: true }>(`/api/stores/${storeId}/members/${userId}`, { method: 'PATCH', body: json({ role }) }),
+  removeMember: (storeId: string, userId: string) =>
+    request<{ ok: true }>(`/api/stores/${storeId}/members/${userId}`, { method: 'DELETE' }),
+  invitationInfo: (token: string) =>
+    request<{ invitation: { storeName: string; role: string; email: string } }>(`/api/invitations/${token}`),
+  acceptInvitation: (token: string) =>
+    request<{ storeId: string; role: string }>(`/api/invitations/${token}/accept`, { method: 'POST' }),
   myStores: () => request<{ stores: StoreSummary[] }>('/api/stores/mine'),
   createStore: (body: Partial<Store>) =>
     request<{ store: Store }>('/api/stores', { method: 'POST', body: json(body) }),

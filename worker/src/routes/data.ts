@@ -25,7 +25,7 @@ csv.post('/:storeId/integrations/csv', async (c) => {
   if (!rows.length) return badRequest(c, 'No rows found in CSV (need a header row with name/sku columns)');
   let imported = 0;
   for (const row of rows) {
-    const result = await upsertProduct(env, store.id, row, { source: 'sync:csv' });
+    const result = await upsertProduct(env, String(store.id), row, { source: 'sync:csv' });
     if (result) imported += 1;
   }
   return json(c, 200, { imported, total: rows.length });
@@ -73,7 +73,7 @@ v1.use('*', async (c, next) => {
 
 v1.get('/store', (c) => {
   const store = c.get('store');
-  return json(c, 200, { store: { id: store.id, name: store.name, slug: store.slug } });
+  return json(c, 200, { store: { id: String(store.id), name: store.name, slug: store.slug } });
 });
 
 v1.get('/products', async (c) => {
@@ -117,9 +117,9 @@ async function resolveProduct(c: any, env: Env): Promise<string | null> {
   c.set('body', b ?? {});
   const store = c.get('store');
   let row = null;
-  if (b?.product_id) row = await first(env, 'SELECT id FROM products WHERE id = ? AND store_id = ?', String(b.product_id), store.id);
-  if (!row && b?.sku) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND sku = ?', store.id, String(b.sku));
-  if (!row && b?.barcode) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND barcode = ?', store.id, String(b.barcode));
+  if (b?.product_id) row = await first(env, 'SELECT id FROM products WHERE id = ? AND store_id = ?', String(b.product_id), String(store.id));
+  if (!row && b?.sku) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND sku = ?', String(store.id), String(b.sku));
+  if (!row && b?.barcode) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND barcode = ?', String(store.id), String(b.barcode));
   if (!row) {
     badRequest(c, 'Unknown product: pass product_id, sku or barcode');
     return null;

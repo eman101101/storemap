@@ -6,6 +6,7 @@ import { ThemeProvider } from './theme';
 import Landing from './components/Landing';
 import Login from './components/Login';
 import SelfHost from './components/SelfHost';
+import InviteAcceptPage from './components/Team';
 import Dashboard from './components/Dashboard';
 import EditorPage from './components/EditorPage';
 import StockPage from './components/StockPage';
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/self-host" element={<SelfHost />} />
+            <Route path="/invite/:token" element={<InviteAcceptPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/stores/:storeId" element={<EditorPage />} />
             <Route path="/dashboard/stores/:storeId/stock" element={<StockPage />} />

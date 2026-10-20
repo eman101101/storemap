@@ -8,6 +8,7 @@ import { str, num } from '../validate';
 import { ownedStore, touchStore } from '../ownership';
 import { entitlementsFor } from '../entitlements';
 import { buildExportBundle, importBundle, TransferError } from '../transfer';
+import { storesForUser, roleForStore } from '../members';
 
 const app = new Hono<AppEnv>();
 
@@ -43,14 +44,14 @@ function storeJson(c: any, row: Record<string, unknown>) {
 
 app.get('/mine', async (c) => {
   const env = c.env as Env;
-  const rows = await all(
-    env,
-    `SELECT s.*,
-      (SELECT COUNT(*) FROM floors f WHERE f.store_id = s.id) AS floor_count,
-      (SELECT COUNT(*) FROM products p WHERE p.store_id = s.id) AS product_count
-      FROM stores s WHERE s.owner_id = ? ORDER BY s.created_at DESC`,
-    c.get('user').id
-  );
+  // stores the caller owns OR is a member of (employees see their workplace)
+  const owned = await storesForUser(env, c.get('user').id);
+  const rows = [];
+  for (const s of owned) {
+    const f = await first(env, 'SELECT COUNT(*) c FROM floors WHERE store_id = ?', s.id);
+    const p = await first(env, 'SELECT COUNT(*) c FROM products WHERE store_id = ?', s.id);
+    rows.push({ ...s, floor_count: f?.c ?? 0, product_count: p?.c ?? 0 });
+  }
   return json(c, 200, { stores: rows.map((r) => storeJson(c, r)) });
 });
 
@@ -60,7 +61,7 @@ app.get('/mine', async (c) => {
  */
 app.get('/:id/export', async (c) => {
   const env = c.env as Env;
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'manager');
   if (store instanceof Response) return store;
   const bundle = await buildExportBundle(env, store, c.req.query('media') !== '0');
   c.header('Content-Disposition', `attachment; filename="${store.slug}-storemap.json"`);
@@ -103,7 +104,7 @@ app.post('/', async (c) => {
 
 app.get('/:id/full', async (c) => {
   const env = c.env as Env;
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'viewer');
   if (store instanceof Response) return store;
   // ETag: editors reopen stores constantly — unchanged data answers 304.
   const counts = await first(
@@ -142,13 +143,14 @@ app.get('/:id/full', async (c) => {
         store.id
       )
     : [];
-  return json(c, 200, { store: storeJson(c, store), floors, elements, categories, products, locations });
+  const role = await roleForStore(env, c.get('user').id, String(store.id));
+  return json(c, 200, { store: storeJson(c, store), role, floors, elements, categories, products, locations });
 });
 
 app.patch('/:id', async (c) => {
   const env = c.env as Env;
   const cfg = c.get('config');
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'manager');
   if (store instanceof Response) return store;
   const body = await c.req.json().catch(() => ({}));
   const updates: Record<string, unknown> = {};
@@ -162,6 +164,8 @@ app.patch('/:id', async (c) => {
   if (body?.is_public !== undefined) updates.is_public = body.is_public ? 1 : 0;
   // Plan changes are self-serve in local mode; hosted instances get them from billing.
   if (body?.plan !== undefined) {
+    if ((await roleForStore(env, c.get('user').id, String(store.id))) !== 'owner')
+      return json(c, 403, { error: 'Only the owner manages the plan' });
     if (!cfg.selfHosted) return json(c, 402, { error: 'Plan changes are managed by billing on hosted instances' });
     const plan = String(body.plan);
     if (!['free', 'pro'].includes(plan)) return badRequest(c, 'Invalid plan');
@@ -179,7 +183,7 @@ app.patch('/:id', async (c) => {
 
 app.delete('/:id', async (c) => {
   const env = c.env as Env;
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'owner');
   if (store instanceof Response) return store;
   await run(env, 'DELETE FROM stores WHERE id = ?', store.id);
   return json(c, 200, { ok: true });
@@ -189,7 +193,7 @@ app.delete('/:id', async (c) => {
 
 app.post('/:id/floors', async (c) => {
   const env = c.env as Env;
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'manager');
   if (store instanceof Response) return store;
   const body = await c.req.json().catch(() => ({}));
   const floorCount = await first(env, 'SELECT COUNT(*) c FROM floors WHERE store_id = ?', store.id);
@@ -210,7 +214,7 @@ app.post('/:id/floors', async (c) => {
  */
 app.post('/:id/duplicate', async (c) => {
   const env = c.env as Env;
-  const store = await ownedStore(c, env, c.req.param('id'));
+  const store = await ownedStore(c, env, c.req.param('id'), 'manager');
   if (store instanceof Response) return store;
   const body = await c.req.json().catch(() => ({}));
   const name = str(body?.name, { max: 100, allowEmpty: false }) || `${store.name} (copy)`;

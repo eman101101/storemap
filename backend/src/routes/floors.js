@@ -10,7 +10,7 @@ router.use(requireAuth);
 
 /** PATCH /api/floors/:floorId — rename, resize, set background image. */
 router.patch('/:floorId', handler(async (req, res) => {
-  const floor = ownedFloor(req, res, req.params.floorId);
+  const floor = ownedFloor(req, res, req.params.floorId, 'manager');
   if (!floor) return;
   const updates = {};
   if (req.body?.name !== undefined) {
@@ -44,7 +44,7 @@ router.patch('/:floorId', handler(async (req, res) => {
 }));
 
 router.delete('/:floorId', handler(async (req, res) => {
-  const floor = ownedFloor(req, res, req.params.floorId);
+  const floor = ownedFloor(req, res, req.params.floorId, 'manager');
   if (!floor) return;
   const count = db.prepare('SELECT COUNT(*) c FROM floors WHERE store_id = ?').get(floor.store_id).c;
   if (count <= 1) return badRequest(res, 'A store must keep at least one floor');
@@ -59,7 +59,7 @@ router.delete('/:floorId', handler(async (req, res) => {
  */
 router.put('/:floorId/elements', handler(async (req, res) => {
   const startedAt = Date.now(); // Phase-B trigger metric (INFRA §5): p95 autosave > 500 ms
-  const floor = ownedFloor(req, res, req.params.floorId);
+  const floor = ownedFloor(req, res, req.params.floorId, 'manager');
   if (!floor) return;
   const list = Array.isArray(req.body?.elements) ? req.body.elements : null;
   if (!list) return badRequest(res, 'elements must be an array');
@@ -135,7 +135,7 @@ function maybeSnapshot(floorId, rows) {
 
 /** GET /api/floors/:floorId/snapshots — the changelog list (newest first). */
 router.get('/:floorId/snapshots', handler(async (req, res) => {
-  const floor = ownedFloor(req, res, req.params.floorId);
+  const floor = ownedFloor(req, res, req.params.floorId, 'viewer');
   if (!floor) return;
   const snapshots = db
     .prepare('SELECT id, element_count, created_at_ms FROM floor_snapshots WHERE floor_id = ? ORDER BY created_at_ms DESC')
@@ -145,7 +145,7 @@ router.get('/:floorId/snapshots', handler(async (req, res) => {
 
 /** GET /api/floors/:floorId/snapshots/:snapId — full elements of one autosave. */
 router.get('/:floorId/snapshots/:snapId', handler(async (req, res) => {
-  const floor = ownedFloor(req, res, req.params.floorId);
+  const floor = ownedFloor(req, res, req.params.floorId, 'viewer');
   if (!floor) return;
   const row = db
     .prepare('SELECT * FROM floor_snapshots WHERE id = ? AND floor_id = ?')

@@ -531,3 +531,77 @@ test('transfer: export → import round trip (catalog, pins, elements, stock, me
   const bad = await call('/api/stores/import', { method: 'POST', cookie: bob, body: { hello: 1 } });
   assert.equal(bad.status, 400);
 });
+
+test('employees: invite → accept → scoped role enforcement', async () => {
+  const owner = await loginAs('owner-shop@example.com');
+  const { body } = await call('/api/stores', { method: 'POST', cookie: owner, body: { name: 'Team Mart' } });
+  const storeId = body.store.id;
+  const floorId = (await call(`/api/stores/${storeId}/full`, { cookie: owner })).body.floors[0].id;
+  await call(`/api/stores/${storeId}/products`, {
+    method: 'POST', cookie: owner, body: { name: 'Staff Cola', sku: 'STF-1' },
+  });
+  const prodId = (await call(`/api/stores/${storeId}/full`, { cookie: owner })).body.products[0].id;
+
+  // invite a stock-role employee
+  const invite = await call(`/api/stores/${storeId}/members/invite`, {
+    method: 'POST', cookie: owner, body: { email: 'Employee@Shop.com', role: 'stock' },
+  });
+  assert.equal(invite.status, 201);
+  const token = invite.body.inviteUrl.split('/invite/')[1];
+
+  // preview works without auth; wrong-email user cannot accept
+  const preview = await call(`/api/invitations/${token}`);
+  assert.equal(preview.body.invitation.storeName, 'Team Mart');
+  assert.equal(preview.body.invitation.role, 'stock');
+  const stranger = await loginAs('stranger@example.com');
+  const wrong = await call(`/api/invitations/${token}/accept`, { method: 'POST', cookie: stranger });
+  assert.equal(wrong.status, 403);
+
+  // the invited email accepts (dev-login creates the user with that email)
+  const employee = await loginAs('employee@shop.com');
+  const accept = await call(`/api/invitations/${token}/accept`, { method: 'POST', cookie: employee });
+  assert.equal(accept.status, 200);
+  assert.equal(accept.body.role, 'stock');
+
+  // token is single-use
+  const replay = await call(`/api/invitations/${token}/accept`, { method: 'POST', cookie: employee });
+  assert.equal(replay.status, 404);
+
+  // employee sees the store in /mine and /full (viewer+), with their role
+  const mine = await call('/api/stores/mine', { cookie: employee });
+  assert.ok(mine.body.stores.some((s) => s.slug === 'team-mart'));
+  const full = await call(`/api/stores/${storeId}/full`, { cookie: employee });
+  assert.equal(full.body.role, 'stock');
+
+  // stock role CAN adjust stock and edit a product…
+  const adj = await call(`/api/stores/${storeId}/stock/adjust`, {
+    method: 'POST', cookie: employee, body: { product_id: prodId, delta: 5 },
+  });
+  assert.equal(adj.status, 200);
+  const patch = await call(`/api/products/${prodId}`, {
+    method: 'PATCH', cookie: employee, body: { price: 1.5 },
+  });
+  assert.equal(patch.status, 200);
+
+  // …but CANNOT edit the map, invite, or delete the store
+  const els = await call(`/api/floors/${floorId}/elements`, {
+    method: 'PUT', cookie: employee,
+    body: { elements: [{ type: 'shelf', shape: 'rect', geometry: { x: 1, y: 1, w: 2, h: 1 } }] },
+  });
+  assert.equal(els.status, 404, 'map editing requires manager');
+  const inv2 = await call(`/api/stores/${storeId}/members/invite`, {
+    method: 'POST', cookie: employee, body: { email: 'x@y.com', role: 'viewer' },
+  });
+  assert.equal(inv2.status, 404, 'stock cannot invite');
+  const del = await call(`/api/stores/${storeId}`, { method: 'DELETE', cookie: employee });
+  assert.equal(del.status, 404, 'only owner deletes');
+
+  // roster lists owner + employee; owner can remove the employee
+  const roster = await call(`/api/stores/${storeId}/members`, { cookie: owner });
+  assert.equal(roster.body.members.length, 2);
+  const empId = roster.body.members.find((m) => m.role === 'stock').user_id;
+  const remove = await call(`/api/stores/${storeId}/members/${empId}`, { method: 'DELETE', cookie: owner });
+  assert.equal(remove.status, 200);
+  const after = await call(`/api/stores/${storeId}/full`, { cookie: employee });
+  assert.equal(after.status, 404, 'removed employee loses access');
+});

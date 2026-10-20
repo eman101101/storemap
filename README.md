@@ -55,6 +55,12 @@ with **Google** or **Apple**.
 - Touch-first: one-finger pan, pinch zoom, two-finger drag to pan the 3D
   camera sideways; fully responsive
 
+**For store owners & their teams** — Google / Apple sign-in
+- **Store organization** — invite employees by email with scoped roles:
+  *manager* (edit maps, catalog, settings), *stock* (adjust stock, edit
+  products — maps stay read-only), *viewer* (read-only). Invite links work
+  48h and only for the invited email; the owner keeps billing & deletion.
+
 **For store owners** — Google / Apple sign-in
 - Guided map editor with a **pick filter** — *Fixtures* selects shelves/walls/zones,
   *Products* selects and drags product pins without ever grabbing the floor or walls
