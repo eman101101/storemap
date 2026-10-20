@@ -810,3 +810,5 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 
 /* main-branch self-host page: branch-link call-to-action inside path cards */
 .tut-branch-cta { color: var(--green); font-weight: 600; font-size: 13px; margin-top: 6px; }
+
+.page-head-actions { display: flex; gap: 8px; align-items: center; }
