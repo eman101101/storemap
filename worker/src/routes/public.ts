@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../config';
 import { all, first, run } from '../db';
 import { json, badRequest } from '../http';
+import { cachedJson } from '../cache';
 import { ftsExpression } from '../search';
 
 const app = new Hono<AppEnv>();
@@ -72,11 +73,15 @@ async function publicStorePayload(env: Env, slug: string) {
 app.get('/stores/:slug', async (c) => {
   const env = c.env as Env;
   const slug = String(c.req.param('slug')).slice(0, 120);
-  const payload = await publicStorePayload(env, slug);
-  if (!payload) return json(c, 404, { error: 'Store not found' });
-  // owner-facing view counter — incremented per origin hit
-  await run(env, 'UPDATE stores SET views = views + 1 WHERE id = ?', payload.store.id);
-  return json(c, 200, payload);
+  // Edge-cached (5 min, purged on edit — see src/cache.ts): repeat shopper
+  // loads never touch D1. The view counter below therefore counts origin
+  // hits only, which keeps it a stable relative signal.
+  return cachedJson(c, `/api/public/stores/${slug}`, async () => {
+    const payload = await publicStorePayload(env, slug);
+    if (!payload) return json(c, 404, { error: 'Store not found' });
+    await run(env, 'UPDATE stores SET views = views + 1 WHERE id = ?', payload.store.id);
+    return json(c, 200, payload);
+  });
 });
 
 const SEARCH_FIELDS = ['p.name', 'p.brand', 'p.sku', 'p.barcode'];

@@ -190,7 +190,12 @@ along with sign-in options (demo login, Google/Apple OAuth, Cloudflare Access).
 
 ## Deploying online
 
-**Fastest path (Stage 0, ~15 min of account setup):** follow
+**Cloudflare Workers (recommended — free tier, ~20 min):** follow the ordered
+runbook in [docs/DEPLOY-CLOUDFLARE.md](docs/DEPLOY-CLOUDFLARE.md) — one-click
+deploy (D1 + R2 + edge assets provisioned automatically), then lock-down,
+sign-in, custom domain and rate limiting.
+
+**Fly.io alternative (Stage 0, ~15 min):** follow
 [docs/DEPLOY.md](docs/DEPLOY.md) — Fly.io + Cloudflare (free CDN) + R2 media and
 backups, ≈$6–8/month at launch. The scale plan behind it lives in
 [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md).

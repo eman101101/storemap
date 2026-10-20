@@ -42,7 +42,7 @@ app.patch('/:floorId', async (c) => {
   const keys = Object.keys(updates);
   if (keys.length) {
     await run(env, `UPDATE floors SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => updates[k]), floor.id);
-    await touchStore(env, floor.store_id as string);
+    await touchStore(c, env, floor.store_id as string);
   }
   return json(c, 200, { floor: await first(env, 'SELECT * FROM floors WHERE id = ?', floor.id) });
 });
@@ -54,7 +54,7 @@ app.delete('/:floorId', async (c) => {
   const cnt = await first(env, 'SELECT COUNT(*) c FROM floors WHERE store_id = ?', floor.store_id);
   if (Number(cnt?.c ?? 0) <= 1) return badRequest(c, 'A store must keep at least one floor');
   await run(env, 'DELETE FROM floors WHERE id = ?', floor.id);
-  await touchStore(env, floor.store_id as string);
+  await touchStore(c, env, floor.store_id as string);
   return json(c, 200, { ok: true });
 });
 
@@ -88,7 +88,7 @@ app.put('/:floorId/elements', async (c) => {
   for (let i = 0; i < statements.length; i += 50) {
     await env.DB.batch(statements.slice(i, i + 50));
   }
-  await touchStore(env, floor.store_id as string);
+  await touchStore(c, env, floor.store_id as string);
   await maybeSnapshot(env, String(floor.id), rows);
   const elements = await all(env, 'SELECT * FROM map_elements WHERE floor_id = ? ORDER BY z_index ASC, rowid ASC', String(floor.id));
   return json(c, 200, { elements });

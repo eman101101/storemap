@@ -93,7 +93,7 @@ app.delete('/categories/:id', requireAuth, async (c) => {
   if (cat instanceof Response) return cat;
   await run(env, 'DELETE FROM categories WHERE id = ?', cat.id);
   await reindexStoreFts(env, cat.store_id as string); // FK SET NULL bypasses triggers
-  await touchStore(env, cat.store_id as string);
+  await touchStore(c, env, cat.store_id as string);
   return json(c, 200, { ok: true });
 });
 
@@ -128,7 +128,7 @@ app.post('/stores/:storeId/products', requireAuth, async (c) => {
     price, str(body?.image_url, { max: 400 })
   );
   const product = productJson((await first(env, PRODUCT_JOIN, id))!);
-  await touchStore(env, store.id);
+  await touchStore(c, env, store.id);
   return json(c, 201, { product });
 });
 
@@ -173,7 +173,7 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
     throw err;
   }
   await run(env, 'UPDATE products SET image_url = ? WHERE id = ?', url, product.id);
-  await touchStore(env, product.store_id as string);
+  await touchStore(c, env, product.store_id as string);
   return json(c, 200, { url, product: productJson((await first(env, PRODUCT_JOIN, product.id))!) });
 });
 
@@ -186,7 +186,7 @@ app.delete('/products/:id/image', requireAuth, async (c) => {
   if (!productImagesEnabled(cfg, store as { plan?: string }))
     return json(c, 402, { error: 'Product photos are a paid feature', upgrade: true });
   await run(env, 'UPDATE products SET image_url = "" WHERE id = ?', product.id);
-  await touchStore(env, product.store_id as string);
+  await touchStore(c, env, product.store_id as string);
   return json(c, 200, { ok: true });
 });
 
@@ -224,7 +224,7 @@ app.patch('/products/:id', requireAuth, async (c) => {
   }
   const keys = Object.keys(updates);
   if (keys.length) {
-    await touchStore(env, product.store_id as string);
+    await touchStore(c, env, product.store_id as string);
     await run(
       env,
       `UPDATE products SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
@@ -240,7 +240,7 @@ app.delete('/products/:id', requireAuth, async (c) => {
   const product = await ownedProduct(c, env, c.req.param('id'));
   if (product instanceof Response) return product;
   await run(env, 'DELETE FROM products WHERE id = ?', product.id);
-  await touchStore(env, product.store_id as string);
+  await touchStore(c, env, product.store_id as string);
   return json(c, 200, { ok: true });
 });
 

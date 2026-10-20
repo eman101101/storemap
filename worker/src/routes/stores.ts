@@ -174,7 +174,7 @@ app.patch('/:id', async (c) => {
   // Note: slug intentionally stays stable after creation so public links never break.
   const keys = Object.keys(updates);
   if (keys.length) {
-    await touchStore(env, store.id);
+    await touchStore(c, env, store.id);
     await run(env, `UPDATE stores SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => updates[k]), store.id);
   }
   const fresh = await first(env, 'SELECT * FROM stores WHERE id = ?', store.id);

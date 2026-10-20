@@ -39,6 +39,9 @@ export async function ownedFloor(
   return floor;
 }
 
-export async function touchStore(env: Env, storeId: unknown): Promise<void> {
+export async function touchStore(c: Context, env: Env, storeId: unknown): Promise<void> {
   await run(env, `UPDATE stores SET updated_at = datetime('now') WHERE id = ?`, String(storeId));
+  // data changed → drop this store's edge-cached public payload
+  const { purgeStoreCache } = await import('./cache');
+  await purgeStoreCache(c, env, storeId);
 }

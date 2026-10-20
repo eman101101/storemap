@@ -43,12 +43,17 @@ export const api = {
       body: json({ email, name }),
     }),
   /** Upload a product photo (raw bytes); paid plan or local mode required. */
-  productImage: (productId: string, file: File) =>
-    request<{ url: string; product: Product }>(`/api/products/${productId}/image`, {
+  productImage: async (productId: string, file: File) => {
+    // same client-side shrink as uploadImage — product photos are the
+    // highest-volume image type at catalog scale
+    const compressed = await compressImage(file);
+    const f = compressed ?? file;
+    return request<{ url: string; product: Product }>(`/api/products/${productId}/image`, {
       method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    }),
+      headers: { 'Content-Type': f.type || 'application/octet-stream' },
+      body: f,
+    });
+  },
   removeProductImage: (productId: string) =>
     request<{ ok: true }>(`/api/products/${productId}/image`, { method: 'DELETE' }),
   /** One-click session as the demo-map owner (server-gated, dev only). */

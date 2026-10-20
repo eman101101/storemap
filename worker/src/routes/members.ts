@@ -80,7 +80,7 @@ app.post('/invitations/:token/accept', requireAuth, async (c) => {
   const env = c.env as Env;
   const result = (await acceptInvitation(env, String(c.req.param('token') || ''), c.get('user'))) as any;
   if ((result as any).error) return json(c, (result as any).status || 403, { error: (result as any).error });
-  await touchStore(env, String((result as any).storeId));
+  await touchStore(c, env, String((result as any).storeId));
   return json(c, 200, { storeId: result.storeId, role: result.role });
 });
 
