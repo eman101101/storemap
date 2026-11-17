@@ -117,13 +117,13 @@ describe('ShelfDetail', () => {
       { location: pin('l2', 'p2', 3, 0.8), product: product('p2', 'Back Item') },
     ];
     const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
-    // both faces stocked → the Side A / Side B selector appears
-    expect(screen.getByRole('button', { name: 'Side A' }).getAttribute('aria-pressed')).toBe('true');
+    // both faces stocked → the side selector appears, defaulting to Side A
+    const sideSelect = screen.getByLabelText('Shelf side') as HTMLSelectElement;
+    expect(sideSelect.value).toBe('front');
     // defaults to the side with more pins (tie → Side A): only Front Item shows
     expect(container.textContent).toContain('Front Item');
     expect(container.textContent).not.toContain('Back Item');
-    fireEvent.click(screen.getByRole('button', { name: 'Side B' }));
-    expect(screen.getByRole('button', { name: 'Side B' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.change(sideSelect, { target: { value: 'back' } });
     expect(container.textContent).toContain('Back Item');
     expect(container.textContent).not.toContain('Front Item');
     // the summary names the side

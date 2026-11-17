@@ -426,6 +426,61 @@ export class LocalSession implements EditorApi {
     };
   }
 
+  /** Replace this sandbox's contents with a transfer bundle (storemap.export/1)
+   *  — the sandbox counterpart of Dashboard → Import. */
+  importBundle(bundle: {
+    store?: { name?: string; address?: string; description?: string; phone?: string; website?: string; hours?: string; logo_url?: string };
+    floors?: Array<{ name?: string; level?: number; width_m?: number; height_m?: number; background_url?: string }>;
+    categories?: Array<{ name: string; color?: string; icon?: string }>;
+    products?: Array<{ name: string; brand?: string; sku?: string; barcode?: string; description?: string; price?: number | null; image_url?: string; category?: number | null }>;
+    elements?: Array<{ floor?: number; type: string; shape: string; geometry: string; label?: string; color?: string; meta?: string; z_index?: number }>;
+    locations?: Array<{ product?: number; floor?: number; x: number; y: number; rot?: number }>;
+  }) {
+    const floors: Floor[] = (bundle.floors?.length ? bundle.floors : [{}]).map((f, i) => ({
+      id: uid(), store_id: 'sandbox', name: f.name || `Floor ${i + 1}`, level: f.level ?? i + 1,
+      width_m: f.width_m ?? 24, height_m: f.height_m ?? 16, background_url: f.background_url ?? '',
+    }));
+    const floorById = new Map(floors.map((f, i) => [i, f]));
+    const categories: Category[] = (bundle.categories ?? []).map((c, i) => ({
+      id: uid(), store_id: 'sandbox', name: c.name || `Category ${i + 1}`,
+      color: c.color ?? '#57a86c', icon: c.icon ?? '',
+    }));
+    const catById = new Map(categories.map((c, i) => [i, c]));
+    const products: Product[] = (bundle.products ?? []).map((p, i) => ({
+      id: uid(), store_id: 'sandbox',
+      name: p.name || `Product ${i + 1}`, brand: p.brand ?? '', sku: p.sku ?? '', barcode: p.barcode ?? '',
+      description: p.description ?? '', price: p.price ?? null, image_url: p.image_url ?? '',
+      category_id: p.category != null ? catById.get(p.category)?.id ?? null : null,
+    }));
+    const prodById = new Map(products.map((p, i) => [i, p]));
+    const locations: ProductLocation[] = (bundle.locations ?? []).flatMap((l) => {
+      const prod = l.product != null ? prodById.get(l.product) : undefined;
+      const floor = l.floor != null ? floorById.get(l.floor) : undefined;
+      if (!prod || !floor) return [];
+      return [{ id: uid(), product_id: prod.id, floor_id: floor.id, x: l.x, y: l.y, rot: l.rot ?? 0, meta: '{}' }];
+    });
+    const elements: MapElementRow[] = (bundle.elements ?? []).flatMap((e, i) => {
+      const floor = e.floor != null ? floorById.get(e.floor) : undefined;
+      if (!floor) return [];
+      return [{
+        id: uid(), floor_id: floor.id,
+        type: e.type as MapElementRow['type'], shape: e.shape as MapElementRow['shape'],
+        geometry: typeof e.geometry === 'string' ? e.geometry : JSON.stringify(e.geometry),
+        label: e.label ?? '', color: e.color ?? '', meta: e.meta ?? '{}', z_index: e.z_index ?? i,
+      }];
+    });
+    this.store = {
+      ...this.store, ...(bundle.store ?? {}), id: this.sandboxId, owner_id: 'sandbox',
+      is_public: false, entitlements: { productImages: true },
+    } as Store;
+    this.floors = floors;
+    this.categories = categories;
+    this.products = products;
+    this.locations = locations;
+    this.rows = new Map(floors.map((f) => [f.id, elements.filter((e) => e.floor_id === f.id)]));
+    this.logAction('Imported transfer bundle');
+  }
+
   /** Download the bundle, mirroring api.exportStore's filename scheme. */
   exportDownload() {
     const blob = new Blob([JSON.stringify(this.exportBundle())], { type: 'application/json' });

@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './ui';
 import type { MapElement, Product } from '../types';
-import { computeShelfLayout, type ShelfLayout, type ShelfPin, type ShelfSlot } from '../lib/shelfLayout';
+import { compactFilledLayout, computeShelfLayout, type ShelfLayout, type ShelfPin, type ShelfSlot } from '../lib/shelfLayout';
 
 const M = 46; // pixels per metre of shelf width in the drawing
 const LEVEL_H = 58; // pixels per level in the diagram view
@@ -168,14 +168,19 @@ export default function ShelfDetail({
   const side: ShelfSide = sideOverride ??
     (countSlots(layout, 'front') >= countSlots(layout, 'back') ? 'front' : 'back');
 
-  // a shelf-size planogram of just the selected side
-  const sideLayout = useMemo(() => {
-    if (!layout || (!bothSides && !sideOverride)) return layout;
-    return {
-      ...layout,
-      bays: layout.bays.map((b) => ({ ...b, slots: b.slots.filter((s) => s.side === side) })),
-    };
-  }, [layout, bothSides, sideOverride, side]);
+  // the selected side's facings, re-gridded into a compact board that fits
+  // them (the updated planogram logic)
+  const sideSlots = useMemo(
+    () =>
+      layout?.bays
+        .flatMap((b) => b.slots)
+        .filter((s) => !bothSides || s.side === side) ?? [],
+    [layout, bothSides, side]
+  );
+  const sideLayout = useMemo(
+    () => (layout && sideSlots.length ? compactFilledLayout(layout, sideSlots) : layout),
+    [layout, sideSlots]
+  );
 
   const hasImages = !!sideLayout?.bays.some((b) => b.slots.some((s) => s.product.image_url));
   const mode: ViewMode = viewOverride ?? (hasImages ? 'photos' : 'diagram');
@@ -200,20 +205,16 @@ export default function ShelfDetail({
       {(hasImages || bothSides) && (
         <div style={{ display: 'flex', gap: 6, marginTop: -6, marginBottom: 8 }} role="group" aria-label="Planogram view">
           {bothSides && (
-            <div style={{ display: 'flex', gap: 6, marginRight: 'auto' }} role="group" aria-label="Shelf side">
-              {(['front', 'back'] as const).map((sd) => (
-                <button
-                  key={sd}
-                  type="button"
-                  className="btn sm"
-                  aria-pressed={side === sd}
-                  style={side === sd ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
-                  onClick={() => setSideOverride(sd)}
-                >
-                  {sd === 'front' ? 'Side A' : 'Side B'}
-                </button>
-              ))}
-            </div>
+            <select
+              className="input"
+              style={{ marginRight: 'auto', maxWidth: 200, fontSize: 13, padding: '5px 8px' }}
+              aria-label="Shelf side"
+              value={side}
+              onChange={(e) => setSideOverride(e.target.value as ShelfSide)}
+            >
+              <option value="front">Side A · {countSlots(layout, 'front')} items</option>
+              <option value="back">Side B · {countSlots(layout, 'back')} items</option>
+            </select>
           )}
           {hasImages && (
             <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }} role="group" aria-label="Planogram view">

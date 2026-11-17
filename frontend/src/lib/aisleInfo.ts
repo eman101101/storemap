@@ -60,13 +60,21 @@ function distToRect(p: WorldPt, r: RectGeom): number {
 export const SHELF_TOL_M = 0.35;
 
 /** Products pinned on a shelf (within SHELF_TOL_M of its footprint, rotation
- *  aware), grouped by category — the shelf-hover hover card's data. */
-export function shelfContents(shelf: MapElement, pins: AislePin[], tol = SHELF_TOL_M): AisleContents {
+ *  aware), grouped by category — the shelf-hover hover card's data. `side`
+ *  narrows it to one face of the shelf (aisles stock both). */
+export function shelfContents(
+  shelf: MapElement,
+  pins: AislePin[],
+  tol = SHELF_TOL_M,
+  side?: 'front' | 'back'
+): AisleContents {
   if (shelf.shape !== 'rect') return { categories: [], count: 0, examples: [] };
   const r = shelf.geom as RectGeom;
   return collectContents(pins, (pin) => {
     const local = worldToShelfLocal(r, pin.location);
-    return local.x >= -tol && local.x <= r.w + tol && local.y >= -tol && local.y <= r.h + tol;
+    const inside = local.x >= -tol && local.x <= r.w + tol && local.y >= -tol && local.y <= r.h + tol;
+    if (!inside || !side) return inside;
+    return side === 'front' ? local.y <= r.h / 2 : local.y > r.h / 2;
   });
 }
 

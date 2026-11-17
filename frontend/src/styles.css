@@ -25,7 +25,7 @@
   /* 2D wall fill/stroke (SVG reads these) */
   --el-wall-fill: #4b5147;
   --el-wall-stroke: #3b4038;
-  --font: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font: 'Plus Jakarta Sans Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color-scheme: light;
 }
 
@@ -199,7 +199,7 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 .hero-map { position: absolute; inset: 0; }
 @media (max-width: 860px) {
   .hero { padding-top: 20px; gap: 14px; }
-  .hero-visual { height: clamp(300px, 46dvh, 440px); }
+  .hero-visual { height: clamp(340px, 55dvh, 460px); }
 }
 
 /* keyboard focus + search dropdown polish */
@@ -274,9 +274,8 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 .tool-rail {
   position: absolute; left: 10px; top: 56px; bottom: 12px; z-index: 6;
   display: flex; flex-direction: column; gap: 4px; align-items: center;
-  padding: 5px 4px; border-radius: 12px;
-  background: var(--surface-glass); border: 1px solid var(--line);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07); backdrop-filter: blur(4px);
+  justify-content: center; /* buttons live in the middle, no panel chrome */
+  padding: 5px 4px;
 }
 @media (max-height: 780px) {
   .tool-rail { gap: 2px; padding: 4px 3px; }
@@ -334,7 +333,7 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   /* phones/tablets: the side panel stays a pull-out drawer over the map —
      the edge handle pulls it out (Map · Products · Store · History) and
      pushes it back; it never stacks under the map */
-  .map-wrap { height: 100dvh; }
+  .map-wrap { height: auto; flex: 1; }
   .editor-side {
     width: min(320px, 88vw);
     box-shadow: -14px 0 34px rgba(0, 0, 0, 0.16);
@@ -451,9 +450,15 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 }
 .search-clear:hover { background: var(--hover); color: var(--ink); }
 .results-drop {
-  position: absolute; top: calc(100% + 8px); left: 0; right: 0; max-height: min(52dvh, 420px);
+  position: absolute; left: 0; right: 0; max-height: min(52dvh, 420px);
   overflow-y: auto; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 14px 40px rgba(0,0,0,0.16); padding: 8px; z-index: 9;
+  /* desktop: the search bar hugs the viewport top — drop below.
+     phone/tablet (wrapped header pushes the bar down): open above it. */
+  top: calc(100% + 8px);
+}
+@media (max-width: 860px) {
+  .results-drop { top: auto; bottom: calc(100% + 8px); }
 }
 /* result card: the product photo rides above the label; the label wraps to
    a couple of lines inside the fixed-width card */
@@ -469,7 +474,8 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 .result-item.noloc:hover { border-color: transparent; background: var(--surface-solid); }
 .result-item .rimg {
   display: flex; align-items: center; justify-content: center;
-  background: var(--hover); border-radius: 8px; padding: 4px; overflow: hidden;
+  background: var(--chip); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px; overflow: hidden;
 }
 .result-item .rimg img { max-height: 84px; max-width: 100%; object-fit: contain; display: block; }
 .result-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -555,9 +561,12 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 
 .powered-by {
   position: absolute; right: 12px; bottom: 12px; z-index: 7;
+  display: inline-flex; align-items: center; gap: 5px;
   font-size: 11.5px; color: var(--ink-soft); text-decoration: none;
   background: var(--surface-glass); border-radius: 8px; padding: 4px 9px;
 }
+.powered-by:hover { text-decoration: none; color: var(--ink); }
+.powered-mark { font-size: 12px; color: var(--green); }
 .powered-by:hover { color: var(--ink); }
 
 .floor-float {
@@ -816,9 +825,8 @@ html[data-mode='dark'] .hero-visual {
   background-color: var(--bg);
   background-image: linear-gradient(
     165deg,
-    rgba(122, 92, 205, 0.26),
-    rgba(96, 66, 160, 0.12) 45%,
-    rgba(0, 0, 0, 0) 72%
+    rgba(255, 255, 255, 0.05),
+    rgba(0, 0, 0, 0) 55%
   );
 }
 html[data-mode='dark'] .btn.danger { border-color: #53342f; }
@@ -853,27 +861,24 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 .pan-pad button:hover, .zoom-column button:hover { background: var(--hover); color: var(--ink); }
 .pan-pad button:active, .zoom-column button:active { transform: translateY(1px); }
 .side-open .pan-pad { right: 332px; }
-.pan-pad .cam-label {
-  grid-column: 1 / -1;
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-  font-size: 9px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--ink-soft); opacity: 0.85; user-select: none; padding-bottom: 1px;
+.pan-pad .cam-mid {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-soft);
 }
 .viewer-map .pan-pad { top: 54px; right: 12px; }
-/* labelled ＋/− zoom — bottom-right in both the 2D and 3D views */
+/* ＋/− zoom — bottom-right in both the 2D and 3D views, lifted clear of the
+   bottom hint strip */
 .zoom-column {
-  position: absolute; right: 12px; bottom: 14px; z-index: 6;
+  position: absolute; right: 12px; bottom: 34px; z-index: 6;
   display: flex; flex-direction: column; gap: 4px; align-items: stretch;
   transition: right 0.25s ease;
 }
 .side-open .zoom-column { right: 332px; }
-.viewer-map .zoom-column { bottom: 24px; }
+.viewer-map .zoom-column { bottom: 44px; }
 .zoom-column button {
-  height: 48px; padding: 0 13px 0 15px; gap: 8px; box-shadow: var(--shadow);
-  justify-content: flex-start;
+  width: 48px; height: 48px; box-shadow: var(--shadow);
+  font-size: 22px; font-weight: 700;
 }
-.zoom-column .zoom-sym { font-size: 19px; font-weight: 700; width: 14px; text-align: center; }
-.zoom-column .zoom-word { font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; }
 .controls-card {
   position: absolute; top: 46px; right: 12px; z-index: 7;
   transition: right 0.25s ease;
@@ -1003,9 +1008,9 @@ html[data-mode='dark'] .grid-hero-board { background-color: #191c20; box-shadow:
 @media (prefers-reduced-motion: reduce) {
   .grid-hero-svg { transition: none; }
 }
-/* 3D board: a rotating drone angle so the extruded blocks read clearly */
+/* 3D board: no sideways lean — the taller extruded blocks carry the 3D */
 .grid-hero-svg.gh-iso {
-  transform: perspective(1100px) rotateX(20deg) rotateZ(-10deg) scale(1.08);
+  transform: perspective(1100px) scale(1.05);
   transform-origin: 50% 62%;
 }
 @media (max-width: 640px) {
@@ -1214,4 +1219,46 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .planogram-grid {
   display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start;
 }
-.planogram-grid .planogram-card { flex: 0 1 460px; }
+.planogram-grid .planogram-card { flex: 0 1 460px; max-width: 100%; }
+/* phones: the planogram drawing keeps its size — swipe it sideways */
+@media (max-width: 640px) {
+  .planogram-band { margin-top: 34px; }
+  .planogram-card { max-width: 100%; padding: 12px; }
+  .planogram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .planogram-scroll svg { margin: 0 !important; }
+}
+
+/* phone: compact map controls that don't eat the screen */
+@media (max-width: 640px) {
+  .pan-pad { grid-template-columns: repeat(3, 40px); grid-auto-rows: 40px; }
+  .pan-pad .cam-label { font-size: 8px; }
+  .pan-pad + .controls-btn { right: auto; }
+  .zoom-column button { height: 36px; padding: 0 9px; gap: 5px; }
+  .zoom-column .zoom-sym { font-size: 15px; }
+  .zoom-column .zoom-word { font-size: 11px; }
+}
+
+/* aisle strip labels: white outline on the light floor, dark on the dark one */
+.el-label.isle { paint-order: stroke; stroke: #ffffff; }
+html[data-mode='dark'] .el-label { paint-order: stroke; stroke: rgba(8, 10, 9, 0.6); stroke-width: 0.09em; }
+html[data-mode='dark'] .el-label.isle { stroke: rgba(8, 10, 9, 0.85); stroke-width: 0.14em; }
+
+/* account dropdown (avatar menu, rightmost) */
+.avatar.as-button {
+  border: 2px solid var(--line); cursor: pointer; font-family: var(--font);
+}
+.avatar.as-button:hover { border-color: var(--green); }
+.account-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  min-width: 160px; background: var(--surface-solid); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22); padding: 6px;
+  display: flex; flex-direction: column;
+}
+.account-menu a,
+.account-menu button {
+  text-align: left; border: none; background: none; cursor: pointer;
+  padding: 8px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600;
+  color: var(--ink); text-decoration: none; font-family: var(--font);
+}
+.account-menu a:hover,
+.account-menu button:hover { background: var(--hover); }

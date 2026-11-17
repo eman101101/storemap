@@ -7,8 +7,8 @@ import {
   type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem, type ShelfDetail,
 } from '../lib/render3d';
 import { snap, elementPoints, shelfAnchor, translateElement, type WorldPt } from '../lib/geometry';
-import { aisleContents, shelfContents, AISLE_REACH_M } from '../lib/aisleInfo';
-import { shelfBoardZs, shelfItemSize } from '../lib/shelfLayout';
+import { aisleContents, shelfContents, AISLE_REACH_M, SHELF_TOL_M } from '../lib/aisleInfo';
+import { shelfBoardZs, shelfItemSize, shelfSideOf, shelfRunLength } from '../lib/shelfLayout';
 
 export interface Pin {
   location: { id: string; x: number; y: number; product_id: string };
@@ -132,7 +132,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
   /** Where the pick tip floats (cursor px) — cheap state, no draw on change. */
   const [pickTipAt, setPickTipAt] = useState<{ sx: number; sy: number } | null>(null);
   /** Viewer: the tappable shelf under the pointer, and where to pin its card. */
-  const [hoverShelf, setHoverShelf] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  const [hoverShelf, setHoverShelf] = useState<{ id: string; sx: number; sy: number; side: 'front' | 'back' } | null>(null);
   /** Viewer: the product facing under the pointer (location id) — lifts its stack. */
   const [hoverPinLocId, setHoverPinLocId] = useState<string | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -177,6 +177,10 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
           const a = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
           if (!a) return null;
           const size = shelfItemSize(a.el);
+          // facing runs scale with the shelf: a 19 m gondola carries wider
+          // items than a 2 m checkout counter (clamped to stay sensible)
+          const run = shelfRunLength(a.el);
+          const scaleW = Math.max(0.9, Math.min(2.4, run / 12));
           const zs = shelfBoardZs(a.el);
           return {
             x: a.x,
@@ -188,7 +192,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
             hovered: p.location.id === hoverLoc,
             zs: heavy ? [zs[Math.floor(zs.length / 2)] ?? zs[0]!] : zs,
             h: size.h,
-            w: size.w,
+            w: size.w * scaleW,
           };
         })
         .filter((s): s is StockItem => s !== null);
@@ -639,7 +643,17 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
           setPickTipAt(pickedId ? { sx: px, sy: py } : null);
           setHoverShelf((prev) => {
             const id = !edit && pick ? pick.elementId : null;
-            return prev?.id === id ? prev : id ? { id, sx: px, sy: py } : null;
+            if (!id) return prev?.id === id ? prev : null;
+            // the hover card reflects the hovered FACE, not the whole shelf:
+            // project the cursor onto the floor and ask the shelf which side
+            const el = elements.find((x) => x.id === id);
+            const wpt = el && el.type === 'shelf'
+              ? screenToWorldFloor(camRef.current, size.w, size.h, px, py)
+              : null;
+            const side = el && el.type === 'shelf' && wpt
+              ? shelfSideOf(el, wpt) ?? 'front'
+              : 'front';
+            return prev?.id === id && prev?.side === side ? prev : { id, sx: px, sy: py, side };
           });
         }
       }
@@ -760,11 +774,11 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
   const hoverShelfContents = useMemo(
     () =>
       hoverShelfEl?.type === 'shelf'
-        ? shelfContents(hoverShelfEl, stockPins)
+        ? shelfContents(hoverShelfEl, stockPins, SHELF_TOL_M, hoverShelf?.side)
         : hoverShelfEl?.type === 'aisle'
           ? aisleContents(hoverShelfEl, stockPins)
           : null,
-    [hoverShelfEl, stockPins]
+    [hoverShelfEl, stockPins, hoverShelf?.side]
   );
 
   return (
@@ -807,7 +821,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       {hoverShelf && (hoverShelfEl?.type === 'shelf' || hoverShelfEl?.type === 'aisle') && (
         <AisleTooltip
           style={{ left: hoverShelf.sx, top: hoverShelf.sy }}
-          label={hoverShelfEl.label || (hoverShelfEl.type === 'aisle' ? 'Aisle' : 'Shelf')}
+          label={`${hoverShelfEl.label || 'Shelf'}${hoverShelfEl.type === 'shelf' ? ` · ${hoverShelf?.side === 'back' ? 'Side B' : 'Side A'}` : ''}`}
           contents={hoverShelfContents}
           kind={hoverShelfEl.type === 'aisle' ? 'aisle' : 'shelf'}
         />

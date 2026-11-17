@@ -4,6 +4,7 @@ import { api } from '../api';
 import MapCanvas from './MapCanvas';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
+import { BlockText } from './GridHero';
 import { CameraPad, ZoomPad } from './ui';
 import type {
   Floor, MapElement, Product, ProductLocation, PublicStorePayload,
@@ -687,7 +688,7 @@ export default function ViewerPage() {
               </span>
             </div>
             <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
-              ＋ Trip
+              ＋ Add to list
             </button>
             {shelfOfSheet && (
               <button
@@ -746,7 +747,10 @@ export default function ViewerPage() {
           </div>
         )}
 
-        <Link to="/" className="powered-by">Powered by StoreMap</Link>
+        <Link to="/" className="powered-by" aria-label="item.place — home">
+          <span className="powered-mark" aria-hidden>▦</span>
+          <BlockText text="item.place" cell={1.7} />
+        </Link>
 
         {selectedShelf && (
           <ShelfDetail

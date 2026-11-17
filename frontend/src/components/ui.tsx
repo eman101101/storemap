@@ -239,15 +239,15 @@ export function CameraPad({
 
   return (
     <div className={`pan-pad ${className}`} role="toolbar" aria-label="Camera controls">
-      <span className="cam-label" aria-hidden>
-        {CAMERA_ICON} camera
-      </span>
-      {/* 3×3 D-pad below the label: filler spans keep each arrow in its column */}
+      {/* 3×3 D-pad: filler spans keep the arrows in their columns; the
+          camera glyph sits in the centre cell */}
       <span aria-hidden />
       {btn('Pan camera up', <PanArrow dir="up" />, () => tap(0, 1, 0), 'up')}
       <span aria-hidden />
       {btn('Pan camera left', <PanArrow dir="left" />, () => tap(-1, 0, 0), 'left')}
-      <span aria-hidden />
+      <span className="cam-mid" aria-hidden>
+        {CAMERA_ICON}
+      </span>
       {btn('Pan camera right', <PanArrow dir="right" />, () => tap(1, 0, 0), 'right')}
       <span aria-hidden />
       {btn('Pan camera down', <PanArrow dir="down" />, () => tap(0, -1, 0), 'down')}
@@ -257,9 +257,9 @@ export function CameraPad({
 }
 
 /**
- * The zoom pad: a labelled ＋/− column pinned to the bottom-right in BOTH the
- * 2D and 3D views. One call per tap — the glide animation lives in the
- * consumer (2D: MapCanvas's zoom command; 3D: Map3D's zoomCommand tween).
+ * The zoom pad: a ＋/− column pinned to the bottom-right in BOTH the 2D and
+ * 3D views. One call per tap — the glide animation lives in the consumer
+ * (2D: MapCanvas's zoom command; 3D: Map3D's zoomCommand tween).
  */
 export function ZoomPad({
   onZoom, className = '',
@@ -270,14 +270,8 @@ export function ZoomPad({
 }) {
   return (
     <div className={`zoom-column ${className}`} role="toolbar" aria-label="Zoom controls">
-      <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => onZoom(1)}>
-        <span aria-hidden className="zoom-sym">+</span>
-        <span className="zoom-word">Zoom in</span>
-      </button>
-      <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => onZoom(-1)}>
-        <span aria-hidden className="zoom-sym">&minus;</span>
-        <span className="zoom-word">Zoom out</span>
-      </button>
+      <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => onZoom(1)}>+</button>
+      <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => onZoom(-1)}>&minus;</button>
     </div>
   );
 }

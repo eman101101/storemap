@@ -4,7 +4,7 @@ import { api } from '../api';
 import Map3D from './Map3D';
 import GridHero, { BlockText } from './GridHero';
 import { PlanogramSvg, type ShelfSide } from './ShelfDetail';
-import { computeShelfLayout, type ShelfLayout, type ShelfSlot } from '../lib/shelfLayout';
+import { compactFilledLayout, computeShelfLayout, type ShelfLayout, type ShelfSlot } from '../lib/shelfLayout';
 import { useAuth } from '../App';
 import type { MapElement, Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
 import { parseElement } from '../types';
@@ -149,40 +149,6 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
   );
 }
 
-/** Compact, fully-filled planogram for the example: the shelf's real facings
- *  re-gridded into a board that fits them (no rows of empty bays). */
-function filledLayout(src: ShelfLayout, slots: ShelfSlot[]): ShelfLayout {
-  const levels = Math.max(1, Math.min(src.levels, Math.ceil(slots.length / 4)));
-  const bays = Math.max(1, Math.ceil(slots.length / levels));
-  const ordered = [...slots].sort((a, b) => a.u - b.u);
-  const placed = ordered.map((s, i) => {
-    const bay = i % bays;
-    const level = Math.floor(i / bays) + 1;
-    return {
-      ...s,
-      level,
-      u: (bay + 0.5) / bays,
-      facingWidth: (src.width / bays) * 0.85,
-    };
-  });
-  const out: ShelfLayout = {
-    ...src,
-    levels,
-    bays: Array.from({ length: bays }, (_, i) => ({
-      index: i,
-      from: (i * src.width) / bays,
-      to: ((i + 1) * src.width) / bays,
-      slots: [],
-    })),
-  };
-  for (const s of placed) {
-    const idx = Math.min(bays - 1, Math.floor(s.u * bays));
-    out.bays[idx].slots.push(s);
-  }
-  for (const b of out.bays) b.slots.sort((a, b) => a.u - b.u);
-  return out;
-}
-
 /** Two real demo shelves of different sizes, rendered as filled planograms —
  *  tap a side (A/B) on a card to view that face. Hidden when the payloads
  *  have no usable shelf. */
@@ -243,7 +209,7 @@ function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
     layout.bays.some((b) => b.slots.some((s) => s.side === 'front')) &&
     layout.bays.some((b) => b.slots.some((s) => s.side === 'back'));
   const slots = layout.bays.flatMap((b) => b.slots).filter((s) => !bothSides || s.side === side);
-  const filled = useMemo(() => filledLayout(layout, slots), [layout, slots]);
+  const filled = useMemo(() => compactFilledLayout(layout, slots), [layout, slots]);
   const shown = filled.bays.reduce((n, b) => n + b.slots.length, 0);
   const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_url));
 
@@ -268,7 +234,9 @@ function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
           </div>
         )}
       </div>
-      <PlanogramSvg layout={filled} mode={hasImages ? 'photos' : 'diagram'} />
+      <div className="planogram-scroll">
+        <PlanogramSvg layout={filled} mode={hasImages ? 'photos' : 'diagram'} />
+      </div>
       <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
         {shown} product{shown === 1 ? '' : 's'} · {filled.levels} row{filled.levels === 1 ? '' : 's'} ·{' '}
         {filled.width.toFixed(1)} m — tap a shelf on any map to see its planogram.
@@ -373,10 +341,7 @@ export default function Landing() {
       </section>
 
       <section className="planogram-band">
-        <h2>Planograms, built in</h2>
-        <p className="muted">
-          Shelves carry their own layout — bays, rows and both faces. Tap a side to flip the shelf.
-        </p>
+        <h2>Planograms</h2>
         <HeroPlanogram payloads={payloads} />
       </section>
 

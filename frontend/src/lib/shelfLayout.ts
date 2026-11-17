@@ -5,7 +5,7 @@
  * testable and shared by the viewer and the editor.
  */
 import type { MapElement, PointGeom, PolyGeom, Product, ProductLocation, RectGeom } from '../types';
-import { rectCorners } from './geometry';
+import { rectCorners, type WorldPt } from './geometry';
 
 export interface ShelfPin {
   location: ProductLocation;
@@ -191,6 +191,60 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
     outside,
     meta: { bays: bayCount, levels: levelCount },
   };
+}
+
+/** The shelf's run length (longest side of a rect shelf, rotation aware). */
+export function shelfRunLength(shelf: MapElement): number {
+  if (shelf.shape !== 'rect') return 1;
+  const r = shelf.geom as RectGeom;
+  return Math.max(r.w, r.h);
+}
+
+/** Which face of a rect shelf a world point sits on (front = near half in the
+ *  shelf's local frame). Null when the shelf isn't a rect. */
+export function shelfSideOf(shelf: MapElement, worldPt: WorldPt): 'front' | 'back' | null {
+  if (shelf.shape !== 'rect') return null;
+  const r = shelf.geom as RectGeom;
+  const local = worldToShelfLocal(r, worldPt);
+  return local.y * 2 <= r.h ? 'front' : 'back';
+}
+
+/**
+ * Re-grid a shelf's facings into a compact board that fits them — no rows of
+ * empty bays. Levels stay within the shelf's real row count; the remaining
+ * facings flow left-to-right, bottom-up. Used by the planogram views so the
+ * shelf area always fits the items.
+ */
+export function compactFilledLayout(src: ShelfLayout, slots: ShelfSlot[]): ShelfLayout {
+  const levels = Math.max(1, Math.min(src.levels, Math.ceil(slots.length / 4)));
+  const bays = Math.max(1, Math.ceil(slots.length / levels));
+  const ordered = [...slots].sort((a, b) => a.u - b.u);
+  const placed = ordered.map((s, i) => {
+    const bay = i % bays;
+    const level = Math.floor(i / bays) + 1;
+    return {
+      ...s,
+      level,
+      u: (bay + 0.5) / bays,
+      facingWidth: (src.width / bays) * 0.85,
+    };
+  });
+  const out: ShelfLayout = {
+    ...src,
+    levels,
+    bays: Array.from({ length: bays }, (_, i) => ({
+      index: i,
+      from: (i * src.width) / bays,
+      to: ((i + 1) * src.width) / bays,
+      slots: [],
+    })),
+  };
+  for (const s of placed) {
+    const idx = Math.min(bays - 1, Math.floor(s.u * bays));
+    out.bays[idx].slots.push(s);
+  }
+  for (const b of out.bays) b.slots.sort((a, b) => a.u - b.u);
+  return out;
 }
 
 /** Bounding box of any element, for click-targets and layout fallbacks. */

@@ -407,7 +407,7 @@ export default function GridHero({ text = WORD }: { text?: string }) {
             setIso((v) => !v);
           }}
         >
-          {iso ? 'Flat' : '3D'}
+          {iso ? '2D' : '3D'}
         </button>
         <svg
           key={waveKey}
@@ -435,7 +435,7 @@ export default function GridHero({ text = WORD }: { text?: string }) {
                     x={p.c * CS + 1.1}
                     y={p.r * CS + 1.1 + (CS - 2.2)}
                     width={CS - 2.2}
-                    height={6.4}
+                    height={8.2}
                     rx={1}
                     style={waveDelay(p.c, p.r)}
                   />
@@ -443,7 +443,7 @@ export default function GridHero({ text = WORD }: { text?: string }) {
                     className="gh-cell-side"
                     x={p.c * CS + 1.1 + (CS - 2.2)}
                     y={p.r * CS + 1.1 + 1.4}
-                    width={5.2}
+                    width={6.6}
                     height={CS - 2.2}
                     rx={1}
                     style={waveDelay(p.c, p.r)}

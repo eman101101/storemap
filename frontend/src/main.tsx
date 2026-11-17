@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 // Inter Variable — self-hosted (no font CDN, works offline with the PWA cache)
 import '@fontsource-variable/inter';
+import '@fontsource-variable/plus-jakarta-sans';
 import './styles.css';
 
 // PWA (INFRASTRUCTURE §11.1): offline shell + cached map payloads

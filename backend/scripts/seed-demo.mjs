@@ -76,10 +76,10 @@ const point = (type, x, y, label = '') =>
 
 /* ---------- structure: walls, entrance, checkout, POIs ---------- */
 
-rect('wall', 0, 0, W, 0.4, 'North wall');
-rect('wall', 0, H - 0.4, W, 0.4, 'South wall');
-rect('wall', 0, 0, 0.4, H, 'West wall');
-rect('wall', W - 0.4, 0, 0.4, H, 'East wall');
+rect('wall', 0, 0, W, 0.4);
+rect('wall', 0, H - 0.4, W, 0.4);
+rect('wall', 0, 0, 0.4, H);
+rect('wall', W - 0.4, 0, 0.4, H);
 
 point('entrance', 27, H - 0.9, 'Entrance');
 point('exit', 31, H - 0.9, 'Exit');
@@ -221,7 +221,8 @@ for (const [name, color, icon, , items] of CATS) {
   for (const item of items) products.push({ name: item, category: name });
 }
 
-// even slots along every stocking face, then sample 150 of them across the store
+// even slots along every stocking face — every slot gets a facing (facings
+// of the same product repeat in real stores), so shelves render full
 const slots = [];
 for (const f of faces) {
   const len = f.to - f.from;
@@ -232,14 +233,21 @@ for (const f of faces) {
   }
 }
 const total = slots.length;
-const take = Math.min(products.length, 150);
-for (let i = 0; i < take; i++) {
-  const slot = slots[Math.min(total - 1, Math.round((i * total) / take))];
+// one catalogue record per SKU…
+const prodIds = [];
+for (let i = 0; i < products.length; i++) {
   const p = products[i];
   const id = randomUUID();
   const price = Math.round((0.79 + ((i * 37) % 920) / 100) * 100) / 100;
   insProd.run(id, store.id, cat[p.category], p.name, BRANDS[i % BRANDS.length], `${p.category.slice(0, 3).toUpperCase()}-${String(i + 1).padStart(3, '0')}`, '', '', price, '');
-  insLoc.run(randomUUID(), id, floor.id, slot.x, slot.y);
+  prodIds.push({ id });
+}
+// …then facings cycle the catalogue so every slot is stocked and the
+// planograms render full (same product on several facings, like real stores)
+for (let i = 0; i < total; i++) {
+  const slot = slots[i];
+  const prod = prodIds[i % prodIds.length];
+  insLoc.run(randomUUID(), prod.id, floor.id, slot.x, slot.y);
 }
 
 if (tiny) {
@@ -248,7 +256,7 @@ if (tiny) {
   db.prepare('DELETE FROM product_locations WHERE id NOT IN (SELECT id FROM product_locations LIMIT 12)').run();
   console.log('Tiny profile applied: single aisle, 12 pins.');
 }
-console.log(`Seeded Freshmart Downtown: ${W}×${H} m, checkout area, border + aisle-pair shelving, ${take} products with pins.`);
+console.log(`Seeded Freshmart Downtown: ${W}×${H} m, checkout area, border + aisle-pair shelving, ${products.length} SKUs · ${total} facings (shelves full).`);
 } // end freshmart block
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -489,10 +497,10 @@ function warehouseSpec() {
   const rect = (type, x, y, w, h, label = '') => elements.push({ type, shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label });
   const point = (type, x, y, label = '') => elements.push({ type, shape: 'point', geometry: { x, y }, label });
 
-  rect('wall', 0, 0, W, 0.4, 'North wall');
-  rect('wall', 0, H - 0.4, W, 0.4, 'South wall');
-  rect('wall', 0, 0, 0.4, H, 'West wall');
-  rect('wall', W - 0.4, 0, 0.4, H, 'East wall');
+  rect('wall', 0, 0, W, 0.4);
+  rect('wall', 0, H - 0.4, W, 0.4);
+  rect('wall', 0, 0, 0.4, H);
+  rect('wall', W - 0.4, 0, 0.4, H);
   point('entrance', 27, H - 0.9, 'Receiving');
   point('exit', 33, H - 0.9, 'Shipping');
 
@@ -571,10 +579,10 @@ function megamartSpec() {
   const rect = (type, x, y, w, h, label = '') => elements.push({ type, shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label });
   const point = (type, x, y, label = '') => elements.push({ type, shape: 'point', geometry: { x, y }, label });
 
-  rect('wall', 0, 0, W, 0.4, 'North wall');
-  rect('wall', 0, H - 0.4, W, 0.4, 'South wall');
-  rect('wall', 0, 0, 0.4, H, 'West wall');
-  rect('wall', W - 0.4, 0, 0.4, H, 'East wall');
+  rect('wall', 0, 0, W, 0.4);
+  rect('wall', 0, H - 0.4, W, 0.4);
+  rect('wall', 0, 0, 0.4, H);
+  rect('wall', W - 0.4, 0, 0.4, H);
   point('entrance', 30, H - 0.9, 'Entrance');
   point('exit', 36, H - 0.9, 'Exit');
 

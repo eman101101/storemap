@@ -59,10 +59,11 @@ export function blankShelfTemplate(floorId: string, W: number, H: number, zBase:
   const add = (type: MapElement['type'], shape: MapElement['shape'], geom: MapElement['geom'], label = '') =>
     els.push({ id: crypto.randomUUID(), floor_id: floorId, type, shape, geom, label, color: '', meta: '{}', z_index: z++ });
 
-  add('wall', 'rect', { x: 0, y: 0, w: W, h: 0.4, rot: 0 }, 'North wall');
-  add('wall', 'rect', { x: 0, y: H - 0.4, w: W, h: 0.4, rot: 0 }, 'South wall');
-  add('wall', 'rect', { x: 0, y: 0, w: 0.4, h: H, rot: 0 }, 'West wall');
-  add('wall', 'rect', { x: W - 0.4, y: 0, w: 0.4, h: H, rot: 0 }, 'East wall');
+  // walls ship unlabeled — the owner names them from the panel if wanted
+  add('wall', 'rect', { x: 0, y: 0, w: W, h: 0.4, rot: 0 });
+  add('wall', 'rect', { x: 0, y: H - 0.4, w: W, h: 0.4, rot: 0 });
+  add('wall', 'rect', { x: 0, y: 0, w: 0.4, h: H, rot: 0 });
+  add('wall', 'rect', { x: W - 0.4, y: 0, w: 0.4, h: H, rot: 0 });
   add('entrance', 'point', { x: W / 2, y: H - 1 }, 'Entrance');
 
   // shelf pairs facing each other across a 1.5 m aisle, scaled to the floor
@@ -113,6 +114,13 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       return false;
     }
   });
+  /** Selecting on the map auto-shows the element panel only on desktop —
+   *  on phone/tablet the panel is a drawer that would cover the map. */
+  const autoShowPanel = () => {
+    if (window.matchMedia('(max-width: 860px)').matches) return;
+    showTab('map');
+  };
+
   const switchSide = (open: boolean) => {
     setSideOpen(open);
     try {
@@ -122,6 +130,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   /** map interactions that need details pull the drawer out automatically */
   const showTab = (t: SideTab) => {
     setSideTab(t);
+    // on phone/tablet the panel is a drawer over the map — map-driven opens
+    // (select, pin click) don't pop it; the edge handle opens it on demand
+    if (window.matchMedia('(max-width: 860px)').matches) return;
     setSideOpen(true);
   };
   const [flashProductId, setFlashProductId] = useState<string | null>(null);
@@ -136,6 +147,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [showControls, setShowControls] = useState(false);
   // onboarding tour + glossary; the tour offers itself once per device
   const [exportOpen, setExportOpen] = useState(false);
+  const [hideLabels, setHideLabels] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(() => {
     try {
@@ -848,6 +860,29 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           </span>
           <div className="try-banner-actions">
             <button className="btn sm" onClick={() => setExportOpen(true)}>⬇ Export</button>
+            <label className="btn sm" title="Import a transfer bundle (.json) into this sandbox">
+              ⬆ Import
+              <input
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f || !session) return;
+                  f.text()
+                    .then((t) => {
+                      const b = JSON.parse(t) as Parameters<LocalSession['importBundle']>[0] & { format?: string };
+                      if (b?.format !== 'storemap.export/1') {
+                        throw new Error('That file is not a storemap export bundle');
+                      }
+                      session.importBundle(b);
+                      window.location.reload(); // the editor re-reads the sandbox on boot
+                    })
+                    .catch((err) => alert(err instanceof Error ? err.message : 'Import failed'));
+                }}
+              />
+            </label>
             {session?.canPersist && (
               <button
                 className="btn sm"
@@ -907,7 +942,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               selectedId={selectedId}
               onSelectElement={(id) => {
                 setSelectedId(id);
-                if (id) showTab('map');
+                if (id) autoShowPanel();
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
               onElementDrag={dragElement3d}
@@ -926,6 +961,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               floor={floor}
               elements={floorElements}
               pins={visibleFloorPins}
+              showLabels={!hideLabels}
               viewport={viewport}
               onViewport={setViewport}
               edit
@@ -934,7 +970,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               draftPts={draftPts}
               onSelect={(id) => {
                 setSelectedId(id);
-                if (id) showTab('map');
+                if (id) autoShowPanel();
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
               onElementsChange={changeElements}
@@ -988,6 +1024,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               }}
             >
               <span aria-hidden>🗑</span>
+            </button>
+            <button
+              className={`tool-btn ${hideLabels ? 'active' : ''}`}
+              aria-pressed={hideLabels}
+              aria-label={hideLabels ? 'Show labels' : 'Hide labels'}
+              data-tip={hideLabels ? 'Show labels' : 'Hide labels'}
+              onClick={() => setHideLabels((v) => !v)}
+            >
+              <span aria-hidden>🏷</span>
             </button>
             {tool === 'select' && (
               <>
@@ -2397,9 +2442,18 @@ function ProductModal({
               <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Save the product first, then add its photo.</p>
             )
           ) : (
-            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-              Product photos are part of the paid plan — or self-host StoreMap (local mode) to include them.
-            </p>
+            <div className="photo-info">
+              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
+                <b>Add photos in three ways:</b> 📷 take a photo with your camera, 🖼 upload an image,
+                or paste an image URL when editing a product. Photos show in shopper search, on the
+                map and in the shelf planogram — ✂ Remove background makes cut-outs that stand out
+                on shelves.
+              </p>
+              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                Photos are part of the paid plan — <b>$1/month</b> adds them to every map you own.
+                Self-hosting? Local mode includes them free.
+              </p>
+            </div>
           )}
         </Field>
         {error && <div className="error-note">{error}</div>}

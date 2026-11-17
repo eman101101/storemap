@@ -114,29 +114,63 @@ function TopNav() {
   const { user, refresh } = useAuth();
   const { openLogin } = useLoginModal();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const logout = async () => {
     await api.logout();
     await refresh(); // or the avatar stays and authed calls keep 401ing
     navigate('/');
   };
+  // close the account menu on any outside click / Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
   return (
     <nav className="topnav">
       <Link to="/" className="brand" aria-label="item.place — home">
-        <span className="brand-logo">▦</span> <BlockText text="item.place" cell={2.4} />
+        <BlockText text="item.place" cell={2.4} />
       </Link>
       <div className="spacer" />
       <ThemeSettings />
       {user ? (
-        <div className="nav-user">
-          <NavLink to="/dashboard" className="btn ghost sm">
-            Account
-          </NavLink>
-          <span className="avatar" title={user.email}>
+        <div className="nav-user" ref={menuRef} style={{ position: 'relative' }}>
+          {/* the avatar is the account control, kept rightmost — My maps and
+              Sign out live in its dropdown, not the bar */}
+          <button
+            className="avatar as-button"
+            title={user.email}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
             {(user.name || user.email)[0]?.toUpperCase()}
-          </span>
-          <button className="btn ghost sm" onClick={logout}>
-            Sign out
           </button>
+          {menuOpen && (
+            <div className="account-menu" role="menu">
+              <NavLink to="/dashboard" role="menuitem" onClick={() => setMenuOpen(false)}>
+                My maps
+              </NavLink>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void logout();
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="nav-user">

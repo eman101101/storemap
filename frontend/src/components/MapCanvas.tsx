@@ -53,6 +53,8 @@ interface Props {
   /** 'begin' snapshots undo history at gesture start, 'live' applies silently, 'push' snapshots + applies. */
   onElementsChange?: (els: MapElement[], history: 'begin' | 'live' | 'push', label?: string) => void;
   onAddElement?: (el: MapElement) => void;
+  /** hide every text label (2D) — the editor's labels toggle */
+  showLabels?: boolean;
   onDraftAdd?: (p: WorldPt) => void;
   onDraftFinish?: () => void;
   onDraftCancel?: () => void;
@@ -102,7 +104,7 @@ function straightSnap(from: WorldPt, to: WorldPt): WorldPt {
 export default function MapCanvas(props: Props) {
   const {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
-    selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement,
+    selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true,
     onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, onPinClick, onElementClick,
     focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
     pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
@@ -530,8 +532,39 @@ export default function MapCanvas(props: Props) {
     const w = toWorld(e);
     if (it.kind === 'move') {
       it.moved = true;
-      const dx = snap(it.start.x + (w.x - it.start.x), grid) - it.start.x;
-      const dy = snap(it.start.y + (w.y - it.start.y), grid) - it.start.y;
+      let dx = snap(it.start.x + (w.x - it.start.x), grid) - it.start.x;
+      let dy = snap(it.start.y + (w.y - it.start.y), grid) - it.start.y;
+      // shelf-to-shelf snapping: edges/centers align with nearby shelves so
+      // rows butt together with no gap in the middle and facing rows line up
+      const el = it.orig;
+      if (el.type === 'shelf' && el.shape === 'rect') {
+        const g = el.geom as RectGeom;
+        if (!g.rot) {
+          const SNAP = 0.3;
+          const mLeft = g.x + dx, mRight = g.x + g.w + dx, mCx = g.x + g.w / 2 + dx;
+          const mTop = g.y + dy, mBottom = g.y + g.h + dy, mCy = g.y + g.h / 2 + dy;
+          let bx: number | null = null, by: number | null = null;
+          for (const o of elements) {
+            if (o.id === el.id || o.type !== 'shelf' || o.shape !== 'rect') continue;
+            const og = o.geom as RectGeom;
+            if (og.rot) continue;
+            for (const t of [og.x, og.x + og.w, og.x + og.w / 2]) {
+              for (const m of [mLeft, mRight, mCx]) {
+                const d = t - m;
+                if (Math.abs(d) <= SNAP && (bx === null || Math.abs(d) < Math.abs(bx))) bx = d;
+              }
+            }
+            for (const t of [og.y, og.y + og.h, og.y + og.h / 2]) {
+              for (const m of [mTop, mBottom, mCy]) {
+                const d = t - m;
+                if (Math.abs(d) <= SNAP && (by === null || Math.abs(d) < Math.abs(by))) by = d;
+              }
+            }
+          }
+          if (bx != null) dx += bx;
+          if (by != null) dy += by;
+        }
+      }
       replaceElement(translateElement(it.orig, dx, dy), it.began ? 'live' : 'begin');
       it.began = true;
     } else if (it.kind === 'move-pin') {
@@ -695,6 +728,7 @@ export default function MapCanvas(props: Props) {
             selected={el.id === selectedId}
             highlighted={highlightElementIds?.has(el.id)}
             edit={edit}
+            showLabels={showLabels}
           />
         ))}
 
@@ -853,8 +887,8 @@ export default function MapCanvas(props: Props) {
 /* ---------------- rendering helpers ---------------- */
 
 function ElementNode({
-  el, scale, selected, highlighted, edit,
-}: { el: MapElement; scale: number; selected: boolean; highlighted?: boolean; edit: boolean }) {
+  el, scale, selected, highlighted, edit, showLabels = true,
+}: { el: MapElement; scale: number; selected: boolean; highlighted?: boolean; edit: boolean; showLabels?: boolean }) {
   const fill =
     el.color || (el.type === 'wall' ? 'var(--el-wall-fill)' : TYPE_COLOR[el.type]);
   const stroke =
@@ -881,9 +915,9 @@ function ElementNode({
           strokeWidth={el.type === 'wall' ? 2.4 : 1.4}
           strokeDasharray={el.type === 'aisle' ? '7 5' : undefined}
           vectorEffect="non-scaling-stroke"
-          rx={Math.min(0.15, r.w / 4)}
+          rx={el.type === 'shelf' ? 0 : Math.min(0.15, r.w / 4)}
         />
-        {label && !dim && (
+        {label && !dim && showLabels && (
           <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
@@ -905,7 +939,7 @@ function ElementNode({
         <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={entrance ? 0.9 : 0.52} fill="#fff" pointerEvents="none">
           {glyph}
         </text>
-        {label && !sym && (
+        {label && !sym && showLabels && (
           <text x={p.x + (entrance ? 1.05 : 0.7)} y={p.y} dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
@@ -916,9 +950,18 @@ function ElementNode({
   const pts = polyPoints(el);
   const closed = el.shape === 'polygon';
   const centroid = pts.reduce((a, p) => ({ x: a.x + p.x / pts.length, y: a.y + p.y / pts.length }), { x: 0, y: 0 });
-  // aisle labels sit ON the line (arc-length midpoint), between the shelf rows
+  // aisle labels sit ON the line (arc-length midpoint), between the shelf rows,
+  // rotated to run along the strip's first segment
   const mid = el.type === 'aisle' ? polyMidpoint(pts) : null;
   const labelAt = mid ?? centroid;
+  let labelRot = 0;
+  if (mid && pts.length >= 2) {
+    const a = pts[0];
+    const b = pts[1];
+    labelRot = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    if (labelRot > 90) labelRot -= 180; // keep the text upright
+    if (labelRot < -90) labelRot += 180;
+  }
   return (
     <g>
       <polyline
@@ -931,18 +974,18 @@ function ElementNode({
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
-      {label && (
+      {label && showLabels && (
         <text
           x={labelAt.x}
           y={labelAt.y}
           textAnchor="middle"
           dominantBaseline="central"
           fontSize={mid ? Math.max(fs, 11 / scale) : fs}
-          className="el-label"
-          stroke={mid ? '#ffffff' : undefined}
-          strokeWidth={mid ? 3 / scale : undefined}
+          className={mid ? 'el-label isle' : 'el-label'}
+          strokeWidth={mid ? 0.14 / scale : undefined}
           paintOrder={mid ? 'stroke' : undefined}
           fontWeight={mid ? 700 : undefined}
+          transform={labelRot ? `rotate(${labelRot} ${labelAt.x} ${labelAt.y})` : undefined}
         >
           {mid ? label.toUpperCase() : label}
         </text>
