@@ -80,6 +80,17 @@ export const CAMERA_ICON = (
   </svg>
 );
 
+/** Triangular pan arrow for the camera pad (points up; rotated per direction). */
+function PanArrow({ dir }: { dir: 'up' | 'down' | 'left' | 'right' }) {
+  const rot = { up: 0, right: 90, down: 180, left: 270 }[dir];
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden
+      style={{ transform: `rotate(${rot}deg)` }}>
+      <path d="M12 4.5 L20 17.5 H4 Z" />
+    </svg>
+  );
+}
+
 /**
  * The 3D camera pad. Each tap glides the camera a set distance over ~0.45 s
  * (eased in and out — no hold needed, no jump), arrows pan along the view's
@@ -137,7 +148,7 @@ export function CameraPad({
     []
   );
 
-  const btn = (label: string, glyph: string, onClick: () => void, key: string) => (
+  const btn = (label: string, glyph: React.ReactNode, onClick: () => void, key: string) => (
     <button key={key} type="button" title={label} aria-label={label} onClick={onClick}>
       {glyph}
     </button>
@@ -148,14 +159,16 @@ export function CameraPad({
       <span className="cam-label" aria-hidden>
         {CAMERA_ICON} camera
       </span>
-      {btn('Pan camera up', '\u25b2', () => tap(0, 1, 0), 'up')}
+      {/* 3×3 D-pad below the label: filler spans keep each arrow in its column */}
       <span aria-hidden />
-      {btn('Pan camera left', '\u25c0', () => tap(-1, 0, 0), 'left')}
+      {btn('Pan camera up', <PanArrow dir="up" />, () => tap(0, 1, 0), 'up')}
       <span aria-hidden />
-      {btn('Pan camera right', '\u25b6', () => tap(1, 0, 0), 'right')}
+      {btn('Pan camera left', <PanArrow dir="left" />, () => tap(-1, 0, 0), 'left')}
       <span aria-hidden />
+      {btn('Pan camera right', <PanArrow dir="right" />, () => tap(1, 0, 0), 'right')}
       <span aria-hidden />
-      {btn('Pan camera down', '\u25bc', () => tap(0, -1, 0), 'down')}
+      {btn('Pan camera down', <PanArrow dir="down" />, () => tap(0, -1, 0), 'down')}
+      <span aria-hidden />
     </div>
   );
 }

@@ -492,6 +492,17 @@ export default function ViewerPage() {
             )}
             {searchOpen && (
               <div className="results-drop" role="listbox">
+                {(() => {
+                  // a low-res photo of the highlighted result, riding above the list
+                  const preview = results[activeIdx] ?? results[0];
+                  return preview ? (
+                    <div className="result-preview" aria-hidden>
+                      {preview.image_url
+                        ? <img src={preview.image_url} alt="" />
+                        : <span className="dot" style={{ background: preview.category_color || '#2f6f3e', width: 26, height: 26 }} />}
+                    </div>
+                  ) : null;
+                })()}
                 {results.length === 0 ? (
                   <div className="no-results">{search ? `Nothing found for “${q.trim()}”.` : 'Start typing to find an item.'}</div>
                 ) : (

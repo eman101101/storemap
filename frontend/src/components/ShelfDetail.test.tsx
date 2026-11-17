@@ -44,11 +44,14 @@ describe('ShelfDetail', () => {
       { location: pin('l1', 'p1', 0.5, 0.5), product: product('p1', 'Oat Milk') },
       { location: pin('l2', 'p2', 4, 0.5), product: product('p2', 'Rye Bread') },
     ];
-    render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
-    expect(screen.getByRole('dialog')).toHaveTextContent('Aisle 1 — shelf layout');
+    const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
+    expect(screen.getByRole('dialog')).toHaveTextContent('Aisle 1 — planogram');
     expect(screen.getByRole('dialog')).toHaveTextContent('2 bays × 2 rows');
     expect(screen.getByRole('dialog')).toHaveTextContent('Bay 1: Oat Milk');
     expect(screen.getByRole('dialog')).toHaveTextContent('Bay 2: Rye Bread');
+    // fixtures have no photos → schematic view with no view toggle
+    expect(screen.queryByRole('button', { name: 'Photos' })).toBeNull();
+    expect(container!.querySelectorAll('image')).toHaveLength(0);
   });
 
   it('closing via Escape works', () => {
@@ -72,5 +75,37 @@ describe('ShelfDetail', () => {
     );
     fireEvent.click(container.querySelector('g[style*="cursor"]')!);
     expect(picked).toBe('p1');
+  });
+
+  it('defaults to the photo planogram when products carry images', () => {
+    const shelf = parseElement(row);
+    const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
+    const pins = [
+      { location: pin('l1', 'p1', 0.5, 0.5), product: withPhoto },
+      { location: pin('l2', 'p2', 4, 0.5), product: product('p2', 'Rye Bread') },
+    ];
+    const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
+    // one photo facing (the product with an image), one diagram fallback
+    const images = container.querySelectorAll('image');
+    expect(images).toHaveLength(1);
+    expect(images[0]!.getAttribute('href')).toBe('data:image/png;base64,abc');
+    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMax meet');
+    expect(container.textContent).toContain('Rye Bread');
+    // Photos is the active view of the toggle pair
+    expect(screen.getByRole('button', { name: 'Photos' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Diagram' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('toggles back to the diagram view', () => {
+    const shelf = parseElement(row);
+    const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
+    const pins = [{ location: pin('l1', 'p1', 0.5, 0.5), product: withPhoto }];
+    const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    expect(container.querySelectorAll('image')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Diagram' }).getAttribute('aria-pressed')).toBe('true');
+    // the schematic facing (colored box + name text) is drawn again
+    expect(container.querySelector('rect[fill-opacity="0.16"]')).toBeTruthy();
+    expect(container.textContent).toContain('Oat Milk');
   });
 });

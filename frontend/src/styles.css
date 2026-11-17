@@ -32,13 +32,13 @@
 /* ---------- Dark mode (html[data-mode='dark'], set by ThemeProvider) ---------- */
 html[data-mode='dark'] {
   color-scheme: dark;
-  --bg: #10140f;
-  --surface: #1a201b;
-  --surface-solid: #1a201b;
-  --surface-glass: rgba(24, 30, 25, 0.92);
-  --ink: #e7ede4;
-  --ink-soft: #9db0a0;
-  --line: #2b352d;
+  --bg: #131518;
+  --surface: #1c1f23;
+  --surface-solid: #1c1f23;
+  --surface-glass: rgba(26, 29, 33, 0.92);
+  --ink: #e8eaed;
+  --ink-soft: #9ba3ad;
+  --line: #2d3136;
   --green: #57a86c;
   --green-dark: #6cc180;
   --green-soft: #213326;
@@ -46,18 +46,18 @@ html[data-mode='dark'] {
   --red: #e07a6d;
   --blue: #7ba3e8;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.45);
-  --hover: #232c25;
-  --chip: #242d26;
-  --map-bg: #151b16;
-  /* dark floor plan: a soft charcoal-green, clearly lighter than the chrome
+  --hover: #24282d;
+  --chip: #262a2f;
+  --map-bg: #17191d;
+  /* dark floor plan: neutral charcoal, clearly lighter than the chrome
      around it so it still reads as "the floor" */
-  --map-floor: #2a332b;
-  --map-floor-line: #566356;
-  --map-grid-min: #333e34;
-  --map-grid-maj: #3f4c40;
+  --map-floor: #2b2e33;
+  --map-floor-line: #585d63;
+  --map-grid-min: #34383d;
+  --map-grid-maj: #40454b;
   /* walls read clearly against the dark floor */
-  --el-wall-fill: #78857a;
-  --el-wall-stroke: #aeb9ae;
+  --el-wall-fill: #7f858c;
+  --el-wall-stroke: #b1b6bc;
 }
 
 * { box-sizing: border-box; }
@@ -184,14 +184,13 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
   border-radius: 18px;
   overflow: hidden;
   height: clamp(420px, 60dvh, 660px);
-  border: 1px solid var(--line);
   box-shadow: 0 18px 50px rgba(25, 35, 25, 0.14);
   background-color: #eaeeec;
   /* theme-neutral sheen over a themed solid, so the theme flip cross-fades */
   background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.06));
 }
-.hero-map { position: absolute; inset: 0; pointer-events: none; }
-.hero-map canvas { pointer-events: none; }
+/* the hero map is a live, interactive preview: drag orbits the camera */
+.hero-map { position: absolute; inset: 0; }
 @media (max-width: 860px) {
   .hero { padding-top: 20px; gap: 14px; }
   .hero-visual { height: clamp(300px, 46dvh, 440px); }
@@ -201,6 +200,13 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 6px; }
 .result-item.kbd-active { border-color: var(--green); background: var(--green-soft); }
 .results-drop mark { background: transparent; color: var(--green-dark); font-weight: 800; padding: 0; }
+/* low-res product photo riding above the highlighted search result */
+.result-preview {
+  display: flex; align-items: center; justify-content: center;
+  padding: 6px 8px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.result-preview img { max-height: 88px; max-width: 100%; object-fit: contain; border-radius: 8px; }
 .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 10px; }
 .step { padding: 16px; }
 .step .num {
@@ -755,14 +761,14 @@ html[data-mode='dark'] .el-label { fill: var(--ink); }
 }
 
 /* ---------- Dark-mode refinements for the few non-token colors ---------- */
-html[data-mode='dark'] .hero-visual { background-color: #19211a; }
+html[data-mode='dark'] .hero-visual { background-color: #1b1e22; }
 html[data-mode='dark'] .btn.danger { border-color: #53342f; }
 html[data-mode='dark'] .btn.danger:hover { background: #2c1d1a; }
 html[data-mode='dark'] .error-note { background: #2c1d1a; border-color: #53342f; color: #f0a79c; }
 html[data-mode='dark'] .warn-note { background: #2c2416; border-color: #544424; color: #d9b96a; }
 html[data-mode='dark'] .floor-tab.active { border-color: #33503a; }
 html[data-mode='dark'] .modal-backdrop { background: rgba(0, 0, 0, 0.62); }
-html[data-mode='dark'] .route-casing { stroke: #10140f; }
+html[data-mode='dark'] .route-casing { stroke: #131518; }
 html[data-mode='dark'] .store-status.live { color: #6cc180; }
 
 /* ---------- Editor controls card (2D / 3D) ---------- */
@@ -902,13 +908,13 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 .grid-hero { padding-top: 22px; }
 .grid-hero-board {
   position: relative; overflow: hidden; cursor: pointer;
-  border: 1px solid var(--line); border-radius: 18px;
+  border-radius: 18px;
   background-color: #eaeee6;
   background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0.05));
   box-shadow: var(--shadow), inset 0 0 90px rgba(29, 42, 32, 0.05);
   padding: 20px 16px 14px;
 }
-html[data-mode='dark'] .grid-hero-board { background-color: #151c15; box-shadow: var(--shadow), inset 0 0 90px rgba(0, 0, 0, 0.35); }
+html[data-mode='dark'] .grid-hero-board { background-color: #191c20; box-shadow: var(--shadow), inset 0 0 90px rgba(0, 0, 0, 0.35); }
 .grid-hero-board:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .grid-hero-svg { display: block; width: 100%; height: auto; }
 @media (max-width: 640px) {
@@ -924,10 +930,14 @@ html[data-mode='dark'] .grid-hero-board { background-color: #151c15; box-shadow:
 }
 @keyframes ghIn { from { opacity: 0; transform: translateY(3px); } }
 
+/* block-letter labels (header brand, Create-a-Map CTA) — tinted by currentColor */
+.block-text { display: block; }
+.block-text rect { fill: currentColor; }
+
 /* route draws itself via pathLength=1 + JS-driven dashoffset */
 .gh-route { fill: none; stroke-dasharray: 1; }
 .gh-walker circle { fill: #e4572e; stroke: #fff; stroke-width: 1.6; }
-html[data-mode='dark'] .gh-walker circle { stroke: #10140f; }
+html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .gh-entrance-pad { fill: var(--green); }
 .gh-entrance-flag { fill: #fff; }
 .gh-pin-body { fill: #e4572e; stroke: rgba(255, 255, 255, 0.92); stroke-width: 1.4; }

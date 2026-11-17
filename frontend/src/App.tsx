@@ -3,6 +3,7 @@ import { Routes, Route, Link, NavLink, useLocation, useNavigate, useSearchParams
 import { api } from './api';
 import type { AuthInfo } from './types';
 import { ThemeProvider } from './theme';
+import { BlockText } from './components/GridHero';
 import Landing from './components/Landing';
 import LoginModal from './components/Login';
 import SelfHost from './components/SelfHost';
@@ -120,15 +121,15 @@ function TopNav() {
   };
   return (
     <nav className="topnav">
-      <Link to="/" className="brand">
-        <span className="brand-logo">▦</span> StoreMap
+      <Link to="/" className="brand" aria-label="item.place — home">
+        <span className="brand-logo">▦</span> <BlockText text="item.place" cell={2.4} />
       </Link>
       <div className="spacer" />
       <ThemeSettings />
       {user ? (
         <div className="nav-user">
           <NavLink to="/dashboard" className="btn ghost sm">
-            My stores
+            Account management
           </NavLink>
           <span className="avatar" title={user.email}>
             {(user.name || user.email)[0]?.toUpperCase()}
@@ -140,7 +141,7 @@ function TopNav() {
       ) : (
         <div className="nav-user">
           <button className="btn sm" onClick={() => openLogin()}>
-            Store owner sign in
+            Sign in
           </button>
         </div>
       )}

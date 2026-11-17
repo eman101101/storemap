@@ -255,10 +255,10 @@ export const MODERN_THEME: MapTheme = {
 };
 
 export const DARK_THEME: MapTheme = {
-  floorFill: '#2e3830',
-  gridFill: '#3d4a41',
-  skyTop: '#141b16',
-  skyBottom: '#212b24',
+  floorFill: '#2e3236',
+  gridFill: '#3d434a',
+  skyTop: '#15181c',
+  skyBottom: '#22252a',
   light: { x: -0.38, y: -0.5, z: 0.78 },
   ambient: 0.62,
   diffuse: 0.38,
@@ -1294,12 +1294,12 @@ export function renderScene(
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(top.x, top.y, 11, 0, Math.PI * 2);
-    ctx.fillStyle = theme.dark ? '#1a201b' : '#f4f6f1';
+    ctx.fillStyle = theme.dark ? '#1c1f23' : '#f4f6f1';
     ctx.fill();
-    ctx.strokeStyle = theme.dark ? '#9db0a0' : '#5d6e64';
+    ctx.strokeStyle = theme.dark ? '#9ba3ad' : '#5d6e64';
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = theme.dark ? '#e7ede4' : '#33413a';
+    ctx.fillStyle = theme.dark ? '#e8eaed' : '#33413a';
     ctx.font = '800 12px ui-sans-serif, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1494,9 +1494,9 @@ function drawLabel(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = Math.max(2.5, size / 4);
-  ctx.strokeStyle = dark ? 'rgba(16, 20, 15, 0.8)' : 'rgba(255,255,255,0.85)';
+  ctx.strokeStyle = dark ? 'rgba(19, 21, 24, 0.8)' : 'rgba(255,255,255,0.85)';
   ctx.strokeText(text, x, y);
-  ctx.fillStyle = dark ? '#e7ede4' : '#333a33';
+  ctx.fillStyle = dark ? '#e8eaed' : '#333a33';
   ctx.fillText(text, x, y);
   ctx.restore();
 }

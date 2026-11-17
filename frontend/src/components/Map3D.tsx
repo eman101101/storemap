@@ -56,6 +56,12 @@ interface Props {
   fitSignal?: number;
   /** 2D-parity zoom buttons: a new seq glides the camera distance by k. */
   zoomCommand?: { k: number; seq: number } | null;
+  /** Wheel behaviour: 'always' zooms the camera (page scroll is captured);
+   *  'ctrl' zooms only with ctrl/⌘ held so embedded maps don't trap scroll. */
+  wheelZoom?: 'always' | 'ctrl';
+  /** Canvas touch-action: 'pan-y' lets vertical swipes scroll the page while
+   *  horizontal drags orbit the camera (for embedded/hero maps on mobile). */
+  touchAction?: 'none' | 'pan-y';
 }
 
 const PITCH_MIN = 0.18;
@@ -106,7 +112,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -499,6 +505,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     const el = canvasRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if (wheelZoom === 'ctrl' && !e.ctrlKey && !e.metaKey) return; // let the page scroll
       e.preventDefault();
       stopFlySignal();
       const c = camRef.current;
@@ -506,7 +513,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [wheelZoom]);
 
   /** Ray-pick the fixture under a screen pixel (nearest hit wins). */
   const fixtureAt = (px: number, py: number) => pickFixture(camRef.current, size.w, size.h, px, py, elements);
@@ -765,7 +772,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       <canvas
         ref={canvasRef}
         style={{
-          width: '100%', height: '100%', display: 'block', touchAction: 'none',
+          width: '100%', height: '100%', display: 'block', touchAction,
           cursor: drag.current || elDrag.current || midPan.current ? 'grabbing' : hoverPick && edit ? 'move' : (!edit && hoverPinLocId) || (hoverShelf && onElementClick) || hoverAisle ? 'pointer' : 'grab',
         }}
         onPointerDown={onPointerDown}

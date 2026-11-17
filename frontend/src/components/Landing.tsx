@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import Map3D from './Map3D';
-import GridHero from './GridHero';
+import GridHero, { BlockText } from './GridHero';
 import { useAuth } from '../App';
 import type { MapElement, Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
 import { parseElement } from '../types';
@@ -29,6 +29,7 @@ const HERO_SPIN_MS = 2600;
  *  settles into a closer-than-fit framing. */
 function HeroMap({ data }: { data: PublicStorePayload }) {
   const [cam, setCam] = useState<Camera3D | null>(null);
+  const userDrove = useRef(false);
   const [demo, setDemo] = useState<{
     name: string;
     where: string;
@@ -37,6 +38,13 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
     loc: ProductLocation;
     product: Product;
   } | null>(null);
+
+  // the preview is a live map: any visitor gesture takes over the camera and
+  // cancels the intro swing
+  const onCamera = useCallback((c: Camera3D) => {
+    userDrove.current = true;
+    setCam(c);
+  }, []);
 
   const floor = data.floors[0] ?? null;
   const { resolved } = useTheme();
@@ -86,7 +94,7 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
   }, [data, floor, elements]);
 
   // start a bit closer than a full-floor fit, then swing slowly to a stop —
-  // still for visitors who prefer reduced motion
+  // still for visitors who prefer reduced motion; a user gesture ends it early
   useEffect(() => {
     if (!floor) return;
     const fit = fitCamera(floor);
@@ -96,6 +104,7 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
     let raf = 0;
     const t0 = performance.now();
     const tick = (now: number) => {
+      if (userDrove.current) return; // the visitor has the camera now
       const t = Math.min(1, (now - t0) / HERO_SPIN_MS);
       const e = 1 - Math.pow(1 - t, 3); // ease-out cubic — glides to a halt
       setCam((c) => (c ? { ...c, yaw: start.yaw + HERO_SPIN_RAD * e } : c));
@@ -109,8 +118,9 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
   const demoPins = demo ? [{ location: demo.loc, product: demo.product }] : [];
   return (
     <>
-      <div className="hero-map" aria-hidden>
-        {/* pointer-events: none via CSS — the hero is a living picture, scrolling stays natural */}
+      <div className="hero-map">
+        {/* live and interactive: drag orbits, ctrl/⌘+wheel zooms, vertical
+            swipes still scroll the page (touch-action: pan-y) */}
         <Map3D
           floor={floor}
           elements={elements.filter((e: MapElement) => e.floor_id === floor.id)}
@@ -119,8 +129,10 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
           focusPinId={demo?.loc.id ?? null}
           route={demo?.points ?? undefined}
           camera={cam}
-          onCamera={() => {}}
+          onCamera={onCamera}
           theme={sceneTheme}
+          wheelZoom="ctrl"
+          touchAction="pan-y"
         />
       </div>
       {demo && (
@@ -223,13 +235,13 @@ export default function Landing() {
       <section className="hero">
         <HeroCarousel />
         <div className="hero-cta">
-          <Link to={user ? '/dashboard' : '/try/blank'} className="btn primary">
-            Create a Map
+          <Link to={user ? '/dashboard' : '/try/blank'} className="btn primary" aria-label="Create a Map">
+            <BlockText text="Create a Map" cell={4} />
           </Link>
         </div>
       </section>
 
-      <footer className="footer">StoreMap — in-store navigation for humans. · <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Self-host your own</a></footer>
+      <footer className="footer">item.place - <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Host your own maps</a></footer>
     </main>
   );
 }

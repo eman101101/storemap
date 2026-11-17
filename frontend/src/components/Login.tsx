@@ -53,7 +53,7 @@ export default function LoginModal({
   const oauthOnly = providers.google || providers.apple;
 
   return (
-    <Modal title="Store owner sign in" onClose={onClose}>
+    <Modal title="Sign in" onClose={onClose}>
       <p className="muted" style={{ marginTop: -4 }}>
         Create and publish store maps. Shoppers never need an account.
       </p>

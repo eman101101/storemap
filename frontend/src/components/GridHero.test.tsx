@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GridHero, { WORD, GRID_GLYPHS, buildBoard, findGridPath } from './GridHero';
+import GridHero, { BlockText, WORD, GRID_GLYPHS, buildBoard, findGridPath } from './GridHero';
 
 describe('grid wordmark', () => {
   it('has a glyph for every letter of the word', () => {
@@ -53,6 +53,75 @@ describe('grid wordmark', () => {
     expect(line!.style.strokeDashoffset).toBe('0');
     const pin = container.querySelector<SVGGElement>('.gh-pin');
     expect(pin!.style.opacity).toBe('1');
+  });
+
+  it('offers five distinct arrival spots, each reachable without crossing letters', () => {
+    const board = buildBoard(WORD);
+    expect(board.targets).toHaveLength(5);
+    expect(new Set(board.targets.map((p) => `${p.c},${p.r}`)).size).toBe(5);
+    for (const spot of board.targets) {
+      expect(board.blocked[spot.r * board.cols + spot.c]).toBe(1);
+      const path = findGridPath(board, board.entrance, spot);
+      expect(path).not.toBeNull();
+      expect(path![path!.length - 1]).toEqual(spot);
+    }
+  });
+
+  it('kerns the i and t one unit tighter than a full letter advance', () => {
+    const board = buildBoard('it');
+    // the i's stem column is MARGIN+2 = 5; the t's leftmost cell would sit at
+    // column 9 with the default advance — kerning pulls it to 8
+    expect(board.cells.some((p) => p.c === 5 && p.r === 3)).toBe(true); // the i dot
+    const tMin = Math.min(...board.cells.filter((p) => p.c > 5).map((p) => p.c));
+    expect(tMin).toBe(8);
+  });
+
+  it('BlockText lays out block letters and skips unknown characters', () => {
+    const { container } = render(<BlockText text="a c?" />);
+    const expected = ['a', 'c'].reduce(
+      (n, ch) => n + GRID_GLYPHS[ch].join('').split('#').length - 1,
+      0
+    );
+    expect(container.querySelectorAll('rect')).toHaveLength(expected);
+  });
+
+  it('routes to a fresh random spot on each loop pass', () => {
+    // manual rAF pump — the loop is clock-driven, so feed frames by hand
+    let pending = new Map<number, (now: number) => void>();
+    let nextId = 1;
+    let now = 0;
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }));
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockImplementation((cb: (n: number) => void) => {
+      const id = nextId++;
+      pending.set(id, cb);
+      return id;
+    }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn().mockImplementation((id: number) => {
+      pending.delete(id);
+    }));
+    // the five arrival spots in svg units: i-dot, m stem, period, l top, e bar
+    const SPOTS = new Set(['55,35', '225,65', '285,95', '395,35', '565,75']);
+    const endPoint = (container: HTMLElement) => {
+      const d = container.querySelector('.route-line')!.getAttribute('d')!;
+      return d.slice(d.lastIndexOf('L') + 1).replace(' ', ',');
+    };
+
+    const { container } = render(<GridHero />);
+    const end0 = endPoint(container);
+    expect(SPOTS.has(end0)).toBe(true); // the initial route ends on a spot
+
+    // pump ~11.5s: wave → walk → hold → fade → gap wraps into a new pass
+    for (let i = 0; i < 720; i++) {
+      now += 16;
+      const [id, cb] = [...pending.entries()][0] ?? [];
+      if (id != null) {
+        pending.delete(id);
+        cb(now);
+      }
+    }
+    const end1 = endPoint(container);
+    expect(SPOTS.has(end1)).toBe(true); // the swapped route still ends on a spot
+    expect(end1).not.toBe(end0); // …a different one from the pass before
   });
 
   afterEach(() => {

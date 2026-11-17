@@ -1,29 +1,39 @@
 /**
  * GridHero — the homepage wordmark played as the product itself.
- * "StoreMap" is spelled out in a 5×7 grid font on a board of faint cells,
+ * "item.place" is spelled out in a 5×7 grid font on a board of faint cells,
  * then a wayfinding route (same white casing + orange line as the store
  * maps) walks the grid from an entrance flag and arrives at a pin dropped
- * on a spot on the name — the vertex of the "M".
+ * on one of five spots on the name — chosen at random each pass.
  *
  * Static SVG + one rAF loop; renders the finished route (no animation)
  * under prefers-reduced-motion or where rAF is missing. Click replays.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-export const WORD = 'StoreMap';
+export const WORD = 'item.place';
 
 /* 5×7 grid font ('#' = cell on). Lowercase sits on rows 2–6 like a real
-   bitmap font; only the letters used by the wordmark are defined. */
+   bitmap font; the l is a plain straight stem and the c is a clean open
+   curve. Covers the wordmark plus the block-text labels ("Create a Map"),
+   which also need r, M and C. */
 export const GRID_GLYPHS: Record<string, string[]> = {
-  S: ['.###.', '#...#', '#....', '.###.', '....#', '#...#', '.###.'],
+  i: ['..#..', '.....', '..#..', '..#..', '..#..', '..#..', '..#..'],
   t: ['.#...', '.#...', '###..', '.#...', '.#...', '.#...', '..##.'],
-  o: ['.....', '.....', '.###.', '#...#', '#...#', '#...#', '.###.'],
-  r: ['.....', '.....', '#.##.', '##...', '#....', '#....', '#....'],
   e: ['.....', '.....', '.###.', '#...#', '#####', '#....', '.###.'],
-  M: ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
-  a: ['.....', '.....', '.###.', '....#', '.####', '#...#', '.####'],
+  m: ['.....', '.....', '##.#.', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
+  '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
   p: ['.....', '.....', '#####', '#...#', '#####', '#....', '#....'],
+  l: ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  a: ['.....', '.....', '.###.', '....#', '.####', '#...#', '.####'],
+  c: ['.....', '.....', '.###.', '#....', '#....', '#....', '.###.'],
+  r: ['.....', '.....', '#.##.', '##...', '#....', '#....', '#....'],
+  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+  M: ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
 };
+
+/** Extra tracking after a letter — negative values tighten the pair
+ *  (i→t, and the "pla" cluster in the wordmark). */
+const KERN_AFTER: Record<string, number> = { i: -1, p: -1, l: -1 };
 
 export const GLYPH_W = 5;
 export const GLYPH_H = 7;
@@ -43,38 +53,58 @@ export interface Board {
   /** 1 = letter cell (not walkable, except the target itself) */
   blocked: Uint8Array;
   entrance: Pt;
-  /** the spot ON the name the route arrives at (M's vertex) */
+  /** the five spots ON the name the route can arrive at */
+  targets: Pt[];
+  /** the default arrival spot (targets[0]) — static/reduced-motion rendering */
   target: Pt;
 }
 
 export function buildBoard(text: string): Board {
   const letters = [...text];
-  const cols = letters.length * GLYPH_W + (letters.length - 1) * LETTER_GAP + MARGIN * 2;
+  // per-letter x origins so kerning can tighten specific pairs (i→t)
+  const ox: number[] = [];
+  let cursor = MARGIN;
+  letters.forEach((ch, i) => {
+    ox[i] = cursor;
+    cursor += GLYPH_W + LETTER_GAP + (KERN_AFTER[ch] ?? 0);
+  });
+  const cols = cursor - LETTER_GAP + MARGIN;
   const rows = GLYPH_H + MARGIN * 2;
   const cells: Pt[] = [];
   const blocked = new Uint8Array(cols * rows);
   letters.forEach((ch, i) => {
     const glyph = GRID_GLYPHS[ch];
     if (!glyph) throw new Error(`no grid glyph for "${ch}"`);
-    const ox = MARGIN + i * (GLYPH_W + LETTER_GAP);
     glyph.forEach((row, gr) =>
       [...row].forEach((px, gc) => {
         if (px !== '#') return;
-        const p = { c: ox + gc, r: MARGIN + gr };
+        const p = { c: ox[i] + gc, r: MARGIN + gr };
         cells.push(p);
         blocked[p.r * cols + p.c] = 1;
       })
     );
   });
-  const mIdx = letters.indexOf('M');
-  const mOx = MARGIN + Math.max(mIdx, 0) * (GLYPH_W + LETTER_GAP);
+  // five pin-drop spots on the name, as [letter index, glyph col, glyph row];
+  // candidates that aren't letter cells in the current word are dropped
+  const spots: [number, number, number][] = [
+    [0, 2, 0], // the dot of the "i"
+    [3, 2, 3], // the middle stem of the "m"
+    [4, 2, 6], // the dot of ".place"
+    [6, 2, 0], // the top of the "l"
+    [9, 2, 4], // the middle bar of the last "e"
+  ];
+  const targets = spots
+    .filter(([li]) => li < letters.length)
+    .map(([li, c, r]) => ({ c: ox[li] + c, r: MARGIN + r }))
+    .filter((p) => blocked[p.r * cols + p.c] === 1);
   return {
     cols,
     rows,
     cells,
     blocked,
     entrance: { c: MARGIN - 1, r: rows - 2 },
-    target: mIdx >= 0 ? { c: mOx + 2, r: MARGIN + 2 } : cells[0],
+    targets,
+    target: targets[0] ?? cells[0],
   };
 }
 
@@ -194,7 +224,13 @@ const waveDelay = (c: number, r: number) => ({ '--d': `${(c + r) * 14}ms` }) as 
 
 export default function GridHero({ text = WORD }: { text?: string }) {
   const board = useMemo(() => buildBoard(text), [text]);
-  const path = useMemo(() => findGridPath(board, board.entrance, board.target), [board]);
+  const targets = board.targets;
+  // the current pass's destination — one of the five spots, at random
+  const [ti, setTi] = useState(() => Math.floor(Math.random() * targets.length));
+  const path = useMemo(
+    () => findGridPath(board, board.entrance, targets[ti] ?? board.target),
+    [board, ti]
+  );
   const pts = useMemo(() => (path ?? []).map((p) => ({ x: (p.c + 0.5) * CS, y: (p.r + 0.5) * CS })), [path]);
   const routeD = useMemo(
     () => pts.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' '),
@@ -206,23 +242,34 @@ export default function GridHero({ text = WORD }: { text?: string }) {
   );
 
   const [waveKey, setWaveKey] = useState(0);
+  // a replay picks a fresh destination
+  useEffect(() => {
+    setTi(Math.floor(Math.random() * targets.length));
+  }, [waveKey, targets]);
   const fadeRef = useRef<SVGGElement>(null);
   const casingRef = useRef<SVGPathElement>(null);
   const lineRef = useRef<SVGPathElement>(null);
   const walkerRef = useRef<SVGGElement>(null);
   const pinRef = useRef<SVGGElement>(null);
+  // the live route of the current pass — swapped imperatively at each loop
+  // wrap so the pin lands somewhere new without breaking the loop clock
+  const routeRef = useRef({ pts, len: routeLen });
+  const lastSpot = useRef(ti);
 
   const reduced =
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const canAnimate = !reduced && typeof requestAnimationFrame === 'function' && (path?.length ?? 0) > 1;
 
   useEffect(() => {
-    const target = pts[pts.length - 1];
-    const setPinAt = (scale: number, drop: number) =>
+    routeRef.current = { pts, len: routeLen };
+    lastSpot.current = ti;
+    const setPinAt = (scale: number, drop: number) => {
+      const target = routeRef.current.pts[routeRef.current.pts.length - 1];
       pinRef.current?.setAttribute(
         'transform',
         `translate(${target.x} ${target.y - drop}) scale(${scale})`
       );
+    };
 
     const showStatic = () => {
       for (const el of [casingRef.current, lineRef.current]) if (el) el.style.strokeDashoffset = '0';
@@ -237,23 +284,44 @@ export default function GridHero({ text = WORD }: { text?: string }) {
     }
 
     const pointAt = (d: number) => {
-      let rem = Math.max(0, Math.min(routeLen, d));
-      for (let i = 1; i < pts.length; i++) {
-        const a = pts[i - 1];
-        const b = pts[i];
+      const { pts: rpts, len: rlen } = routeRef.current;
+      let rem = Math.max(0, Math.min(rlen, d));
+      for (let i = 1; i < rpts.length; i++) {
+        const a = rpts[i - 1];
+        const b = rpts[i];
         const seg = Math.hypot(b.x - a.x, b.y - a.y);
-        if (rem <= seg || i === pts.length - 1) {
+        if (rem <= seg || i === rpts.length - 1) {
           const u = seg ? rem / seg : 0;
           return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
         }
         rem -= seg;
       }
-      return pts[pts.length - 1];
+      return rpts[rpts.length - 1];
+    };
+
+    /** Next pass lands on a different random spot: re-path imperatively
+     *  while the route is hidden so the loop clock runs unbroken. */
+    const swapRoute = () => {
+      if (targets.length < 2) return;
+      let i = lastSpot.current;
+      while (i === lastSpot.current) i = Math.floor(Math.random() * targets.length);
+      lastSpot.current = i;
+      const p = findGridPath(board, board.entrance, targets[i]);
+      if (!p || p.length < 2) return;
+      const npts = p.map((q) => ({ x: (q.c + 0.5) * CS, y: (q.r + 0.5) * CS }));
+      const nlen = npts
+        .slice(1)
+        .reduce((s, q, k) => s + Math.hypot(q.x - npts[k].x, q.y - npts[k].y), 0);
+      const d = npts.map((q, k) => `${k ? 'L' : 'M'}${q.x} ${q.y}`).join(' ');
+      casingRef.current?.setAttribute('d', d);
+      lineRef.current?.setAttribute('d', d);
+      routeRef.current = { pts: npts, len: nlen };
     };
 
     let raf = 0;
     let clock = -WAVE_MS;
     let last: number | null = null;
+    let prevT = 0;
     const tick = (now: number) => {
       if (last !== null) clock += Math.min(now - last, 120); // hidden tabs don't fast-forward
       last = now;
@@ -267,13 +335,15 @@ export default function GridHero({ text = WORD }: { text?: string }) {
           fade.style.opacity = '0';
         } else {
           const t = clock % LOOP;
+          if (t < prevT) swapRoute(); // wrapped into a new pass
+          prevT = t;
           if (t < WALK_MS) {
             const p = easeInOut(t / WALK_MS);
             casingRef.current.style.strokeDashoffset = String(1 - p);
             lineRef.current.style.strokeDashoffset = String(1 - p);
             fade.style.opacity = '1';
             walker.style.opacity = '1';
-            const w = pointAt(p * routeLen);
+            const w = pointAt(p * routeRef.current.len);
             walker.setAttribute('transform', `translate(${w.x} ${w.y})`);
             pin.style.opacity = '0';
           } else if (t < WALK_MS + HOLD_MS) {
@@ -301,7 +371,7 @@ export default function GridHero({ text = WORD }: { text?: string }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [canAnimate, waveKey, pts, routeLen]);
+  }, [canAnimate, waveKey, pts, routeLen, ti, board, targets]);
 
   const dots: { c: number; r: number }[] = [];
   for (let r = 0; r < board.rows; r++)
@@ -316,7 +386,7 @@ export default function GridHero({ text = WORD }: { text?: string }) {
     <section
       className="grid-hero"
       role="img"
-      aria-label={`StoreMap wordmark: an animated route walks a grid and arrives at a pin on the name "${text}"`}
+      aria-label={`item.place wordmark: an animated route walks a grid and arrives at a pin on the name "${text}"`}
     >
       <div className="grid-hero-board" title="Replay" onClick={() => setWaveKey((k) => k + 1)}>
         <svg
@@ -376,5 +446,42 @@ export default function GridHero({ text = WORD }: { text?: string }) {
         </svg>
       </div>
     </section>
+  );
+}
+
+/** Static block-letter wordmark (the hero's grid font) for labels — the
+ *  header brand and the Create-a-Map CTA. Colored via currentColor; spaces
+ *  advance a half letter, unknown characters are skipped so callers control
+ *  their own text. Decorative: give the wrapping link its own aria-label. */
+export function BlockText({ text, cell = 3 }: { text: string; cell?: number }) {
+  const rects: { x: number; y: number }[] = [];
+  let cursor = 0;
+  for (const ch of [...text]) {
+    if (ch === ' ') {
+      cursor += 3;
+      continue;
+    }
+    const glyph = GRID_GLYPHS[ch];
+    if (!glyph) continue;
+    glyph.forEach((row, gr) =>
+      [...row].forEach((px, gc) => {
+        if (px === '#') rects.push({ x: cursor + gc, y: gr });
+      })
+    );
+    cursor += GLYPH_W + LETTER_GAP + (KERN_AFTER[ch] ?? 0);
+  }
+  const units = Math.max(1, cursor - LETTER_GAP);
+  return (
+    <svg
+      className="block-text"
+      width={units * cell}
+      height={GLYPH_H * cell}
+      viewBox={`0 0 ${units} ${GLYPH_H}`}
+      aria-hidden
+    >
+      {rects.map((r, i) => (
+        <rect key={i} x={r.x + 0.08} y={r.y + 0.08} width={0.84} height={0.84} rx={0.18} />
+      ))}
+    </svg>
   );
 }

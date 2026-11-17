@@ -1,16 +1,21 @@
 /**
  * ShelfDetail — what the shopper/owner sees when they tap a shelf on the map:
  * a front elevation of the real shelf (bays + levels) with each product's
- * facing placed where its map pin puts it.
+ * facing placed where its map pin puts it. Facings with a product photo
+ * render a photo planogram (image standing on the board, name + price
+ * below); the schematic diagram stays available via the view toggle.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './ui';
 import type { MapElement, Product } from '../types';
 import { computeShelfLayout, type ShelfPin, type ShelfSlot } from '../lib/shelfLayout';
 
 const M = 46; // pixels per metre of shelf width in the drawing
-const LEVEL_H = 58; // pixels per level
+const LEVEL_H = 58; // pixels per level in the diagram view
+const PHOTO_LEVEL_H = 112; // taller bands in the photo view so images read
 const FRAME = 10; // frame thickness in px
+
+type ViewMode = 'diagram' | 'photos';
 
 export default function ShelfDetail({
   shelf, pins, onClose, onPickProduct,
@@ -21,6 +26,14 @@ export default function ShelfDetail({
   onPickProduct?: (p: Product) => void;
 }) {
   const layout = useMemo(() => computeShelfLayout(shelf, pins), [shelf, pins]);
+  const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
+
+  // switching shelves resets a manual view choice
+  useEffect(() => setViewOverride(null), [shelf.id]);
+
+  const hasImages = !!layout?.bays.some((b) => b.slots.some((s) => s.product.image_url));
+  const mode: ViewMode = viewOverride ?? (hasImages ? 'photos' : 'diagram');
+
   if (!layout) {
     return (
       <Modal title={shelf.label || 'Shelf'} onClose={onClose}>
@@ -29,40 +42,65 @@ export default function ShelfDetail({
     );
   }
 
+  const levelH = mode === 'photos' ? PHOTO_LEVEL_H : LEVEL_H;
   const widthPx = Math.max(240, Math.min(560, layout.width * M));
-  const heightPx = layout.levels * LEVEL_H + FRAME * 2;
+  const heightPx = layout.levels * levelH + FRAME * 2;
   const pxPerM = widthPx / layout.width;
 
   const bayEdges = layout.bays.map((b) => b.from);
   const slotBox = (s: ShelfSlot) => {
-    const w = Math.max(18, s.facingWidth * pxPerM);
+    // photos render wider than their literal facing when the facing is tiny,
+    // so an image is never a sliver — dense shelves just overlap slightly
+    const w = Math.max(mode === 'photos' ? 44 : 18, s.facingWidth * pxPerM);
     const x = s.u * widthPx - w / 2;
-    const y = FRAME + (layout.levels - s.level) * LEVEL_H + 8;
-    return { x: Math.max(2, Math.min(widthPx - w - 2, x)), y, w };
+    const y = FRAME + (layout.levels - s.level) * levelH + 8;
+    return { x: Math.max(2, Math.min(widthPx - w - 2, x)), y, w, h: levelH - 18 };
   };
 
   const totalSlots = layout.bays.reduce((n, b) => n + b.slots.length, 0);
 
+  const facingProps = (product: Product) => ({
+    style: { cursor: onPickProduct ? 'pointer' : 'default' },
+    onClick: onPickProduct ? () => onPickProduct(product) : undefined,
+  });
+
   return (
-    <Modal title={`${layout.label} — shelf layout`} onClose={onClose} wide>
+    <Modal title={`${layout.label} — planogram`} onClose={onClose} wide>
       <p className="muted" style={{ marginTop: -8, marginBottom: 10 }}>
         {layout.bays.length} bays × {layout.levels} rows · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
         shelf · {layout.width.toFixed(1)} m wide
       </p>
+
+      {hasImages && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: -6, marginBottom: 8 }} role="group" aria-label="Planogram view">
+          {(['photos', 'diagram'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className="btn sm"
+              aria-pressed={mode === v}
+              style={mode === v ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
+              onClick={() => setViewOverride(v)}
+            >
+              {v === 'photos' ? 'Photos' : 'Diagram'}
+            </button>
+          ))}
+        </div>
+      )}
 
       <svg
         width={widthPx + FRAME * 2}
         height={heightPx}
         style={{ display: 'block', margin: '0 auto', background: '#f4f1e8', borderRadius: 10, border: '1px solid var(--line)' }}
         role="img"
-        aria-label={`Front layout of ${layout.label}`}
+        aria-label={`Planogram of ${layout.label}`}
       >
         {/* shelf boards + bay dividers */}
         {Array.from({ length: layout.levels + 1 }, (_, i) => (
           <rect
             key={`board-${i}`}
             x={FRAME}
-            y={FRAME + i * LEVEL_H - 4}
+            y={FRAME + i * levelH - 4}
             width={widthPx}
             height={5}
             fill="#8a7448"
@@ -87,16 +125,38 @@ export default function ShelfDetail({
           bay.slots.map((s, i) => {
             const box = slotBox(s);
             const color = s.product.category_color || '#4f7d3f';
+            const g = facingProps(s.product);
+            if (mode === 'photos' && s.product.image_url) {
+              return (
+                <g key={`${bay.index}-${i}`} {...g}>
+                  <title>{s.product.name}</title>
+                  <rect x={box.x + FRAME} y={box.y} width={box.w} height={box.h} rx={4} fill={color} fillOpacity={0.1} stroke={color} strokeWidth={1.6} />
+                  {/* photo stands on the board: fitted, anchored to the band's bottom */}
+                  <image
+                    href={s.product.image_url}
+                    x={box.x + FRAME + 2}
+                    y={box.y + 2}
+                    width={box.w - 4}
+                    height={box.h - 26}
+                    preserveAspectRatio="xMidYMax meet"
+                  />
+                  <text x={box.x + FRAME + box.w / 2} y={box.y + box.h - 13} textAnchor="middle" fontSize={10} fill="#33402e">
+                    {truncate(s.product.name, Math.max(4, Math.floor(box.w / 6.2)))}
+                  </text>
+                  {s.product.price != null && (
+                    <text x={box.x + FRAME + box.w / 2} y={box.y + box.h - 3} textAnchor="middle" fontSize={9} fill="#5a6b53">
+                      ${s.product.price.toFixed(2)}
+                    </text>
+                  )}
+                </g>
+              );
+            }
             return (
-              <g
-                key={`${bay.index}-${i}`}
-                style={{ cursor: onPickProduct ? 'pointer' : 'default' }}
-                onClick={onPickProduct ? () => onPickProduct(s.product) : undefined}
-              >
-                <rect x={box.x + FRAME} y={box.y} width={box.w} height={LEVEL_H - 18} rx={4} fill={color} fillOpacity={0.16} stroke={color} strokeWidth={1.6} />
+              <g key={`${bay.index}-${i}`} {...g}>
+                <rect x={box.x + FRAME} y={box.y} width={box.w} height={box.h} rx={4} fill={color} fillOpacity={0.16} stroke={color} strokeWidth={1.6} />
                 <text
                   x={box.x + FRAME + box.w / 2}
-                  y={box.y + (LEVEL_H - 18) / 2 + 4}
+                  y={box.y + box.h / 2 + 4}
                   textAnchor="middle"
                   fontSize={10}
                   fill="#33402e"
@@ -104,7 +164,7 @@ export default function ShelfDetail({
                   {truncate(s.product.name, Math.max(4, Math.floor(box.w / 6.2)))}
                 </text>
                 {s.product.price != null && (
-                  <text x={box.x + FRAME + box.w / 2} y={box.y + LEVEL_H - 22} textAnchor="middle" fontSize={9} fill="#5a6b53">
+                  <text x={box.x + FRAME + box.w / 2} y={box.y + box.h - 4} textAnchor="middle" fontSize={9} fill="#5a6b53">
                     ${s.product.price.toFixed(2)}
                   </text>
                 )}
