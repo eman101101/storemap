@@ -897,14 +897,16 @@ function ElementNode({
     // name label entirely (see placeSymbols)
     const sym = placeGlyph(el.type, el.label);
     const glyph = sym ?? (el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★');
+    // the entrance is the "you are here" marker — draw it bigger than the rest
+    const entrance = el.type === 'entrance';
     return (
       <g>
-        <circle cx={p.x} cy={p.y} r={0.45} fill={fill} stroke="#fff" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-        <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={0.52} fill="#fff" pointerEvents="none">
+        <circle cx={p.x} cy={p.y} r={entrance ? 0.75 : 0.45} fill={fill} stroke="#fff" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+        <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={entrance ? 0.9 : 0.52} fill="#fff" pointerEvents="none">
           {glyph}
         </text>
         {label && !sym && (
-          <text x={p.x + 0.7} y={p.y} dominantBaseline="central" fontSize={fs} className="el-label">
+          <text x={p.x + (entrance ? 1.05 : 0.7)} y={p.y} dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
         )}

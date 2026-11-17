@@ -44,15 +44,18 @@ describe('grid wordmark', () => {
   });
 
   it('renders the board and, under reduced motion, the finished route', () => {
-    // force the prefers-reduced-motion path: full route + visible pin, no loop
+    // force the prefers-reduced-motion path: full route + lit destination, no loop
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
     const { container } = render(<GridHero />);
     expect(container.querySelectorAll('.gh-cell')).toHaveLength(buildBoard(WORD).cells.length);
     const line = container.querySelector<SVGPathElement>('.route-line');
     expect(line).not.toBeNull();
     expect(line!.style.strokeDashoffset).toBe('0');
-    const pin = container.querySelector<SVGGElement>('.gh-pin');
-    expect(pin!.style.opacity).toBe('1');
+    // no pin icon — the destination block itself is lit red
+    expect(container.querySelector('.gh-pin')).toBeNull();
+    const target = container.querySelector<SVGRectElement>('.gh-target');
+    expect(target).not.toBeNull();
+    expect(target!.style.opacity).toBe('1');
   });
 
   it('offers five distinct arrival spots, each reachable without crossing letters', () => {
@@ -69,11 +72,11 @@ describe('grid wordmark', () => {
 
   it('kerns the i and t one unit tighter than a full letter advance', () => {
     const board = buildBoard('it');
-    // the i's stem column is MARGIN+2 = 5; the t's leftmost cell would sit at
-    // column 9 with the default advance — kerning pulls it to 8
-    expect(board.cells.some((p) => p.c === 5 && p.r === 3)).toBe(true); // the i dot
-    const tMin = Math.min(...board.cells.filter((p) => p.c > 5).map((p) => p.c));
-    expect(tMin).toBe(8);
+    // the i's dot column is MARGIN+2 = 6; the t crossbar's leftmost cell would
+    // sit at column 10 with the default advance — kerning pulls it to 9
+    expect(board.cells.some((p) => p.c === 6 && p.r === 4)).toBe(true); // the i dot
+    const tMin = Math.min(...board.cells.filter((p) => p.c > 6).map((p) => p.c));
+    expect(tMin).toBe(9);
   });
 
   it('BlockText lays out block letters and skips unknown characters', () => {
@@ -100,7 +103,7 @@ describe('grid wordmark', () => {
       pending.delete(id);
     }));
     // the five arrival spots in svg units: i-dot, m stem, period, l top, e bar
-    const SPOTS = new Set(['55,35', '225,65', '285,95', '395,35', '565,75']);
+    const SPOTS = new Set(['65,45', '235,75', '285,105', '375,45', '535,85']);
     const endPoint = (container: HTMLElement) => {
       const d = container.querySelector('.route-line')!.getAttribute('d')!;
       return d.slice(d.lastIndexOf('L') + 1).replace(' ', ',');

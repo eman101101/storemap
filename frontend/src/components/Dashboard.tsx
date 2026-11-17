@@ -84,7 +84,7 @@ export default function Dashboard() {
           <div className="empty-art" aria-hidden>🗺️</div>
           <h3 style={{ margin: '0 0 6px' }}>No stores yet</h3>
           <p style={{ margin: '0 0 16px' }}>
-            Create your first store, draw its shelves with the Aisle-pair tool, pin a few products —
+            Create your first store, draw a shelf with the Shelf tool, pin a few products —
             then print the QR by the door. It takes about ten minutes.
           </p>
           <button className="btn primary" onClick={() => setCreating(true)}>

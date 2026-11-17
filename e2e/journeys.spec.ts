@@ -109,8 +109,8 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   await page.getByRole('button', { name: 'Show the side panel' }).click();
   await expandOutline();
   await expect(page.locator('.outline-row')).toHaveCount(4, { timeout: 10_000 });
-  // draw one shelf with the Aisle pair tool → 2 new elements → autosave → snapshot
-  await page.getByRole('button', { name: /Aisle pair/ }).click();
+  // draw one shelf with the Shelf tool → 1 new element → autosave → snapshot
+  await page.getByRole('button', { name: /Shelf/ }).click();
   const svg = page.locator('.map-wrap > svg');
   const box = await svg.boundingBox();
   if (box) {
@@ -119,11 +119,11 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
     await page.mouse.move(box.x + 430, box.y + 260, { steps: 4 });
     await page.mouse.up();
   }
-  // the aisle-pair tool auto-selects its row (Map tab shows the element panel) —
+  // the shelf tool auto-selects its row (Map tab shows the element panel) —
   // deselect to bring the outline back
   await page.keyboard.press('Escape');
   await expandOutline();
-  await expect(page.locator('.outline-row')).toHaveCount(6, { timeout: 10_000 });
+  await expect(page.locator('.outline-row')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.save-state')).toContainText('Saved', { timeout: 10_000 });
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.locator('.snapshot-item').first()).toBeVisible({ timeout: 10_000 });

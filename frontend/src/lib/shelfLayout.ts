@@ -20,6 +20,8 @@ export interface ShelfSlot {
   level: number;
   /** horizontal metres the facing occupies (for drawing) */
   facingWidth: number;
+  /** which face of the shelf the pin sits on (front = local y in the near half) */
+  side: 'front' | 'back';
 }
 
 export interface ShelfBay {
@@ -162,6 +164,8 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
       u: Math.min(1, Math.max(0, local.x / width)),
       level,
       facingWidth: facing,
+      // which face of the shelf the pin sits on (aisle shelves stock both)
+      side: local.y * 2 <= depth ? 'front' : 'back',
     };
   });
 

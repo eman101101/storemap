@@ -12,6 +12,8 @@ import { parseElement } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
 import { shelfDirectory } from '../lib/aisleInfo';
+import { pinInShelf } from '../lib/shelfLayout';
+import { formatStoreHours } from '../lib/storeHours';
 import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useAuth } from '../App';
 import { useTheme } from '../theme';
@@ -250,6 +252,18 @@ export default function ViewerPage() {
     [shelfPopupId, elements]
   );
 
+  // the shelf a viewed item sits on — powers the sheet's "View shelf" button
+  const shelfOfSheet = useMemo(() => {
+    if (!sheetProduct || !data) return null;
+    const loc = data.locations.find((l) => l.product_id === sheetProduct.id);
+    if (!loc) return null;
+    const pin = { location: loc, product: sheetProduct };
+    return (
+      elements.find((el) => el.type === 'shelf' && el.shape === 'rect' && pinInShelf(el, pin)) ??
+      null
+    );
+  }, [sheetProduct, data, elements]);
+
   const activeRoute = route && floor && route.floorId === floor.id ? route : null;
   const walkMin = activeRoute ? Math.max(1, Math.round(activeRoute.distanceM / WALK_M_PER_MIN)) : 0;
   const flythrough = activeRoute ? { points: activeRoute.points, seq: flySeq } : null;
@@ -450,7 +464,12 @@ export default function ViewerPage() {
         <div className="viewer-ui-top">
           <div className="store-pill" title={data.store.hours || undefined}>
             {data.store.logo_url && <img src={data.store.logo_url} alt="" width={26} height={26} />}
-            <span className="store-pill-name">{data.store.name}</span>
+            <span className="store-pill-name">
+              {data.store.name}
+              {formatStoreHours(data.store.hours) && (
+                <span className="store-pill-hours">{formatStoreHours(data.store.hours)}</span>
+              )}
+            </span>
           </div>
           {FLY_ENABLED && activeRoute && (
             <button className="fly-btn" onClick={startFlight}>
@@ -492,17 +511,6 @@ export default function ViewerPage() {
             )}
             {searchOpen && (
               <div className="results-drop" role="listbox">
-                {(() => {
-                  // a low-res photo of the highlighted result, riding above the list
-                  const preview = results[activeIdx] ?? results[0];
-                  return preview ? (
-                    <div className="result-preview" aria-hidden>
-                      {preview.image_url
-                        ? <img src={preview.image_url} alt="" />
-                        : <span className="dot" style={{ background: preview.category_color || '#2f6f3e', width: 26, height: 26 }} />}
-                    </div>
-                  ) : null;
-                })()}
                 {results.length === 0 ? (
                   <div className="no-results">{search ? `Nothing found for “${q.trim()}”.` : 'Start typing to find an item.'}</div>
                 ) : (
@@ -521,9 +529,9 @@ export default function ViewerPage() {
                         onPointerEnter={() => setActiveIdx(idx)}
                         onClick={() => focusResult(p)}
                       >
-                        {p.image_url
-                          ? <img src={p.image_url} alt="" width={30} height={30} style={{ borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                          : <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />}
+                        {p.image_url && (
+                          <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
+                        )}
                         <span className="rname">
                           <b>{name}</b>
                           <span>
@@ -532,15 +540,18 @@ export default function ViewerPage() {
                               .join(' · ')}
                           </span>
                         </span>
-                        <span aria-hidden>🧭</span>
+                        <span className="rgo" aria-hidden>🧭</span>
                       </button>
                     ) : (
                       <div key={p.id} className={`result-item noloc ${active ? 'kbd-active' : ''}`}>
-                        <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />
+                        {p.image_url && (
+                          <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
+                        )}
                         <span className="rname">
                           <b>{name}</b>
                           <span>{[p.brand, 'no map pin yet'].filter(Boolean).join(' · ')}</span>
                         </span>
+                        {!p.image_url && <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />}
                       </div>
                     );
                   })
@@ -678,6 +689,15 @@ export default function ViewerPage() {
             <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
               ＋ Trip
             </button>
+            {shelfOfSheet && (
+              <button
+                className="btn sm"
+                title="See this shelf's full planogram"
+                onClick={() => setShelfPopupId(shelfOfSheet.id)}
+              >
+                ▦ View shelf
+              </button>
+            )}
             {FLY_ENABLED && <button className="fly-btn" onClick={startFlight}>✈ Fly</button>}
             <button className="route-badge-x" onClick={() => setSheetProduct(null)} aria-label="Close">✕</button>
           </div>

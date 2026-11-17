@@ -127,7 +127,8 @@ export function clipPolygonNear(pts: CamPt[]): CamPt[] {
   return out;
 }
 
-/** Camera that fits a whole floor on screen. */
+/** Camera that fits a whole floor on screen — nudged up a little so the
+ *  bottom-edge controls (zoom, hints) don't sit on the floor. */
 export function fitCamera(floor: Floor): Camera3D {
   const span = Math.max(floor.width_m, floor.height_m);
   return {
@@ -135,7 +136,7 @@ export function fitCamera(floor: Floor): Camera3D {
     pitch: 0.95, // ~54° — tilted, readable, still clearly 3D
     dist: span * 1.25,
     tx: floor.width_m / 2,
-    ty: floor.height_m / 2,
+    ty: floor.height_m / 2 + span * 0.05,
     tz: 0,
   };
 }
@@ -1236,16 +1237,19 @@ export function renderScene(
     if (el.shape !== 'point') continue;
     const g = el.geom as PointGeom;
     const base = project(cam, w, h, { x: g.x, y: g.y, z: 0 });
-    const top = project(cam, w, h, { x: g.x, y: g.y, z: 2.0 });
+    const top = project(cam, w, h, { x: g.x, y: g.y, z: el.type === 'entrance' ? 2.7 : 2.0 });
     if (!base || !top) continue;
     const c = el.color || TYPE_COLOR[el.type];
     // common places read as symbols, not words — a matched glyph replaces the
     // name label entirely (see placeSymbols)
     const sym = placeGlyph(el.type, el.label);
     const glyph = sym ?? (el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★');
+    // the entrance is the "you are here" marker — a taller pole and bigger head
+    const big = el.type === 'entrance';
+    const headR = big ? 14 : 10;
     // ground disc anchors the marker to its spot on the floor
     ctx.beginPath();
-    ctx.ellipse(base.x, base.y, 11, Math.max(11 * pitchSin, 2), 0, 0, Math.PI * 2);
+    ctx.ellipse(base.x, base.y, big ? 16 : 11, Math.max((big ? 16 : 11) * pitchSin, 2), 0, 0, Math.PI * 2);
     ctx.fillStyle = c;
     ctx.globalAlpha = 0.35;
     ctx.fill();
@@ -1258,18 +1262,18 @@ export function renderScene(
     ctx.stroke();
     // glyph head with a white ring
     ctx.beginPath();
-    ctx.arc(top.x, top.y, 10, 0, Math.PI * 2);
+    ctx.arc(top.x, top.y, headR, 0, Math.PI * 2);
     ctx.fillStyle = c;
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2.2;
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = `700 ${big ? 15 : 11}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(glyph, top.x, top.y + 0.5);
-    if (el.label && !sym) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.dark);
+    if (el.label && !sym) drawLabel(ctx, top.x + headR + 5, top.y, el.label, 12, true, theme.dark);
   }
 
   // aisle symbols: floating disc above the aisle's midpoint; hovering it (see

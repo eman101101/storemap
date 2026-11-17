@@ -599,11 +599,10 @@ palette.
 | Pick filter (toolbar, Select tool) | — | **Fixtures** = normal element picking; **Products** = clicks select/drag product pins only — floor, walls and shelves are never grabbed. A click (no drag) opens the Products tab with the row flashed; a drag moves the pin locally and upserts it on release (`POST /api/products/:id/locations` — one API call per gesture) |
 | Duplicate (top bar) | — | offset-copies the selected element (+0.5, +0.5 m) |
 | Shelf | rect | 1.5 m box, valid pin target, blocks walking |
-| **Aisle pair** | two rects | drag one row; a facing row is committed 1.5 m across the aisle (offset `y + h + 1.5`) — the one-drag way to build real grocery aisles |
 | Wall / Wall line | rect / polyline | 3.2 m boxes; line walls extrude per segment |
 | Aisle | polyline | non-blocking floor marking ribbon |
-| Zone / Zone (poly) | rect / polygon | translucent tint decal |
-| Entrance / Exit / Point | point | route start; billboards in 3D |
+| Zone | rect | translucent tint decal |
+| Entrance / Point | point | route start; billboards in 3D |
 | Product pin | — | pick a product in the Products tab, click the shelf |
 
 **⧉ Duplicate** (top bar) offset-copies the selected element by (+0.5, +0.5) m and

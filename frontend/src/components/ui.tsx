@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function Modal({
   title, onClose, children, wide,
@@ -65,6 +65,89 @@ export const GOOGLE_G = (
   </svg>
 );
 
+/**
+ * In-app device camera: a live preview via getUserMedia and a Capture button
+ * that hands back a JPEG File. Works on desktop webcams and phone cameras
+ * alike (the old `capture` file input opened a photo picker on desktops).
+ */
+export function CameraCaptureModal({
+  onCapture, onClose,
+}: {
+  onCapture: (file: File) => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then((stream) => {
+        if (!live) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      })
+      .catch(() => {
+        if (live) setError('No camera available in this browser — use Upload instead.');
+      });
+    return () => {
+      live = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')!.drawImage(video, 0, 0);
+    canvas.toBlob(
+      (blob) => {
+        onClose();
+        if (blob) onCapture(new File([blob], 'camera.jpg', { type: 'image/jpeg' }));
+      },
+      'image/jpeg',
+      0.92
+    );
+  };
+
+  return (
+    <Modal title="Take a photo" onClose={onClose}>
+      {error ? (
+        <>
+          <p className="muted">{error}</p>
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose}>Close</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <video
+            ref={videoRef}
+            style={{ width: '100%', borderRadius: 10, background: '#000', minHeight: 200 }}
+            playsInline
+            muted
+          />
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn primary" onClick={capture}>◉ Capture</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 export const APPLE_LOGO = (
   <svg width="16" height="16" viewBox="0 0 384 512" aria-hidden>
     <path fill="currentColor" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
@@ -84,7 +167,7 @@ export const CAMERA_ICON = (
 function PanArrow({ dir }: { dir: 'up' | 'down' | 'left' | 'right' }) {
   const rot = { up: 0, right: 90, down: 180, left: 270 }[dir];
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden
       style={{ transform: `rotate(${rot}deg)` }}>
       <path d="M12 4.5 L20 17.5 H4 Z" />
     </svg>
@@ -174,7 +257,7 @@ export function CameraPad({
 }
 
 /**
- * The zoom pad: a vertical ＋/− column pinned to the bottom-right in BOTH the
+ * The zoom pad: a labelled ＋/− column pinned to the bottom-right in BOTH the
  * 2D and 3D views. One call per tap — the glide animation lives in the
  * consumer (2D: MapCanvas's zoom command; 3D: Map3D's zoomCommand tween).
  */
@@ -187,8 +270,14 @@ export function ZoomPad({
 }) {
   return (
     <div className={`zoom-column ${className}`} role="toolbar" aria-label="Zoom controls">
-      <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => onZoom(1)}>+</button>
-      <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => onZoom(-1)}>&minus;</button>
+      <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => onZoom(1)}>
+        <span aria-hidden className="zoom-sym">+</span>
+        <span className="zoom-word">Zoom in</span>
+      </button>
+      <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => onZoom(-1)}>
+        <span aria-hidden className="zoom-sym">&minus;</span>
+        <span className="zoom-word">Zoom out</span>
+      </button>
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import Map3D from './Map3D';
 import GridHero, { BlockText } from './GridHero';
+import { PlanogramSvg, type ShelfSide } from './ShelfDetail';
+import { computeShelfLayout, type ShelfLayout, type ShelfSlot } from '../lib/shelfLayout';
 import { useAuth } from '../App';
 import type { MapElement, Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
 import { parseElement } from '../types';
@@ -12,11 +14,11 @@ import { fitCamera, MODERN_THEME, DARK_THEME } from '../lib/render3d';
 import { computeRoute } from '../lib/navgrid';
 import { useTheme } from '../theme';
 
-/** The rotating hero examples — each opens as a no-account sandbox copy. */
+/** The rotating hero examples — each opens as a no-account sandbox copy.
+ *  Megamart Central stays seeded and viewable (files/DB), just not showcased. */
 const EXAMPLES = [
   { slug: 'freshmart-downtown', name: 'Freshmart Downtown', kind: 'Supermarket' },
   { slug: 'harbor-warehouse', name: 'Harbor Warehouse', kind: 'Warehouse' },
-  { slug: 'megamart-central', name: 'Megamart Central', kind: 'Big-box store' },
 ];
 
 /** The hero's settle-in motion: a slow, decelerating swing (~29°) that glides
@@ -30,6 +32,12 @@ const HERO_SPIN_MS = 2600;
 function HeroMap({ data }: { data: PublicStorePayload }) {
   const [cam, setCam] = useState<Camera3D | null>(null);
   const userDrove = useRef(false);
+  // the preview is a live map: any visitor gesture takes over the camera and
+  // cancels the intro swing
+  const onCamera = useCallback((c: Camera3D) => {
+    userDrove.current = true;
+    setCam(c);
+  }, []);
   const [demo, setDemo] = useState<{
     name: string;
     where: string;
@@ -38,13 +46,6 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
     loc: ProductLocation;
     product: Product;
   } | null>(null);
-
-  // the preview is a live map: any visitor gesture takes over the camera and
-  // cancels the intro swing
-  const onCamera = useCallback((c: Camera3D) => {
-    userDrove.current = true;
-    setCam(c);
-  }, []);
 
   const floor = data.floors[0] ?? null;
   const { resolved } = useTheme();
@@ -148,23 +149,138 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
   );
 }
 
+/** Compact, fully-filled planogram for the example: the shelf's real facings
+ *  re-gridded into a board that fits them (no rows of empty bays). */
+function filledLayout(src: ShelfLayout, slots: ShelfSlot[]): ShelfLayout {
+  const levels = Math.max(1, Math.min(src.levels, Math.ceil(slots.length / 4)));
+  const bays = Math.max(1, Math.ceil(slots.length / levels));
+  const ordered = [...slots].sort((a, b) => a.u - b.u);
+  const placed = ordered.map((s, i) => {
+    const bay = i % bays;
+    const level = Math.floor(i / bays) + 1;
+    return {
+      ...s,
+      level,
+      u: (bay + 0.5) / bays,
+      facingWidth: (src.width / bays) * 0.85,
+    };
+  });
+  const out: ShelfLayout = {
+    ...src,
+    levels,
+    bays: Array.from({ length: bays }, (_, i) => ({
+      index: i,
+      from: (i * src.width) / bays,
+      to: ((i + 1) * src.width) / bays,
+      slots: [],
+    })),
+  };
+  for (const s of placed) {
+    const idx = Math.min(bays - 1, Math.floor(s.u * bays));
+    out.bays[idx].slots.push(s);
+  }
+  for (const b of out.bays) b.slots.sort((a, b) => a.u - b.u);
+  return out;
+}
+
+/** Two real demo shelves of different sizes, rendered as filled planograms —
+ *  tap a side (A/B) on a card to view that face. Hidden when the payloads
+ *  have no usable shelf. */
+function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePayload | null> }) {
+  const picks = useMemo(() => {
+    const all: { layout: ShelfLayout; label: string; score: number }[] = [];
+    for (const { slug } of EXAMPLES) {
+      const data = payloads[slug];
+      if (!data || !data.floors[0]) continue;
+      const elements = data.elements.map(parseElement);
+      const floor = data.floors[0];
+      const pins = data.locations
+        .filter((l) => l.floor_id === floor.id)
+        .map((l) => ({ location: l, product: data.products.find((p) => p.id === l.product_id) }))
+        .filter((x): x is { location: ProductLocation; product: Product } => !!x.product);
+      for (const el of elements) {
+        if (el.floor_id !== floor.id || el.type !== 'shelf' || el.shape !== 'rect') continue;
+        const g = el.geom as RectGeom;
+        if (g.w < g.h) continue; // landscape shelves planogram sensibly
+        const layout = computeShelfLayout(el, pins);
+        if (!layout) continue;
+        const total = layout.bays.reduce((n, b) => n + b.slots.length, 0);
+        const withImgs = layout.bays.reduce(
+          (n, b) => n + b.slots.filter((s) => s.product.image_url).length,
+          0
+        );
+        if (withImgs === 0 || total < 3) continue;
+        all.push({ layout, label: el.label, score: withImgs * 3 + total });
+      }
+    }
+    all.sort((a, b) => b.score - a.score);
+    // two cards, different shelf sizes
+    const out: typeof all = [];
+    const seenW = new Set<number>();
+    for (const cand of all) {
+      const w = Math.round(cand.layout.width);
+      if (seenW.has(w)) continue;
+      seenW.add(w);
+      out.push(cand);
+      if (out.length >= 2) break;
+    }
+    return out;
+  }, [payloads]);
+
+  if (picks.length === 0) return null;
+  return (
+    <div className="planogram-grid">
+      {picks.map((p) => (
+        <ShelfCard key={p.layout.shelfId} layout={p.layout} label={p.label} />
+      ))}
+    </div>
+  );
+}
+
+function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
+  const [side, setSide] = useState<ShelfSide>('front');
+  const bothSides =
+    layout.bays.some((b) => b.slots.some((s) => s.side === 'front')) &&
+    layout.bays.some((b) => b.slots.some((s) => s.side === 'back'));
+  const slots = layout.bays.flatMap((b) => b.slots).filter((s) => !bothSides || s.side === side);
+  const filled = useMemo(() => filledLayout(layout, slots), [layout, slots]);
+  const shown = filled.bays.reduce((n, b) => n + b.slots.length, 0);
+  const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_url));
+
+  return (
+    <div className="planogram-card">
+      <div className="planogram-card-head">
+        <b>{label} — shelf planogram</b>
+        {bothSides && (
+          <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Shelf side">
+            {(['front', 'back'] as const).map((sd) => (
+              <button
+                key={sd}
+                type="button"
+                className="btn sm"
+                aria-pressed={side === sd}
+                style={side === sd ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
+                onClick={() => setSide(sd)}
+              >
+                {sd === 'front' ? 'Side A' : 'Side B'}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <PlanogramSvg layout={filled} mode={hasImages ? 'photos' : 'diagram'} />
+      <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
+        {shown} product{shown === 1 ? '' : 's'} · {filled.levels} row{filled.levels === 1 ? '' : 's'} ·{' '}
+        {filled.width.toFixed(1)} m — tap a shelf on any map to see its planogram.
+      </p>
+    </div>
+  );
+}
+
 /** The hero visual cycles the live examples; each carries edit + view actions. */
-function HeroCarousel() {
-  const [payloads, setPayloads] = useState<Record<string, PublicStorePayload | null>>({});
+function HeroCarousel({ payloads }: { payloads: Record<string, PublicStorePayload | null> }) {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    for (const { slug } of EXAMPLES) {
-      api.publicStore(slug)
-        .then((p) => live && setPayloads((prev) => ({ ...prev, [slug]: p })))
-        .catch(() => live && setPayloads((prev) => ({ ...prev, [slug]: null })));
-    }
-    return () => {
-      live = false;
-    };
-  }, []);
 
   // rotate through the examples until the visitor takes over
   const reduced =
@@ -215,7 +331,7 @@ function HeroCarousel() {
         {data && (
           <div className="hero-carousel-actions">
             <Link className="btn primary sm" to={`/try/${current.slug}`} title="Opens this store as a sandbox copy in the editor">
-              ⧉ Edit a copy — free
+              ⧉ Edit a copy
             </Link>
             <Link className="btn sm" to={`/s/${current.slug}`}>▶ View live</Link>
           </div>
@@ -227,18 +343,41 @@ function HeroCarousel() {
 
 export default function Landing() {
   const { user } = useAuth();
+  const [payloads, setPayloads] = useState<Record<string, PublicStorePayload | null>>({});
+
+  // the example stores, fetched once for the carousel and the planogram band
+  useEffect(() => {
+    let live = true;
+    for (const { slug } of EXAMPLES) {
+      api.publicStore(slug)
+        .then((p) => live && setPayloads((prev) => ({ ...prev, [slug]: p })))
+        .catch(() => live && setPayloads((prev) => ({ ...prev, [slug]: null })));
+    }
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <main className="container">
       <GridHero />
+      <p className="hero-tagline">Customer facing maps and planograms.</p>
 
       <section className="hero">
-        <HeroCarousel />
+        <HeroCarousel payloads={payloads} />
         <div className="hero-cta">
           <Link to={user ? '/dashboard' : '/try/blank'} className="btn primary" aria-label="Create a Map">
             <BlockText text="Create a Map" cell={4} />
           </Link>
         </div>
+      </section>
+
+      <section className="planogram-band">
+        <h2>Planograms, built in</h2>
+        <p className="muted">
+          Shelves carry their own layout — bays, rows and both faces. Tap a side to flip the shelf.
+        </p>
+        <HeroPlanogram payloads={payloads} />
       </section>
 
       <footer className="footer">item.place - <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Host your own maps</a></footer>

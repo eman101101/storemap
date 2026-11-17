@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+        with: { node-version: 23, cache: npm, cache-dependency-path: frontend/package-lock.json }
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22.5, cache: npm, cache-dependency-path: backend/package-lock.json }
+        with: { node-version: 23, cache: npm, cache-dependency-path: backend/package-lock.json }
       - run: npm ci
       - run: npm test
       - run: npm audit --audit-level=high --omit=dev || true
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with: { node-version: 23 }
       - name: Build SPA
         working-directory: frontend
         run: npm ci && npm run build

@@ -416,7 +416,8 @@ columns, levels as rows, product facings positioned by `u`/`level`, "outside"
 pins listed below; picking a facing routes the viewer to that product.
 
 **`EditorPage.tsx`** — the owner workspace (ARCHITECTURE §10): top bar (floors
-tabs + add, undo/redo — per-floor snapshot stacks, ⧉ Duplicate, ⤢ Fit,
+tabs + add, undo/redo — per-floor snapshot stacks, ⧉ Duplicate, ⤢ Re center,
+🎓 Tutorial + 📖 Glossary,
 SaveBadge: saved/dirty-pulse/saving/error+retry), side tabs **Map** (element
 props: type/label/colour, **Position** section with nudge pad + X/Y fields,
 shelf bays/levels + preview) / **Products** (filter, CRUD, categories,

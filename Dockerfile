@@ -1,5 +1,5 @@
 # ---- Stage 1: build the frontend ----
-FROM node:22-alpine AS frontend-build
+FROM node:23-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci || npm install
@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: production service ----
-FROM node:22-alpine
+FROM node:23-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json* ./backend/

@@ -13,8 +13,11 @@ import { elementToRow, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
 import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useTheme } from '../theme';
-import { CameraPad, Field, Modal, ZoomPad } from './ui';
+import { CameraCaptureModal, CameraPad, Field, Modal, ZoomPad } from './ui';
 import { removeBackground } from '../lib/imageBg';
+import { defaultWeek, parseStoreHours, serializeWeek, WEEK_DAYS, type DayHours, type WeekDay, type WeekHours } from '../lib/storeHours';
+import { useLoginModal } from '../App';
+import { EditorTour, GlossaryModal, type TourStep } from './EditorHelp';
 
 /**
  * The editor's data source. On the dashboard it's the real api; in the
@@ -27,31 +30,54 @@ const useEditorApi = () => useContext(EditorApiContext);
 const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] = [
   { id: 'select', label: 'Select', icon: '⬚' },
   { id: 'shelf', label: 'Shelf', icon: '▬', group: 'draw' },
-  { id: 'aisle-pair', label: 'Aisle pair', icon: '☰', group: 'draw' },
   { id: 'wall', label: 'Wall', icon: '▥', group: 'draw' },
   { id: 'zone', label: 'Zone', icon: '▣', group: 'mark' },
-  { id: 'zone-poly', label: 'Zone (poly)', icon: '⬟', group: 'mark' },
   { id: 'aisle', label: 'Label', icon: '🏷', group: 'mark' },
   { id: 'entrance', label: 'Entrance', icon: '⬆', group: 'point' },
-  { id: 'exit', label: 'Exit', icon: '⬇', group: 'point' },
-  { id: 'poi', label: 'Point', icon: '★', group: 'point' },
+  { id: 'poi', label: 'Interest points', icon: '★', group: 'point' },
   { id: 'product', label: 'Product pin', icon: '📍', group: 'point' },
 ];
 
 const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
   select: 'Drag to move · drag handles to resize/rotate · arrow keys nudge · drag empty space to pan',
   shelf: 'Drag to draw a shelf rectangle (or click for a default size)',
-  'aisle-pair': 'Drag one shelf row — a facing row appears 1.5 m across the aisle',
   wall: 'Drag to draw a wall segment',
   'wall-line': 'Click to add wall vertices · hold Shift for straight runs · Enter to finish',
   aisle: 'Click to place a labelled aisle zone · drag to size it · reshape with the handles or the panel',
   zone: 'Drag to draw a zone rectangle',
-  'zone-poly': 'Click to add zone vertices · hold Shift for straight runs · Enter to finish',
   entrance: 'Click to place the entrance marker',
-  exit: 'Click to place the exit marker',
   poi: 'Click to place a point of interest',
   product: 'Click a spot on the map to pin the selected product · Esc to cancel',
 };
+
+/** A starter skeleton sized to the floor: outer walls, an entrance and blank
+ *  shelf pairs with aisle label strips. Everything stays editable — reshape,
+ *  rename, then pin products. */
+export function blankShelfTemplate(floorId: string, W: number, H: number, zBase: number): MapElement[] {
+  const els: MapElement[] = [];
+  let z = zBase;
+  const add = (type: MapElement['type'], shape: MapElement['shape'], geom: MapElement['geom'], label = '') =>
+    els.push({ id: crypto.randomUUID(), floor_id: floorId, type, shape, geom, label, color: '', meta: '{}', z_index: z++ });
+
+  add('wall', 'rect', { x: 0, y: 0, w: W, h: 0.4, rot: 0 }, 'North wall');
+  add('wall', 'rect', { x: 0, y: H - 0.4, w: W, h: 0.4, rot: 0 }, 'South wall');
+  add('wall', 'rect', { x: 0, y: 0, w: 0.4, h: H, rot: 0 }, 'West wall');
+  add('wall', 'rect', { x: W - 0.4, y: 0, w: 0.4, h: H, rot: 0 }, 'East wall');
+  add('entrance', 'point', { x: W / 2, y: H - 1 }, 'Entrance');
+
+  // shelf pairs facing each other across a 1.5 m aisle, scaled to the floor
+  const len = Math.min(W - 6, 18);
+  const x0 = (W - len) / 2;
+  const pairs = Math.max(1, Math.min(4, Math.floor((H - 6) / 4.9)));
+  for (let i = 0; i < pairs; i++) {
+    const y0 = 4 + i * 4.9;
+    if (y0 + 2.9 > H - 3) break;
+    add('shelf', 'rect', { x: x0, y: y0, w: len, h: 0.7, rot: 0 }, `Aisle ${i + 1}`);
+    add('shelf', 'rect', { x: x0, y: y0 + 2.2, w: len, h: 0.7, rot: 0 }, `Aisle ${i + 1}`);
+    add('aisle', 'polyline', [[x0, y0 + 1.45], [x0 + len, y0 + 1.45]], `Aisle ${i + 1}`);
+  }
+  return els;
+}
 
 type SideTab = 'map' | 'products' | 'store' | 'history';
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error';
@@ -102,17 +128,22 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [placeProductId, setPlaceProductId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [loadError, setLoadError] = useState('');
-  // 3D edit view: same elements/selection/undo pipeline, different viewport
-  const [view3d, setView3d] = useState(() => {
+  // 3D edit view: same elements/selection/undo pipeline, different viewport.
+  // The editor always opens in 2D — that's where objects are placed.
+  const [view3d, setView3d] = useState(false);
+  const [cam3d, setCam3d] = useState<Camera3D | null>(null);
+  const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
+  const [showControls, setShowControls] = useState(false);
+  // onboarding tour + glossary; the tour offers itself once per device
+  const [exportOpen, setExportOpen] = useState(false);
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(() => {
     try {
-      return localStorage.getItem('storemap.editorView') === '3d';
+      return localStorage.getItem('storemap.tour.seen') !== '1';
     } catch {
       return false;
     }
   });
-  const [cam3d, setCam3d] = useState<Camera3D | null>(null);
-  const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
-  const [showControls, setShowControls] = useState(false);
   const dragOrig3d = useRef<MapElement | null>(null);
   // gesture-start snapshot: containment for pin-follow is evaluated against
   // where the shelf was when the gesture BEGAN, so a shelf dragged across other
@@ -400,6 +431,67 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       /* private mode */
     }
   }, []);
+
+  const { openLogin } = useLoginModal();
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    try {
+      localStorage.setItem('storemap.tour.seen', '1');
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  const tourSteps = useMemo<TourStep[]>(() => [
+    {
+      title: 'Building a map, step by step',
+      body: 'Draw the room in 2D, stock it with products, then walk it in 3D. Arrow keys work too — Skip tour ends it anytime.',
+    },
+    {
+      selector: '.tool-rail',
+      title: 'Pick a tool — things are placed in 2D',
+      body: 'Choose a tool (Shelf, Wall, Zone, Label, Entrance, Interest points, Product pin), then drag on the map to place it — or click once for a default-sized object.',
+    },
+    {
+      selector: '.tool-hint',
+      title: 'The hint line explains the active tool',
+      body: 'Drag objects to move them, the round handles to resize or rotate, arrow keys to nudge. Delete removes whatever is selected.',
+    },
+    {
+      selector: '.side-tabs',
+      title: 'Products live in the Products tab',
+      body: 'Add categories and products, pick one, then use the 📍 Product pin tool and click a spot on a shelf — the exact spot decides where the item sits in the shelf layout.',
+    },
+    {
+      selector: '.view-toggle',
+      title: '2D ⇄ 3D, same map',
+      body: '2D is for drawing; 3D is the shopper’s-eye walkthrough of the very same objects. Next, the 3D controls.',
+    },
+    {
+      selector: '.pan-pad',
+      title: 'Editing in 3D',
+      body: 'Drag to orbit, click a fixture to select it and drag to move it — the change applies everywhere. The camera pad pans the view.',
+      action: () => switchView3d(true),
+      settleMs: 600,
+    },
+    {
+      selector: '.zoom-column',
+      title: 'Zoom, and refit',
+      body: 'Zoom in / Zoom out step the camera — the mouse wheel works too. ⤢ Re center in the top bar puts the whole floor back on screen.',
+    },
+    {
+      title: tryMode
+        ? 'The sandbox saves on this device'
+        : 'Signed-in changes save automatically',
+      body: tryMode
+        ? 'Use ⬇ Export to download the map as a transfer bundle (.json) — import it on any device or instance to restore it.'
+        : 'The badge in the top bar shows saved / saving / unsaved. ⬇ Export downloads a transfer bundle anytime.',
+    },
+    {
+      title: 'Reopen anytime',
+      body: '🎓 Tutorial restarts this walkthrough and 📖 Glossary explains every label you can see. You’re ready to build.',
+    },
+  ], [tryMode, switchView3d]);
 
   // a selection made anywhere (outline, panel, 3D click) aims the 3D camera
   useEffect(() => {
@@ -737,9 +829,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         >
           ⧉ Duplicate
         </button>
-        <button className="btn sm" onClick={() => setFitSignal((n) => n + 1)} title="Fit map to screen">⤢ Fit</button>
+        <button className="btn sm" onClick={() => setFitSignal((n) => n + 1)} title="Re-center the map on screen">⤢ Re center</button>
+        <button className="btn sm" onClick={() => setTourOpen(true)} title="Step-by-step tour of the editor">🎓 Tutorial</button>
+        <button className="btn sm" onClick={() => setGlossaryOpen(true)} title="What every label means">📖 Glossary</button>
         {tryMode ? (
-          <button className="btn sm" onClick={() => session?.exportDownload()} title="Download this store as a transfer bundle">
+          <button className="btn sm" onClick={() => setExportOpen(true)} title="Download this store as a transfer bundle">
             ⬇ Export
           </button>
         ) : (
@@ -750,10 +844,10 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       {tryMode && (
         <div className="try-banner">
           <span className="try-banner-text">
-            🧪 Sandbox — everything works, and your map is saved <b>on this device only</b>. Create an account to put it online.
+            Your map is saved <b>on this device only</b>. Create an account to put it online.
           </span>
           <div className="try-banner-actions">
-            <button className="btn sm" onClick={() => session?.exportDownload()}>⬇ Export</button>
+            <button className="btn sm" onClick={() => setExportOpen(true)}>⬇ Export</button>
             {session?.canPersist && (
               <button
                 className="btn sm"
@@ -768,10 +862,36 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 Start over
               </button>
             )}
-            <Link className="btn sm primary" to="/login">Save with an account</Link>
+            {/* opens the sign-in modal in place — signing in keeps you in this editor */}
+            <button className="btn sm primary" onClick={() => openLogin(window.location.pathname)}>
+              Save with an account
+            </button>
           </div>
         </div>
       )}
+
+      {exportOpen && (
+        <Modal title="Export this map?" onClose={() => setExportOpen(false)}>
+          <p className="muted" style={{ marginTop: -6 }}>
+            This downloads <b>{store.name}</b> as a transfer bundle (.json). Import it on any other
+            device or instance to restore or move the map.
+          </p>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setExportOpen(false)}>Cancel</button>
+            <button
+              className="btn primary"
+              onClick={() => {
+                setExportOpen(false);
+                session?.exportDownload();
+              }}
+            >
+              ⬇ Download export
+            </button>
+          </div>
+        </Modal>
+      )}
+      {tourOpen && <EditorTour steps={tourSteps} onClose={closeTour} />}
+      {glossaryOpen && <GlossaryModal onClose={() => setGlossaryOpen(false)} />}
 
       <div className={`editor-body ${sideOpen ? "side-open" : "side-closed"}`}>
         <div className="map-wrap">
@@ -840,9 +960,10 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               zoomCommand={zoomCmd}
             />
           )}
-          {/* editing tools as a left icon rail: add-tools, delete, pick filter */}
+          {/* editing tools as a left icon rail: add-tools, delete, pick filter.
+              In 3D only selection works — placement tools are 2D and hide. */}
           <div className="tool-rail" role="toolbar" aria-label="Map editing tools">
-            {TOOLS.map((t) => (
+            {TOOLS.filter((t) => !view3d || t.id === 'select').map((t) => (
               <button
                 key={t.id}
                 className={`tool-btn ${tool === t.id ? 'active' : ''}`}
@@ -896,7 +1017,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               </>
             )}
           </div>
-          {!placing && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
+          {/* the 2D hint hides in 3D — the centered 3D hint takes over, so the
+              two never overlap */}
+          {!placing && !view3d && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
           {/* pull-out handle for the side panel */}
           <button
             className={`side-handle ${sideOpen ? 'open' : ''}`}
@@ -1615,13 +1738,53 @@ function FloorPanel({
 
 /* ---------------- Sandbox history (device save log) ---------------- */
 
+const DAY_CAPS: Record<WeekDay, string> = {
+  mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
+};
+
+/** Day-by-day opening hours: one row per day with open/close times and a
+ *  closed toggle. Serializes into the store's `hours` field as JSON. */
+function DayHoursEditor({ value, onChange }: { value: WeekHours; onChange: (w: WeekHours) => void }) {
+  const set = (d: WeekDay, patch: Partial<DayHours>) =>
+    onChange({ ...value, [d]: { ...value[d], ...patch } });
+  return (
+    <div className="day-hours">
+      {WEEK_DAYS.map((d) => {
+        const day = value[d];
+        return (
+          <div key={d} className="day-hours-row">
+            <label className="day-hours-day">
+              <input
+                type="checkbox"
+                checked={!day.closed}
+                onChange={(e) => set(d, { closed: !e.target.checked })}
+                aria-label={`${DAY_CAPS[d]} open`}
+              />
+              <b>{DAY_CAPS[d]}</b>
+            </label>
+            {day.closed ? (
+              <span className="muted" style={{ fontSize: 12.5 }}>Closed</span>
+            ) : (
+              <span className="day-hours-times">
+                <input type="time" className="input" value={day.open} onChange={(e) => set(d, { open: e.target.value })} />
+                <span aria-hidden>–</span>
+                <input type="time" className="input" value={day.close} onChange={(e) => set(d, { close: e.target.value })} />
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SandboxHistory({ session }: { session: LocalSession }) {
   const entries = [...session.log].reverse(); // newest first
   return (
     <div className="panel-section">
       <h4>Save log · this device</h4>
       <p className="muted" style={{ fontSize: 12.5, margin: '0 0 8px' }}>
-        Every change saved on this device, newest first. Nothing leaves your browser.
+        Every change saved on this device, newest first.
       </p>
       {entries.length === 0 ? (
         <p className="muted" style={{ fontSize: 13 }}>No changes yet — draw something first.</p>
@@ -1885,17 +2048,7 @@ function ProductsPanel({
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
   const [newCat, setNewCat] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [csvOpen, setCsvOpen] = useState(false);
-  const [csvText, setCsvText] = useState('');
-  const [csvMsg, setCsvMsg] = useState('');
   const flashRef = useRef<HTMLDivElement | null>(null);
-
-  const loadCsvRefresh = async () => {
-    try {
-      const r = await (await fetch(`/api/stores/${storeId}/full`, { credentials: 'same-origin' })).json();
-      onData({ products: r.products, categories: r.categories, locations: r.locations });
-    } catch { /* message already shown */ }
-  };
 
   // a pin selected on the map scrolls this product into view and flashes it
   useEffect(() => {
@@ -1952,7 +2105,7 @@ function ProductsPanel({
         <div className="row-between">
           <h4 style={{ margin: 0 }}>Products</h4>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn sm" onClick={() => setCsvOpen((v) => !v)} title="Import products from CSV">⇪ CSV</button>
+            <a className="btn sm" href={`/api/stores/${storeId}/catalog.csv`} download title="Download products as CSV">⬇ CSV</a>
             <button className="btn primary sm" onClick={() => setEditing('new')}>+ Add</button>
           </div>
         </div>
@@ -1994,38 +2147,6 @@ function ProductsPanel({
               📍 Pin {checked.size} on map
             </button>
             <button className="btn sm ghost" onClick={() => setChecked(new Set())}>Clear</button>
-          </div>
-        )}
-        {csvOpen && (
-          <div className="csv-box" style={{ marginTop: 8 }}>
-            <textarea
-              className="input"
-              rows={5}
-              placeholder="Paste CSV with a header row: name, sku, barcode, brand, price, quantity, category"
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-            />
-            <div className="multi-row" style={{ marginTop: 6 }}>
-              <button
-                className="btn primary sm"
-                disabled={!csvText.trim()}
-                onClick={async () => {
-                  setCsvMsg('Importing…');
-                  try {
-                    const r = await api.importCsv(storeId, csvText);
-                    setCsvMsg(`Imported ${r.imported} of ${r.total} rows.`);
-                    setCsvText('');
-                    await loadCsvRefresh();
-                  } catch (e) {
-                    setCsvMsg(e instanceof Error ? e.message : 'Import failed');
-                  }
-                }}
-              >
-                Import
-              </button>
-              <a className="btn sm ghost" href={`/api/stores/${storeId}/catalog.csv`} download>Export</a>
-            </div>
-            {csvMsg && <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>{csvMsg}</p>}
           </div>
         )}
       </div>
@@ -2144,6 +2265,7 @@ function ProductModal({
   const [imgBusy, setImgBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const pickImage = async (file: File | undefined) => {
     if (!file || !product) return; // images attach to saved products
@@ -2251,10 +2373,14 @@ function ProductModal({
                 ) : (
                   <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
                 )}
-                <label className="btn sm" title="Use the device camera">
+                <button
+                  type="button"
+                  className="btn sm"
+                  title="Open the device camera"
+                  onClick={() => setCameraOpen(true)}
+                >
                   📷 Take photo
-                  <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
-                </label>
+                </button>
                 <label className="btn sm" title="Choose an image file">
                   🖼 Upload
                   <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
@@ -2281,6 +2407,12 @@ function ProductModal({
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={busy || !name.trim()}>{busy ? 'Saving…' : 'Save product'}</button>
         </div>
+        {cameraOpen && (
+          <CameraCaptureModal
+            onCapture={(file) => pickImage(file)}
+            onClose={() => setCameraOpen(false)}
+          />
+        )}
       </form>
     </Modal>
   );
@@ -2333,7 +2465,12 @@ function StorePanel({
         <h4>Store details</h4>
         <Field label="Name"><input className="input" value={form.name} onChange={set('name')} /></Field>
         <Field label="Address"><input className="input" value={form.address} onChange={set('address')} /></Field>
-        <Field label="Opening hours"><input className="input" value={form.hours} onChange={set('hours')} placeholder="Mon–Sat 8:00–21:00" /></Field>
+        <Field label="Opening hours">
+          <DayHoursEditor
+            value={parseStoreHours(form.hours) ?? defaultWeek()}
+            onChange={(w) => setForm((f) => ({ ...f, hours: serializeWeek(w) }))}
+          />
+        </Field>
         <Field label="Phone"><input className="input" value={form.phone} onChange={set('phone')} /></Field>
         <Field label="Website"><input className="input" value={form.website} onChange={set('website')} /></Field>
         <Field label="Description">

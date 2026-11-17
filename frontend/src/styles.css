@@ -185,9 +185,15 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
   overflow: hidden;
   height: clamp(420px, 60dvh, 660px);
   box-shadow: 0 18px 50px rgba(25, 35, 25, 0.14);
-  background-color: #eaeeec;
-  /* theme-neutral sheen over a themed solid, so the theme flip cross-fades */
-  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.06));
+  /* same base colour as the page, with a cool wash: blue in light mode,
+     dark purple in dark mode */
+  background-color: var(--bg);
+  background-image: linear-gradient(
+    165deg,
+    rgba(59, 111, 212, 0.20),
+    rgba(59, 111, 212, 0.07) 45%,
+    rgba(0, 0, 0, 0) 72%
+  );
 }
 /* the hero map is a live, interactive preview: drag orbits the camera */
 .hero-map { position: absolute; inset: 0; }
@@ -200,13 +206,6 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 6px; }
 .result-item.kbd-active { border-color: var(--green); background: var(--green-soft); }
 .results-drop mark { background: transparent; color: var(--green-dark); font-weight: 800; padding: 0; }
-/* low-res product photo riding above the highlighted search result */
-.result-preview {
-  display: flex; align-items: center; justify-content: center;
-  padding: 6px 8px; margin-bottom: 6px;
-  border-bottom: 1px solid var(--line);
-}
-.result-preview img { max-height: 88px; max-width: 100%; object-fit: contain; border-radius: 8px; }
 .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 10px; }
 .step { padding: 16px; }
 .step .num {
@@ -248,7 +247,10 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 .toggle input:checked + .track::after { left: 19px; }
 
 /* ---------- Editor layout ---------- */
-.editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.editor {
+  height: 100dvh; display: flex; flex-direction: column; min-height: 0;
+  overflow: hidden; /* everything fits the viewport — no page scrollbars */
+}
 .editor-top {
   display: flex; align-items: center; gap: 10px; padding: 8px 12px;
   background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap;
@@ -329,13 +331,18 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   display: flex; flex-direction: column; min-height: 0;
 }
 @media (max-width: 860px) {
-  .editor-body { flex-direction: column; }
-  .map-wrap { height: 58dvh; flex: none; }
+  /* phones/tablets: the side panel stays a pull-out drawer over the map —
+     the edge handle pulls it out (Map · Products · Store · History) and
+     pushes it back; it never stacks under the map */
+  .map-wrap { height: 100dvh; }
   .editor-side {
-    position: static; width: 100%; transform: none; box-shadow: none;
-    border-left: none; border-top: 1px solid var(--line);
+    width: min(320px, 88vw);
+    box-shadow: -14px 0 34px rgba(0, 0, 0, 0.16);
   }
-  .side-handle { display: none; }
+  .side-open .editor-side { transform: none; }
+  .side-open .side-handle { right: min(320px, 88vw); }
+  .side-open .pan-pad { right: calc(min(320px, 88vw) + 12px); }
+  .side-open .zoom-column { right: calc(min(320px, 88vw) + 12px); }
   .tool-hint { display: none; }
 }
 
@@ -407,6 +414,10 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 }
 .store-pill img { border-radius: 6px; object-fit: cover; }
 .store-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-pill-hours {
+  display: block; font-size: 11px; font-weight: 500; color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .fly-btn {
   flex-shrink: 0; height: 40px; border: none; cursor: pointer;
@@ -444,20 +455,60 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   overflow-y: auto; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 14px 40px rgba(0,0,0,0.16); padding: 8px; z-index: 9;
 }
+/* result card: the product photo rides above the label; the label wraps to
+   a couple of lines inside the fixed-width card */
 .result-item {
+  position: relative;
   width: 100%; text-align: left; background: var(--surface-solid); border: 1px solid transparent;
-  border-radius: 10px; padding: 9px 11px; cursor: pointer;
-  display: flex; align-items: center; gap: 9px;
+  border-radius: 10px; padding: 8px 10px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
 }
 .result-item:hover { border-color: var(--green); background: var(--hover); }
 .result-item.selected { border-color: var(--green); background: var(--green-soft); }
 .result-item.noloc { cursor: default; opacity: 0.65; }
 .result-item.noloc:hover { border-color: transparent; background: var(--surface-solid); }
+.result-item .rimg {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hover); border-radius: 8px; padding: 4px; overflow: hidden;
+}
+.result-item .rimg img { max-height: 84px; max-width: 100%; object-fit: contain; display: block; }
 .result-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.result-item .rname { flex: 1; min-width: 0; }
-.result-item .rname b { display: block; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-item .rname { min-width: 0; padding-right: 22px; }
+.result-item .rname b {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  line-clamp: 2; overflow: hidden; font-size: 13.5px; line-height: 1.3;
+}
 .result-item .rname span { font-size: 12px; color: var(--ink-soft); }
+.result-item .rgo { position: absolute; right: 10px; bottom: 10px; }
 .no-results { color: var(--ink-soft); font-size: 13.5px; text-align: center; padding: 20px 10px; }
+
+/* ---------- Editor tour: spotlight + popover ---------- */
+.tour-root { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+.tour-spot {
+  position: fixed; border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(12, 16, 13, 0.55);
+  outline: 2px solid var(--green);
+  transition: all 0.25s ease;
+}
+.tour-card {
+  position: fixed; pointer-events: auto;
+  background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3); padding: 14px 16px;
+}
+.tour-card h3 { margin: 2px 0 6px; font-size: 15.5px; }
+.tour-card p { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.tour-step-count {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--green-dark);
+}
+.tour-actions { display: flex; align-items: center; gap: 8px; }
+.tour-actions .spacer { flex: 1; }
+
+/* ---------- Glossary ---------- */
+.glossary { margin: 8px 0 4px; }
+.glossary dt { font-weight: 700; font-size: 13.5px; margin-top: 10px; color: var(--ink); }
+.glossary dd { margin: 2px 0 0 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+.modal h4 { margin: 18px 0 0; font-size: 14px; color: var(--green-dark); letter-spacing: 0.02em; }
 
 .view-toggle {
   margin-left: auto; flex-shrink: 0; z-index: 8;
@@ -761,7 +812,15 @@ html[data-mode='dark'] .el-label { fill: var(--ink); }
 }
 
 /* ---------- Dark-mode refinements for the few non-token colors ---------- */
-html[data-mode='dark'] .hero-visual { background-color: #1b1e22; }
+html[data-mode='dark'] .hero-visual {
+  background-color: var(--bg);
+  background-image: linear-gradient(
+    165deg,
+    rgba(122, 92, 205, 0.26),
+    rgba(96, 66, 160, 0.12) 45%,
+    rgba(0, 0, 0, 0) 72%
+  );
+}
 html[data-mode='dark'] .btn.danger { border-color: #53342f; }
 html[data-mode='dark'] .btn.danger:hover { background: #2c1d1a; }
 html[data-mode='dark'] .error-note { background: #2c1d1a; border-color: #53342f; color: #f0a79c; }
@@ -776,21 +835,18 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
    left (adjacent-sibling rules — the pad renders immediately before it).
    Pads use 44 px cells, the comfortable minimum touch target. */
 .controls-btn {
-  position: absolute; top: 10px; right: 12px; z-index: 6;
+  position: absolute; top: 10px; left: 112px; right: auto; z-index: 6;
   box-shadow: var(--shadow); font-size: 12px; padding: 6px 10px;
-  transition: right 0.25s ease;
 }
-.pan-pad + .controls-btn { right: 160px; } /* left of the camera pad (138 px) + gap */
-.side-open .pan-pad + .controls-btn { right: 480px; }
 /* 3D camera pan pad */
 .pan-pad {
   position: absolute; top: 10px; right: 12px; z-index: 6;
-  display: grid; grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; gap: 3px;
+  display: grid; grid-template-columns: repeat(3, 54px); grid-auto-rows: 54px; gap: 3px;
   transition: right 0.25s ease;
 }
 .pan-pad button, .zoom-column button {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft);
-  border-radius: 9px; cursor: pointer; font-size: 15px; line-height: 1; padding: 0;
+  border-radius: 10px; cursor: pointer; font-size: 16px; line-height: 1; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   touch-action: manipulation;
 }
@@ -804,15 +860,20 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
   color: var(--ink-soft); opacity: 0.85; user-select: none; padding-bottom: 1px;
 }
 .viewer-map .pan-pad { top: 54px; right: 12px; }
-/* vertical ＋/− zoom — bottom-right in both the 2D and 3D views */
+/* labelled ＋/− zoom — bottom-right in both the 2D and 3D views */
 .zoom-column {
   position: absolute; right: 12px; bottom: 14px; z-index: 6;
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 4px; align-items: stretch;
   transition: right 0.25s ease;
 }
 .side-open .zoom-column { right: 332px; }
 .viewer-map .zoom-column { bottom: 24px; }
-.zoom-column button { width: 44px; height: 44px; box-shadow: var(--shadow); }
+.zoom-column button {
+  height: 48px; padding: 0 13px 0 15px; gap: 8px; box-shadow: var(--shadow);
+  justify-content: flex-start;
+}
+.zoom-column .zoom-sym { font-size: 19px; font-weight: 700; width: 14px; text-align: center; }
+.zoom-column .zoom-word { font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; }
 .controls-card {
   position: absolute; top: 46px; right: 12px; z-index: 7;
   transition: right 0.25s ease;
@@ -864,6 +925,8 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 .tut section h2 { font-size: 21px; margin: 0 0 12px; letter-spacing: -0.02em; }
 .tut section h3 { font-size: 16px; margin: 22px 0 8px; }
 .tut section p { color: var(--ink-soft); margin: 10px 0; }
+.tut-steps { margin: 10px 0 18px; padding-left: 22px; display: grid; gap: 9px; }
+.tut-steps li { font-size: 13.5px; color: var(--ink-soft); line-height: 1.55; }
 .tut section p b, .tut-callout b { color: var(--ink); }
 .tut code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em;
@@ -906,6 +969,22 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 
 /* ---------- Landing: grid wordmark hero ---------- */
 .grid-hero { padding-top: 22px; }
+.hero-tagline { text-align: center; color: var(--ink-soft); font-size: 14px; margin: 10px 0 0; }
+
+/* homepage planogram example: a real demo shelf, sides clickable */
+.planogram-band { margin-top: 44px; text-align: center; }
+.planogram-band h2 { margin: 0 0 6px; font-size: 21px; letter-spacing: -0.02em; }
+.planogram-band > .muted { margin: 0 0 16px; }
+.planogram-card {
+  display: inline-block; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px 16px; box-shadow: var(--shadow);
+  max-width: min(640px, 100%);
+}
+.planogram-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 10px; font-size: 14px;
+}
 .grid-hero-board {
   position: relative; overflow: hidden; cursor: pointer;
   border-radius: 18px;
@@ -916,10 +995,31 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 }
 html[data-mode='dark'] .grid-hero-board { background-color: #191c20; box-shadow: var(--shadow), inset 0 0 90px rgba(0, 0, 0, 0.35); }
 .grid-hero-board:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
-.grid-hero-svg { display: block; width: 100%; height: auto; }
+.grid-hero-svg {
+  display: block; width: 100%; height: auto;
+  /* the 2D → 3D flip takes 2 seconds */
+  transition: transform 2s cubic-bezier(0.33, 1, 0.68, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-hero-svg { transition: none; }
+}
+/* 3D board: a rotating drone angle so the extruded blocks read clearly */
+.grid-hero-svg.gh-iso {
+  transform: perspective(1100px) rotateX(20deg) rotateZ(-10deg) scale(1.08);
+  transform-origin: 50% 62%;
+}
 @media (max-width: 640px) {
   .grid-hero-board { padding: 12px 8px 8px; border-radius: 14px; }
 }
+
+.gh-mode {
+  position: absolute; top: 10px; right: 12px; z-index: 3;
+  border: 1px solid var(--line); background: var(--surface-solid); color: var(--ink-soft);
+  border-radius: 999px; cursor: pointer; font-weight: 700; font-size: 11px;
+  letter-spacing: 0.06em; padding: 4px 11px; font-family: var(--font);
+}
+.gh-mode:hover { background: var(--hover); color: var(--ink); }
+.gh-mode[aria-pressed='true'] { background: var(--green-soft); border-color: var(--green); color: var(--green-dark); }
 
 .gh-dot { fill: var(--ink-soft); opacity: 0.15; }
 .gh-cell { fill: var(--ink); }
@@ -929,6 +1029,12 @@ html[data-mode='dark'] .grid-hero-board { background-color: #191c20; box-shadow:
   animation-delay: var(--d, 0ms);
 }
 @keyframes ghIn { from { opacity: 0; transform: translateY(3px); } }
+/* extruded block faces for the 3D board — like the store maps' fixtures:
+   a darker front under the top, and a subtle right side */
+.gh-cell-front { fill: var(--ink); opacity: 0.45; }
+.gh-cell-side { fill: var(--ink); opacity: 0.26; }
+html[data-mode='dark'] .gh-cell-front { fill: #000; opacity: 0.55; }
+html[data-mode='dark'] .gh-cell-side { fill: #000; opacity: 0.35; }
 
 /* block-letter labels (header brand, Create-a-Map CTA) — tinted by currentColor */
 .block-text { display: block; }
@@ -940,18 +1046,8 @@ html[data-mode='dark'] .grid-hero-board { background-color: #191c20; box-shadow:
 html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .gh-entrance-pad { fill: var(--green); }
 .gh-entrance-flag { fill: #fff; }
-.gh-pin-body { fill: #e4572e; stroke: rgba(255, 255, 255, 0.92); stroke-width: 1.4; }
-.gh-pin-dot { fill: #fff; }
-.gh-ring {
-  fill: none; stroke: #e4572e; stroke-width: 2; opacity: 0;
-  transform-box: fill-box; transform-origin: center;
-  animation: ghPing 1.7s ease-out infinite;
-}
-.gh-ring.r2 { animation-delay: 0.85s; }
-@keyframes ghPing {
-  0% { opacity: 0.65; transform: scale(0.5); }
-  70%, 100% { opacity: 0; transform: scale(2.6); }
-}
+/* the destination block lights up red where the walker lands */
+.gh-target { fill: #e4572e; stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.4; }
 
 /* ---------- Viewer: aisle directory + category browse (pre-search) ---------- */
 .dir-btn {
@@ -1073,3 +1169,49 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
   .hero-carousel { padding: 8px; }
   .hero-dots button { padding: 4px 8px; font-size: 12px; }
 }
+
+/* ---------- Phone & tablet: keep every surface un-overlapped ---------- */
+@media (max-width: 760px) {
+  /* homepage */
+  .topnav { flex-wrap: wrap; row-gap: 8px; padding: 8px 12px; }
+  .topnav .nav-user { flex-wrap: wrap; }
+  .hero-tagline { font-size: 13px; }
+  .hero-carousel-nav { flex-wrap: wrap; justify-content: center; row-gap: 6px; }
+  .hero-carousel-actions { flex-wrap: wrap; justify-content: center; width: 100%; }
+  /* the two floating chips stack instead of colliding */
+  .hero-demo-chip { top: 58px; left: 12px; right: auto; max-width: calc(100% - 24px); }
+  .planogram-card { padding: 12px; }
+  .planogram-card-head { flex-direction: column; align-items: flex-start; }
+
+  /* editor: the top bar rows stay readable, buttons shrink to fit */
+  .editor-top { gap: 6px; padding: 6px 8px; }
+  .editor-top .btn { padding: 5px 8px; font-size: 12.5px; }
+  .editor-top .store-name { font-size: 13px; flex-basis: 100%; }
+  .try-banner-actions { flex-wrap: wrap; }
+  .controls-card { width: min(320px, calc(100vw - 24px)); }
+  .tool-hint { max-width: calc(100% - 140px); font-size: 11.5px; }
+
+  /* viewer: the wrapped top bar pushes the pads down clear of it */
+  .viewer-map .pan-pad { top: 118px; }
+  .viewer-map .zoom-column { bottom: 64px; }
+}
+
+@media (max-width: 1024px) and (min-width: 761px) {
+  /* tablet: carousel controls wrap; pads already dodge the side panel */
+  .hero-carousel-nav { flex-wrap: wrap; }
+  .hero-carousel-actions { flex-wrap: wrap; }
+  .editor-top .btn { padding: 6px 10px; }
+}
+
+/* day-by-day opening hours (Store tab) */
+.day-hours { display: grid; gap: 5px; }
+.day-hours-row { display: flex; align-items: center; gap: 8px; }
+.day-hours-day { display: inline-flex; align-items: center; gap: 6px; min-width: 74px; font-size: 13px; }
+.day-hours-times { display: inline-flex; align-items: center; gap: 5px; flex: 1; }
+.day-hours-times .input { flex: 1; min-width: 0; padding: 5px 6px; font-size: 12.5px; }
+
+/* homepage planogram example: two differently-sized shelf cards */
+.planogram-grid {
+  display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start;
+}
+.planogram-grid .planogram-card { flex: 0 1 460px; }

@@ -321,7 +321,7 @@ describe('fitCamera', () => {
   it('centers on the floor and frames its larger span', () => {
     const cam = fitCamera(floor);
     expect(cam.tx).toBeCloseTo(10);
-    expect(cam.ty).toBeCloseTo(7);
+    expect(cam.ty).toBeCloseTo(7 + 20 * 0.05); // nudged up a little
     expect(cam.dist).toBeCloseTo(20 * 1.25);
     expect(cam.pitch).toBeGreaterThan(0);
     expect(cam.pitch).toBeLessThan(Math.PI / 2);

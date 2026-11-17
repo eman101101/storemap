@@ -71,8 +71,8 @@ with **Google** or **Apple**.
   - rectangles, polygons, polylines, points on a meter grid with snapping
   - move / resize / rotate (rotation handle, `R` key, or the panel's ° field),
     duplicate, undo–redo, keyboard shortcuts (`R`, `Del`, `Esc`)
-  - **Aisle pair tool** — drag one shelf row and a facing row appears 1.5 m across
-    the aisle, like a real grocery store
+  - **Shelf tool + starter template** — drag shelf rows on the grid, or start a new
+    map from the blank-shelves template (walls, entrance, labelled aisle rows)
   - optional uploaded floor-plan image to trace over
   - debounced autosave — draw and it's saved
 - Product catalogue with categories, prices, brands, SKUs

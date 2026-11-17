@@ -84,11 +84,14 @@ rect('wall', W - 0.4, 0, 0.4, H, 'East wall');
 point('entrance', 27, H - 0.9, 'Entrance');
 point('exit', 31, H - 0.9, 'Exit');
 
-rect('zone', 20, 29.6, 14, 3.2); // checkout area — counters are labeled individually
+rect('zone', 20, 29.6, 14, 3.2, 'Checkout'); // counters are labeled individually
+rect('zone', 2, 2.2, 12, 2.8, 'Bakery'); // baked goods line the north wall here
 for (let i = 0; i < 4; i++) rect('shelf', 21.3 + i * 3.4, 30.3, 2.3, 1.3, `Checkout ${i + 1}`);
 
 point('poi', 48.5, 33.2, 'Customer service');
 point('poi', 2.2, 28.5, 'Restrooms');
+point('poi', 24.5, H - 2.4, 'Cart line');
+point('poi', W - 2.4, H - 2.2, 'Propane exchange');
 
 /* ---------- shelves: stocked border + central facing aisle pairs ---------- */
 
@@ -117,6 +120,17 @@ for (let p = 0; p < 4; p++) {
     faces.push({ axis: 'h', line: y0 + 0.7, from: x0 + 0.4, to: x0 + len - 0.4 });
     faces.push({ axis: 'h', line: y0 + 2.2, from: x0 + 0.4, to: x0 + len - 0.4 });
     faces.push({ axis: 'h', line: y0 + 2.9, from: x0 + 0.4, to: x0 + len - 0.4 });
+  }
+}
+// aisle label strips in the walkway between each facing pair — the dominant
+// categories stocked along that aisle (matches the pin order below)
+const AISLE_TAGS = ['Dairy', 'Produce · Beverages', 'Snacks · Bakery', 'Frozen · Household'];
+const poly = (type, pts, label = '') =>
+  insEl.run(randomUUID(), floor.id, type, 'polyline', JSON.stringify(pts), label, '', z++);
+for (let p = 0; p < 4; p++) {
+  const y0 = 6 + p * 6;
+  for (const [x0, len] of SEGMENTS) {
+    poly('aisle', [[x0, y0 + 1.45], [x0 + len, y0 + 1.45]], AISLE_TAGS[p] ?? `Aisle ${p + 1}`);
   }
 }
 // border stocking lines (inner faces of the wall shelving)

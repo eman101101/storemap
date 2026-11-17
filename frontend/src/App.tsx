@@ -129,7 +129,7 @@ function TopNav() {
       {user ? (
         <div className="nav-user">
           <NavLink to="/dashboard" className="btn ghost sm">
-            Account management
+            Account
           </NavLink>
           <span className="avatar" title={user.email}>
             {(user.name || user.email)[0]?.toUpperCase()}
