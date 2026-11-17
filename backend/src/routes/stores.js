@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import express, { Router } from 'express';
+import { Router } from 'express';
 import { db, newId } from '../db.js';
 import { geocode } from '../lib/geocode.js';
 import { requireAuth } from '../auth/session.js';
@@ -9,6 +9,7 @@ import { ownedStore, touchStore } from '../lib/ownership.js';
 import { entitlementsFor } from '../lib/entitlements.js';
 import { buildExportBundle, importBundle, TransferError } from '../lib/transfer.js';
 import { storesForUser, roleForStore } from '../lib/members.js';
+import { locationJson } from './catalog.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -21,6 +22,24 @@ function uniqueSlug(name) {
     if (!db.prepare('SELECT 1 FROM stores WHERE slug = ?').get(candidate)) return candidate;
   }
   return `${base}-${newId().slice(0, 8)}`;
+}
+
+const isSlugCollision = (err) => /UNIQUE constraint failed: stores\.slug/.test(String(err?.message || ''));
+
+/**
+ * Run `insert` with a slug from uniqueSlug. The check-then-insert in
+ * uniqueSlug can lose a race against a concurrent insert; retry a bounded
+ * number of times with a fresh suffix before surfacing the error.
+ */
+function insertWithUniqueSlug(name, insert) {
+  for (let attempt = 0; ; attempt += 1) {
+    const slug = uniqueSlug(name);
+    try {
+      return insert(slug);
+    } catch (err) {
+      if (attempt >= 3 || !isSlugCollision(err)) throw err;
+    }
+  }
 }
 
 const EDITABLE_FIELDS = ['name', 'address', 'description', 'phone', 'website', 'hours', 'logo_url'];
@@ -55,17 +74,17 @@ router.get('/mine', handler(async (req, res) => {
 router.get('/:id/export', requireAuth, handler(async (req, res) => {
   const store = await ownedStore(req, res, req.params.id, 'manager');
   if (!store) return;
-  const bundle = buildExportBundle(store, { withMedia: req.query.media !== '0' });
+  const bundle = await buildExportBundle(store, { withMedia: req.query.media !== '0' });
   res.setHeader('Content-Disposition', `attachment; filename="${store.slug}-storemap.json"`);
   sendJson(res, 200, bundle);
 }));
 
 /**
  * POST /api/stores/import — restore an export bundle as a new draft store
- * owned by the importer. Larger body limit than the API default: bundles
- * embed product images.
+ * owned by the importer. Larger body limit than the API default (mounted in
+ * app.js before the /api-wide parser): bundles embed product images.
  */
-router.post('/import', requireAuth, express.json({ limit: '64mb' }), handler(async (req, res) => {
+router.post('/import', requireAuth, handler(async (req, res) => {
   try {
     const { storeId } = await importBundle(req.body, req.user.id, { uniqueSlug });
     const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(storeId);
@@ -80,13 +99,19 @@ router.post('/', handler(async (req, res) => {
   const name = str(req.body?.name, { max: 100, allowEmpty: false });
   if (!name) return badRequest(res, 'Store name is required');
   const id = newId();
-  db.prepare(
-    `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id, req.user.id, name, uniqueSlug(name),
-    str(req.body?.address, { max: 300 }), str(req.body?.description, { max: 1000 }),
-    str(req.body?.phone, { max: 40 }), str(req.body?.website, { max: 300 }), str(req.body?.hours, { max: 300 })
+  insertWithUniqueSlug(
+    name,
+    (slug) =>
+      db
+        .prepare(
+          `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id, req.user.id, name, slug,
+          str(req.body?.address, { max: 300 }), str(req.body?.description, { max: 1000 }),
+          str(req.body?.phone, { max: 40 }), str(req.body?.website, { max: 300 }), str(req.body?.hours, { max: 300 })
+        )
   );
   // Every store starts with one floor so the editor opens ready to draw.
   db.prepare('INSERT INTO floors (id, store_id, name, level) VALUES (?, ?, ?, ?)').run(
@@ -101,8 +126,9 @@ router.get('/:id/full', handler(async (req, res) => {
   const store = ownedStore(req, res, req.params.id, 'viewer');
   if (!store) return;
   const role = roleForStore(req.user.id, store.id);
-  if (!store) return;
   // ETag: editors reopen stores constantly — unchanged data answers 304.
+  // no-cache (not no-store) so browsers revalidate against the ETag.
+  res.set('Cache-Control', 'private, no-cache');
   const counts = db
     .prepare(
       `SELECT (SELECT COUNT(*) FROM floors WHERE store_id = ?) f,
@@ -142,7 +168,7 @@ router.get('/:id/full', handler(async (req, res) => {
     elements,
     categories,
     products,
-    locations,
+    locations: locations.map(locationJson),
   });
 }));
 
@@ -225,12 +251,18 @@ router.post('/:id/duplicate', handler(async (req, res) => {
 
   db.exec('BEGIN');
   try {
-    db.prepare(
-      `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours, logo_url, lat, lng)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      cloneId, req.user.id, name, uniqueSlug(name), store.address, store.description,
-      store.phone, store.website, store.hours, store.logo_url, store.lat, store.lng
+    insertWithUniqueSlug(
+      name,
+      (slug) =>
+        db
+          .prepare(
+            `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours, logo_url, lat, lng)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            cloneId, req.user.id, name, slug, store.address, store.description,
+            store.phone, store.website, store.hours, store.logo_url, store.lat, store.lng
+          )
     );
     const floors = db.prepare('SELECT * FROM floors WHERE store_id = ? ORDER BY level').all(store.id);
     for (const f of floors) {

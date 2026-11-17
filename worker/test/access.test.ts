@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { decodeJwt, verifyEs256WithKeys, signHs256, verifyHs256, signEs256 } from '../src/crypto';
-import { toB64Url, utf8 } from '../src/util';
+import { toB64Url, fromB64Url, utf8 } from '../src/util';
 
 /** Craft a minimal ES256 JWKS + signed token, the way Cloudflare Access does. */
 async function makeAccessFixture(claims: Record<string, unknown>, kid = 'test-key') {
@@ -90,5 +90,31 @@ describe('ES256 signing (Apple client_secret)', () => {
     const { header, payload } = decodeJwt(token);
     expect(header.alg).toBe('ES256');
     expect(payload.iss).toBe('team');
+  });
+
+  // SEC1 fixture ("BEGIN EC PRIVATE KEY", openssl ecparam -genkey -name prime256v1).
+  // The public point is embedded in the SEC1 DER (last 65 bytes: 04||X||Y) —
+  // reconstructed as a JWK so the wrap is verified cryptographically, pure
+  // WebCrypto (the worker runtime has no node:crypto).
+  it('signs with a SEC1 PEM — the PKCS#8 wrap matches the key (no RangeError)', async () => {
+    const sec1Pem = `-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEII/vzV4tjZU8iJVt60fTMLU8gGfAIhZgx4KUpjUMJ7hKoAoGCCqGSM49
+AwEHoUQDQgAEXY+kNnyzYub5J17r0O19MRNzUUNQt8ZZcjVLRPWfJCsPHPcmcrjO
+CRTyUabuRCTD4V8OF9pv2omOutXDDsDeqw==
+-----END EC PRIVATE KEY-----`;
+    const der = fromB64Url(sec1Pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/'));
+    const point = der.slice(der.length - 65); // 0x04 || X || Y
+    const jwk = {
+      kty: 'EC',
+      crv: 'P-256',
+      x: toB64Url(point.slice(1, 33)),
+      y: toB64Url(point.slice(33)),
+      kid: 'kid',
+      alg: 'ES256',
+      use: 'sig',
+    };
+    const token = await signEs256({ iss: 'team', exp: Math.floor(Date.now() / 1000) + 60 }, sec1Pem, 'kid');
+    const claims = await verifyEs256WithKeys(token, [jwk], {});
+    expect(claims.iss).toBe('team');
   });
 });

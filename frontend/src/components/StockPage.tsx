@@ -235,16 +235,30 @@ function ApiKeysSection({ storeId, keys, onNewKey, onChanged }: {
 }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
+    setError('');
     try {
       const r = await api.createApiKey(storeId, name || 'API key');
       onNewKey({ row: r.key, key: r.api_key });
       setName('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the key');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const revoke = async (keyId: string) => {
+    setError('');
+    try {
+      await api.revokeApiKey(keyId);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke the key');
     }
   };
 
@@ -259,6 +273,7 @@ function ApiKeysSection({ storeId, keys, onNewKey, onChanged }: {
         <input className="input" placeholder="Key name, e.g. “Front POS”" value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn primary" disabled={busy}>Create key</button>
       </form>
+      {error && <div className="error-note">{error}</div>}
       {keys.length > 0 && (
         <table className="stock-table" style={{ marginTop: 10 }}>
           <thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
@@ -269,7 +284,7 @@ function ApiKeysSection({ storeId, keys, onNewKey, onChanged }: {
                 <td><code>{k.key_prefix}…</code></td>
                 <td>{new Date(k.created_at + 'Z').toLocaleDateString()}</td>
                 <td>{k.last_used_at ? new Date(k.last_used_at + 'Z').toLocaleString() : 'never'}</td>
-                <td><button className="btn sm danger" onClick={async () => { await api.revokeApiKey(k.id); onChanged(); }}>Revoke</button></td>
+                <td><button className="btn sm danger" onClick={() => revoke(k.id)}>Revoke</button></td>
               </tr>
             ))}
           </tbody>

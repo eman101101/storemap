@@ -45,12 +45,21 @@ export async function purgeStoreCache(c: Context, env: Env, storeId: unknown): P
   try {
     const store = await first(env, 'SELECT slug FROM stores WHERE id = ?', String(storeId));
     if (!store) return;
-    const path = `/api/public/stores/${store.slug}`;
+    await purgeStoreSlug(c, String(store.slug));
+  } catch {
+    /* cache purge is best-effort — never fail the edit that triggered it */
+  }
+}
+
+/** Purge by slug — usable after the store row itself is deleted. */
+export async function purgeStoreSlug(c: Context, slug: string): Promise<void> {
+  try {
+    const path = `/api/public/stores/${slug}`;
     const origins = new Set<string>([new URL(c.req.url).origin]);
     const cfg = c.get('config');
     if (cfg?.publicBaseUrl) origins.add(new URL(cfg.publicBaseUrl).origin);
     await Promise.all([...origins].map((o) => caches.default.delete(new Request(`${o}${path}`))));
   } catch {
-    /* cache purge is best-effort — never fail the edit that triggered it */
+    /* best-effort */
   }
 }

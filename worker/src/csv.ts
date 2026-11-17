@@ -4,12 +4,20 @@ interface CsvRow {
   [key: string]: string;
 }
 
+/** Cap on imported rows — a runaway paste must not hammer D1 for minutes. */
+export const MAX_CSV_ROWS = 5000;
+
 export function parseCsv(text: unknown): CsvRow[] {
   const s = String(text ?? '');
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
+  const pushRow = () => {
+    if (!row.some((f) => f !== '')) return;
+    rows.push(row);
+    if (rows.length > MAX_CSV_ROWS) throw new Error(`CSV import is capped at ${MAX_CSV_ROWS} rows`);
+  };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (inQuotes) {
@@ -28,12 +36,12 @@ export function parseCsv(text: unknown): CsvRow[] {
       if (c === '\r' && s[i + 1] === '\n') i++;
       row.push(field);
       field = '';
-      if (row.some((f) => f !== '')) rows.push(row);
+      pushRow();
       row = [];
     } else field += c;
   }
   row.push(field);
-  if (row.some((f) => f !== '')) rows.push(row);
+  pushRow();
 
   if (rows.length < 2) return [];
   const header = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
@@ -50,7 +58,10 @@ export function toCsv(rows: Record<string, unknown>[]): string {
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
   const esc = (v: unknown): string => {
     const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // CSV formula injection: a leading =+-@ would execute as a formula in
+    // Excel/Sheets — prefix it with a quote so it stays plain text.
+    const guarded = /^[=+\-@]/.test(s) ? `'${s}` : s;
+    return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
   };
   return [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\r\n');
 }

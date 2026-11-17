@@ -18,6 +18,9 @@ export const config = {
   frontendDist: path.resolve(env.FRONTEND_DIST || path.join(__dirname, '..', '..', 'frontend', 'dist')),
   sessionSecret: env.SESSION_SECRET || '',
   sessionDays: Number(env.SESSION_DAYS || 30),
+  // Session/OAuth cookies carry the Secure attribute in production. A
+  // self-host serving plain HTTP on a LAN can opt out with COOKIE_SECURE=false.
+  cookieSecure: isProd && env.COOKIE_SECURE !== 'false',
 
   google: {
     clientId: env.GOOGLE_CLIENT_ID || '',

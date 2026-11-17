@@ -30,13 +30,19 @@ and provisions automatically:
 
 - **Worker** `storemap` + the built SPA served from the edge
   (`frontend/dist` is built for you by the configured build command)
-- **D1 database** `storemap` — schema migrations + the two demo stores apply
-  on the first request
+- **D1 database** `storemap` — schema migrations + the four demo stores
+  (annex-market, freshmart-downtown, harbor-warehouse, megamart-central)
+  apply on the first request
 - **R2 bucket** `storemap-media` — all uploaded images
 
 Finish → you get `https://storemap.<your-subdomain>.workers.dev`.
-Open it: the landing page lists the demo maps; **Open the demo maps** signs
-you in (demo login is ON by default while you evaluate).
+Open it: the homepage hero cycles the demo maps — **View live** opens one
+in the shopper viewer (`/s/:slug`), and **Edit a copy — free** drops it
+into the no-account sandbox editor (`/try/:slug`; changes persist on the
+device only). To publish your own maps, sign in via the modal (Google/Apple
+once configured per step 4, or the passwordless email form — which only
+appears when `ENABLE_DEV_LOGIN` is switched on; it ships **off**, see
+step 3).
 
 CLI alternative (same result, no button):
 
@@ -49,12 +55,16 @@ npx wrangler deploy        # from the repo root; builds + deploys
 In the Cloudflare dashboard → Workers & Pages → **storemap** →
 Settings → **Variables and Secrets**:
 
-1. `ENABLE_DEV_LOGIN` → `false` — turns off the passwordless demo login.
+1. `ENABLE_DEV_LOGIN` — leave at its default **`false`**. The passwordless
+   email login accepts ANY email, so it only ever runs when you deliberately
+   set it to `true` (dashboard → Variables, or edit `wrangler.jsonc`), and
+   only on a private/obscure URL.
 2. `PUBLIC_BASE_URL` → `https://storemap.<you>.workers.dev` — canonical
    origin for share links and printed QR codes (update it again if you add a
    custom domain in step 5).
 
-(These have working defaults for evaluation; flip them when you go live.)
+(Both have working defaults; dev login is disabled until you enable it, and
+`PUBLIC_BASE_URL` falls back to the request origin.)
 
 ## 4 · Real sign-in (pick one or both)
 
@@ -94,7 +104,9 @@ curl -sI https://<your-host>/api/public/stores/freshmart-downtown | grep -i x-ca
 # 1st request: x-cache: MISS · repeat: x-cache: HIT (edge cache working)
 ```
 
-In the browser: search "milk" on the demo map → route appears; upload a
+In the browser: **View live** on a hero example → search "milk" → the route
+appears; **Edit a copy — free** opens the sandbox editor (`/try/:slug`, no
+account) — draw a shelf, watch autosave. Once signed in (step 4): upload a
 product photo (auto-compressed client-side); invite an employee from the
 dashboard **👥 Team** button; export a QR from a store card.
 
@@ -110,7 +122,73 @@ dashboard **👥 Team** button; export a QR from a store card.
 - **Updates**: pushes to `main` redeploy automatically if the button set up
   Workers Builds; otherwise `npx wrangler deploy`.
 
-## 8 · What's intentionally not wired yet
+## 8 · Prod vs testing — one site is enough
+
+**No, you don't need a second site.** One Worker (`storemap`), one D1
+(`storemap`), one R2 (`storemap-media`) — test locally, preview on the same
+Worker, roll back if a deploy misbehaves:
+
+1. **Test locally (the default).** `cd worker && npm run dev` boots the whole
+   engine on a throwaway D1 + R2 under `.wrangler/state`, hot-reloading
+   `worker/src`. Nothing touches production. (`backend/`'s Express server is
+   the *self-host* engine — it never exercises `worker/` code.)
+2. **Preview a change before it goes live.** `npx wrangler versions upload`
+   builds + uploads the new code as a non-production version and prints a
+   one-off preview URL on the *same* Worker. Poke around, then promote with
+   `npx wrangler versions deploy` or discard it in the dashboard — live
+   traffic stays on the current deployment throughout. One caveat: a preview
+   shares the production D1, so schema-changing migrations deserve a
+   rehearsal (last bullet below).
+3. **Roll back when needed.** Dashboard → storemap → Deployments →
+   **Rollback** restores the previous code instantly. Data rolls back
+   separately with D1 Time Travel:
+   `npx wrangler d1 time-travel restore storemap --timestamp "<ISO>"`.
+
+**Optional: a fully separate hosted test copy.** Only worth it for
+rehearsing schema migrations against real data shapes, or demoing a private
+build. It's still not a second *site* — a second Worker name plus its own
+D1/R2 on the same account. Add an `env.test` block to `wrangler.jsonc`
+(named environments do NOT inherit the top-level `vars`/bindings —
+redeclare them, keeping the `DB`/`MEDIA` binding names so no code changes):
+
+```jsonc
+"env": {
+  "test": {
+    "name": "storemap-test",
+    "d1_databases": [{ "binding": "DB", "database_name": "storemap-test", "database_id": "<paste id>" }],
+    "r2_buckets":   [{ "binding": "MEDIA", "bucket_name": "storemap-media-test" }],
+    "vars": {
+      "SELF_HOSTED": "true",
+      "ENABLE_DEV_LOGIN": "true",   // passwordless login ON here (OFF in prod)
+      "R2_DAILY_BUDGET": "5000"     // small: a test copy should never cost anything
+    }
+  }
+}
+```
+
+```bash
+npx wrangler d1 create storemap-test                # paste the id into the block above
+npx wrangler r2 bucket create storemap-media-test
+npx wrangler deploy --env test
+curl https://storemap-test.<you>.workers.dev/api/health   # first hit migrates + seeds the demos
+```
+
+Secrets are per environment (`npx wrangler secret put … --env test`). The
+one rule: **never let the test Worker bind to the live database** — the
+separate `d1_databases` entry above is what prevents that. To rehearse a
+migration on realistic shapes, copy production data in (scrub
+`users.email` first — real addresses):
+
+```bash
+npx wrangler d1 export storemap --remote --output prod.sql
+npx wrangler d1 execute storemap-test --remote --file prod.sql
+```
+
+Copied rows reference `/uploads/…` keys that live in the *production* R2
+bucket, so photos 404 on the test copy unless you also copy the objects;
+maps, routes and search are unaffected.
+
+## 9 · What's intentionally not wired yet
 
 - **Payments** (Step 2 of the scale plan): `stores.plan` + entitlements exist;
   Stripe Checkout/webhooks are the next build.

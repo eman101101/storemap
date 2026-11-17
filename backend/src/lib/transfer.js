@@ -10,29 +10,45 @@ import path from 'node:path';
 import { db, newId } from '../db.js';
 import { config } from '../config.js';
 import { saveImage } from './storage.js';
+import { r2Enabled, r2Get } from './r2.js';
 import { validateElement } from './validate.js';
 
 export const EXPORT_FORMAT = 'storemap.export/1';
 
 /** Safety caps for imports — a transfer, not a bulk-migration tool. */
-const LIMITS = { floors: 30, elements: 20_000, categories: 500, products: 20_000, locations: 40_000, mediaFiles: 2_000, mediaBytes: 60 * 1024 * 1024 };
+const LIMITS = { floors: 30, elements: 20_000, categories: 500, products: 20_000, locations: 40_000, media: 2_000 };
+const MEDIA_BYTES_LIMIT = 60 * 1024 * 1024;
 
 const internalPath = (u) => (typeof u === 'string' && u.startsWith('/uploads/') ? u : null);
 
-/** Read an uploaded image's bytes from local disk (export side). */
-function readLocalMedia(p) {
+/**
+ * Read an uploaded image's bytes (export side): local disk first, then R2 —
+ * saveImage writes only to R2 on R2-configured deployments, so the local
+ * uploads dir misses there. Returns null when the media exists nowhere.
+ */
+async function readMedia(p) {
   const name = path.basename(p);
   if (!/^[A-Za-z0-9._-]+$/.test(name)) return null;
   const file = path.join(config.uploadsDir, name);
-  if (!fs.existsSync(file)) return null;
-  return { ext: path.extname(name).toLowerCase(), buf: fs.readFileSync(file) };
+  if (fs.existsSync(file)) {
+    return { ext: path.extname(name).toLowerCase(), buf: fs.readFileSync(file) };
+  }
+  if (r2Enabled()) {
+    try {
+      const r2res = await r2Get(`uploads/${name}`);
+      if (r2res) return { ext: path.extname(name).toLowerCase(), buf: Buffer.from(await r2res.arrayBuffer()) };
+    } catch {
+      /* unreadable media exports as a dangling path, not an error */
+    }
+  }
+  return null;
 }
 
 /**
  * Build the export bundle for an owned store. `withMedia` embeds referenced
  * images (/uploads/…) as base64 so the destination instance owns its copies.
  */
-export function buildExportBundle(store, { withMedia = true } = {}) {
+export async function buildExportBundle(store, { withMedia = true } = {}) {
   const floors = db.prepare('SELECT * FROM floors WHERE store_id = ? ORDER BY level, created_at').all(store.id);
   const floorIndex = new Map(floors.map((f, i) => [f.id, i]));
   const elements = floors.flatMap((f) =>
@@ -58,18 +74,18 @@ export function buildExportBundle(store, { withMedia = true } = {}) {
 
   const media = [];
   const mediaByPath = new Map();
-  const embed = (p) => {
+  const embed = async (p) => {
     if (!withMedia || mediaByPath.has(p)) return;
-    const file = readLocalMedia(p);
     mediaByPath.set(p, null); // missing files export as a dangling path, not an error
+    const file = await readMedia(p);
     if (file) {
       mediaByPath.set(p, media.length);
       media.push({ path: p, ext: file.ext, data: file.buf.toString('base64') });
     }
   };
-  for (const p of products) if (internalPath(p.image_url)) embed(p.image_url);
-  for (const f of floors) if (internalPath(f.background_url)) embed(f.background_url);
-  if (internalPath(store.logo_url)) embed(store.logo_url);
+  for (const p of products) if (internalPath(p.image_url)) await embed(p.image_url);
+  for (const f of floors) if (internalPath(f.background_url)) await embed(f.background_url);
+  if (internalPath(store.logo_url)) await embed(store.logo_url);
 
   return {
     format: EXPORT_FORMAT,
@@ -120,6 +136,11 @@ export async function importBundle(bundle, userId, { uniqueSlug }) {
   if (!bundle || bundle.format !== EXPORT_FORMAT || !Array.isArray(bundle.floors)) {
     throw new TransferError('Not a StoreMap export file');
   }
+  // list fields must be lists — anything else would crash deep inside the import
+  for (const key of ['floors', 'elements', 'categories', 'products', 'locations', 'stock', 'media']) {
+    const v = bundle[key];
+    if (v !== undefined && v !== null && !Array.isArray(v)) throw new TransferError(`Invalid bundle: ${key} must be a list`);
+  }
   const s = bundle.store || {};
   const name = String(s.name || 'Imported store').slice(0, 100);
   for (const [key, max] of Object.entries(LIMITS)) {
@@ -135,7 +156,7 @@ export async function importBundle(bundle, userId, { uniqueSlug }) {
   for (const m of bundle.media || []) {
     if (!m?.path || typeof m.data !== 'string') continue;
     mediaBytes += (m.data.length * 3) / 4;
-    if (mediaBytes > LIMITS.mediaBytes) throw new TransferError('Export too large: media');
+    if (mediaBytes > MEDIA_BYTES_LIMIT) throw new TransferError('Export too large: media');
     try {
       const buf = Buffer.from(m.data, 'base64');
       const ext = typeof m.ext === 'string' && /^\.(png|jpe?g|webp)$/.test(m.ext) ? m.ext : '.png';
@@ -162,16 +183,27 @@ export async function importBundle(bundle, userId, { uniqueSlug }) {
 
   db.exec('BEGIN');
   try {
-    db.prepare(
-      `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours, logo_url, lat, lng, is_public)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
-    ).run(
-      storeId, userId, name, uniqueSlug(name),
-      String(s.address || '').slice(0, 300), String(s.description || '').slice(0, 1000),
-      String(s.phone || '').slice(0, 40), String(s.website || '').slice(0, 300), String(s.hours || '').slice(0, 300),
-      rewrite(s.logo_url) || '',
-      Number.isFinite(s.lat) ? s.lat : null, Number.isFinite(s.lng) ? s.lng : null
-    );
+    // uniqueSlug's check-then-insert can lose a race with a concurrent import
+    // of the same name — retry with a fresh suffix on the UNIQUE violation.
+    let slugAttempts = 0;
+    for (;;) {
+      try {
+        db.prepare(
+          `INSERT INTO stores (id, owner_id, name, slug, address, description, phone, website, hours, logo_url, lat, lng, is_public)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+        ).run(
+          storeId, userId, name, uniqueSlug(name),
+          String(s.address || '').slice(0, 300), String(s.description || '').slice(0, 1000),
+          String(s.phone || '').slice(0, 40), String(s.website || '').slice(0, 300), String(s.hours || '').slice(0, 300),
+          rewrite(s.logo_url) || '',
+          Number.isFinite(s.lat) ? s.lat : null, Number.isFinite(s.lng) ? s.lng : null
+        );
+        break;
+      } catch (err) {
+        if (slugAttempts >= 3 || !/UNIQUE constraint failed: stores\.slug/.test(String(err?.message || ''))) throw err;
+        slugAttempts += 1;
+      }
+    }
 
     for (const f of bundle.floors) {
       const id = newId();

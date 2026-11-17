@@ -1,6 +1,6 @@
 /** Tests for the shelf planogram computation (tap-a-shelf → real layout). */
 import { describe, it, expect } from 'vitest';
-import { computeShelfLayout, pinInShelf, worldToShelfLocal } from './shelfLayout';
+import { computeShelfLayout, pinInShelf, worldToShelfLocal, shelfHeight, shelfLevels, shelfItemSize, boardGeometry, shelfBoardZs } from './shelfLayout';
 import type { MapElement, Product, ProductLocation, RectGeom } from '../types';
 
 const shelf: MapElement = {
@@ -83,5 +83,56 @@ describe('computeShelfLayout', () => {
     const layout = computeShelfLayout(s, [])!;
     expect(layout.meta.bays).toBeLessThanOrEqual(40);
     expect(layout.meta.levels).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('shelf dimensions (height / rows / item size)', () => {
+  const withMeta = (m: Record<string, unknown>): MapElement => ({ ...shelf, meta: JSON.stringify(m) });
+
+  it('defaults: 1.5 m tall, 4 rows, 0.24 × 0.20 m items', () => {
+    expect(shelfHeight(shelf)).toBe(1.5);
+    expect(shelfLevels(shelf)).toBe(4);
+    expect(shelfItemSize(shelf)).toEqual({ h: 0.24, w: 0.2 });
+  });
+
+  it('respects meta overrides and clamps them', () => {
+    expect(shelfHeight(withMeta({ height: 2.2 }))).toBe(2.2);
+    expect(shelfHeight(withMeta({ height: 9 }))).toBe(3);
+    expect(shelfHeight(withMeta({ height: 0.1 }))).toBeCloseTo(0.3);
+    expect(shelfLevels(withMeta({ levels: 3 }))).toBe(3);
+    expect(shelfLevels(withMeta({ levels: 12 }))).toBe(8);
+    expect(shelfLevels(withMeta({ levels: 0 }))).toBe(1);
+    expect(shelfItemSize(withMeta({ itemH: 0.5, itemW: 0.8 }))).toEqual({ h: 0.5, w: 0.8 });
+    expect(shelfItemSize(withMeta({ itemH: 5, itemW: 0.01 }))).toEqual({ h: 1.2, w: 0.05 });
+  });
+
+  it('boardGeometry: one board per row, rising from a plinth to just under the top', () => {
+    const g = boardGeometry(1.5, 4);
+    expect(g.zs).toHaveLength(4);
+    expect(g.zs[0]!).toBeGreaterThan(g.plinth);
+    expect(g.zs[3]!).toBeLessThan(1.5);
+    expect([...g.zs].sort((a, b) => a - b)).toEqual(g.zs);
+    expect(g.gapH).toBeGreaterThan(0.03);
+    expect(g.gapH).toBeLessThanOrEqual(0.14);
+  });
+
+  it('shelfBoardZs follows the element height and rows', () => {
+    const zs = shelfBoardZs(withMeta({ height: 2.1, levels: 7 }));
+    expect(zs).toHaveLength(7);
+    expect(zs[6]!).toBeLessThan(2.1);
+  });
+});
+
+describe('boardGeometry standing heights (facing placement)', () => {
+  it('facings stand one band below each board line — bottom band used, top line unused', () => {
+    const g = boardGeometry(1.5, 4);
+    expect(g.stand).toHaveLength(4);
+    expect(g.stand[0]).toBeCloseTo(g.plinth);
+    for (let i = 1; i < g.zs.length; i++) expect(g.stand[i]).toBeCloseTo(g.zs[i - 1]!);
+    // a default-sized facing on the top standing height stays under the top line
+    expect(g.stand[3]! + 0.24).toBeLessThan(g.zs[3]!);
+  });
+  it('shelfBoardZs returns the standing heights', () => {
+    expect(shelfBoardZs(shelf)[0]).toBeCloseTo(boardGeometry(1.5, 4).plinth);
   });
 });

@@ -83,6 +83,24 @@ export async function saveImage(env: Env, buf: Uint8Array, ext: string): Promise
   return { name, url: `/uploads/${name}` };
 }
 
+/**
+ * Best-effort delete of a stored image when it is replaced or its row goes
+ * away (orphaned R2 objects otherwise live forever). Only touches URLs this
+ * app itself stored (`/uploads/<name>`); external image URLs are left alone.
+ * Never throws — cleanup must not fail the request that triggered it.
+ */
+export async function deleteImage(env: Env, url: unknown): Promise<void> {
+  try {
+    if (typeof url !== 'string' || !url.startsWith('/uploads/')) return;
+    const name = url.split('/').pop() || '';
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return; // no path tricks
+    if (!(await r2BudgetOk(env))) return; // breaker tripped — skip, try again another day
+    await env.MEDIA.delete(`uploads/${name}`);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** Serve an uploaded image, or null (caller sends 404). Immutable long cache. */
 export async function serveImage(env: Env, name: string): Promise<Response | null> {
   if (!/^[A-Za-z0-9._-]+$/.test(name)) return null; // no path tricks

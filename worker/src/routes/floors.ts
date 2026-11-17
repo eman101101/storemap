@@ -6,6 +6,7 @@ import { newId } from '../util';
 import { json, badRequest, notFound } from '../http';
 import { str, num, validateElement } from '../validate';
 import { ownedFloor, touchStore } from '../ownership';
+import { deleteImage } from '../storage';
 
 const app = new Hono<AppEnv>();
 
@@ -43,6 +44,9 @@ app.patch('/:floorId', async (c) => {
   if (keys.length) {
     await run(env, `UPDATE floors SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => updates[k]), floor.id);
     await touchStore(c, env, floor.store_id as string);
+    if (updates.background_url !== undefined && updates.background_url !== floor.background_url) {
+      await deleteImage(env, floor.background_url); // the replaced background
+    }
   }
   return json(c, 200, { floor: await first(env, 'SELECT * FROM floors WHERE id = ?', floor.id) });
 });
@@ -55,12 +59,19 @@ app.delete('/:floorId', async (c) => {
   if (Number(cnt?.c ?? 0) <= 1) return badRequest(c, 'A store must keep at least one floor');
   await run(env, 'DELETE FROM floors WHERE id = ?', floor.id);
   await touchStore(c, env, floor.store_id as string);
+  await deleteImage(env, floor.background_url); // the floor's background dies with it
   return json(c, 200, { ok: true });
 });
 
 /**
  * PUT /api/floors/:floorId/elements — bulk replace the floor's elements.
- * The editor's autosave endpoint: one atomic batch, all-or-nothing.
+ * The editor's autosave endpoint. NOT atomic all-or-nothing: D1 documents
+ * no per-batch statement count that could hold a whole floor (each statement
+ * is capped at 100 bound parameters and a Worker invocation at 50 queries
+ * on the free plan / 1000 paid — see the D1 limits page), so statements go
+ * as consecutive 50-statement batches, each atomic on its own. A failure
+ * mid-way leaves earlier chunks applied (partial apply); the editor's next
+ * autosave re-sends the full floor and heals the gap.
  */
 app.put('/:floorId/elements', async (c) => {
   const env = c.env as Env;

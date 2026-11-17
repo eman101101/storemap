@@ -111,9 +111,14 @@ export function upsertProduct(storeId, input, { source = 'api' } = {}) {
   } else {
     if (!name) return null;
     const id = newId();
+    // same coercion as the UPDATE branch: a legitimate price of 0 must survive
+    const price =
+      Number.isFinite(Number(input.price)) && input.price !== null && input.price !== ''
+        ? Number(input.price)
+        : null;
     db.prepare(
       `INSERT INTO products (id, store_id, name, brand, sku, barcode, price) VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, storeId, name, s(input.brand, 100), sku, barcode, Number(input.price) || null);
+    ).run(id, storeId, name, s(input.brand, 100), sku, barcode, price);
     product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     created = true;
   }

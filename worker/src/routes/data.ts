@@ -21,7 +21,12 @@ csv.post('/:storeId/integrations/csv', async (c) => {
   const store = await ownedStore(c, env, c.req.param('storeId'));
   if (store instanceof Response) return store;
   const body = await c.req.json().catch(() => ({}));
-  const rows = rowsFromCsv(String(body?.csv ?? ''));
+  let rows;
+  try {
+    rows = rowsFromCsv(String(body?.csv ?? ''));
+  } catch (err) {
+    return badRequest(c, (err as Error).message); // e.g. the 5000-row import cap
+  }
   if (!rows.length) return badRequest(c, 'No rows found in CSV (need a header row with name/sku columns)');
   let imported = 0;
   for (const row of rows) {
@@ -112,7 +117,7 @@ v1.post('/products', async (c) => {
   }
 });
 
-async function resolveProduct(c: any, env: Env): Promise<string | null> {
+async function resolveProduct(c: any, env: Env): Promise<string | Response> {
   const b = await c.req.json().catch(() => ({}));
   c.set('body', b ?? {});
   const store = c.get('store');
@@ -120,17 +125,14 @@ async function resolveProduct(c: any, env: Env): Promise<string | null> {
   if (b?.product_id) row = await first(env, 'SELECT id FROM products WHERE id = ? AND store_id = ?', String(b.product_id), String(store.id));
   if (!row && b?.sku) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND sku = ?', String(store.id), String(b.sku));
   if (!row && b?.barcode) row = await first(env, 'SELECT id FROM products WHERE store_id = ? AND barcode = ?', String(store.id), String(b.barcode));
-  if (!row) {
-    badRequest(c, 'Unknown product: pass product_id, sku or barcode');
-    return null;
-  }
+  if (!row) return badRequest(c, 'Unknown product: pass product_id, sku or barcode');
   return row.id as string;
 }
 
 v1.post('/stock/adjust', async (c) => {
   const env = c.env as Env;
   const productId = await resolveProduct(c, env);
-  if (!productId) return;
+  if (productId instanceof Response) return productId;
   const b = c.get('body');
   const delta = Number(b?.delta);
   if (!Number.isFinite(delta)) return badRequest(c, 'delta must be a number');
@@ -148,7 +150,7 @@ v1.post('/stock/adjust', async (c) => {
 v1.post('/stock/set', async (c) => {
   const env = c.env as Env;
   const productId = await resolveProduct(c, env);
-  if (!productId) return;
+  if (productId instanceof Response) return productId;
   const b = c.get('body');
   const quantity = Number(b?.quantity);
   if (!Number.isFinite(quantity) || quantity < 0) return badRequest(c, 'quantity must be a non-negative number');

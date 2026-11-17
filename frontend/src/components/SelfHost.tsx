@@ -80,7 +80,7 @@ export default function SelfHost() {
           </p>
           <div className="tut-callout">
             <ul>
-              <li><b>Demo login (default, zero setup)</b> — “Open the demo maps — no sign-in”. Best while you evaluate; turn it off before going public.</li>
+              <li><b>Email demo login (default, zero setup)</b> — on instances without OAuth, the sign-in popup offers a plain email login. Best while you evaluate; turn it off before going public.</li>
               <li><b>Google / Apple sign-in (≈15 min)</b> — already implemented; create OAuth credentials and set them in your config. Works on localhost and in the cloud.</li>
               <li><b>Cloudflare Access (the built-in option)</b> — on the Cloudflare deployment, protect the dashboard with Access (free ≤ 50 users); the worker verifies the signed assertion and maps your email to the owner account. Zero code.</li>
             </ul>

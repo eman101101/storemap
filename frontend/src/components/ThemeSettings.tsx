@@ -1,90 +1,25 @@
 /**
- * Appearance & map-style popover: light/dark/system UI mode and the optional
- * retro 2010s map theme. Shown in the top nav (app pages) and the shopper
- * viewer's floating top bar; the choice is saved on this device.
+ * Appearance toggle: one click flips light ↔ dark (saved on this device).
+ * Shown in the top nav (app pages) and the shopper viewer's floating bar.
+ * First visits follow the OS; the first click pins an explicit choice.
  */
-import { useEffect, useRef, useState } from 'react';
-import { useTheme, type ModePref } from '../theme';
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  label,
-}: {
-  options: { v: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  label: string;
-}) {
-  return (
-    <div className="theme-seg" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          role="radio"
-          aria-checked={value === o.v}
-          className={value === o.v ? 'active' : ''}
-          onClick={() => onChange(o.v)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+import { useTheme } from '../theme';
 
 export default function ThemeSettings() {
-  const { mode, setMode } = useTheme();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('pointerdown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointerdown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
+  const { resolved, setMode } = useTheme();
+  const dark = resolved === 'dark';
+  const next = dark ? 'light' : 'dark';
   return (
-    <div className="theme-settings" ref={ref}>
+    <div className="theme-settings">
       <button
         type="button"
         className="theme-gear"
-        aria-label="Appearance"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        aria-label={`Switch to ${next} mode`}
+        title={`Switch to ${next} mode`}
+        onClick={() => setMode(next)}
       >
-        <span aria-hidden>◐</span>
+        <span key={resolved} aria-hidden>{dark ? '☀' : '☾'}</span>
       </button>
-      {open && (
-        <div className="theme-pop" role="dialog" aria-label="Appearance">
-          <div className="theme-row">
-            <span className="theme-row-label">Appearance</span>
-            <Segmented<ModePref>
-              label="Appearance"
-              options={[
-                { v: 'light', label: 'Light' },
-                { v: 'system', label: 'System' },
-                { v: 'dark', label: 'Dark' },
-              ]}
-              value={mode}
-              onChange={setMode}
-            />
-          </div>
-          <p className="theme-note">Dark mode also restyles the 3D map. Saved on this device.</p>
-        </div>
-      )}
     </div>
   );
 }

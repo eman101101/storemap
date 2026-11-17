@@ -183,6 +183,9 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         tokenize = 'unicode61 remove_diacritics 2'
       );
 
+      -- Backfill must be idempotent: a cold-start race loser re-runs this
+      -- migration, and a plain INSERT ... SELECT would duplicate every row.
+      DELETE FROM products_fts;
       INSERT INTO products_fts (rowid, name, brand, sku, barcode, category_name)
         SELECT p.rowid, p.name, p.brand, p.sku, p.barcode, COALESCE(c.name, '')
         FROM products p LEFT JOIN categories c ON c.id = p.category_id;
@@ -233,6 +236,22 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_invitations_store ON invitations(store_id);
     `,
   },
+  {
+    // One product per (store, sku) — makes SKU upserts race-free (concurrent
+    // imports can no longer duplicate a SKU). Existing duplicates are deduped
+    // first, keeping the lowest rowid per (store_id, sku); NULL/empty SKUs
+    // stay allowed via the partial index.
+    name: '010-unique-store-sku',
+    sql: `
+      DELETE FROM products
+       WHERE sku IS NOT NULL AND sku != ''
+         AND rowid NOT IN (
+           SELECT MIN(rowid) FROM products WHERE sku IS NOT NULL AND sku != '' GROUP BY store_id, sku
+         );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_products_store_sku
+        ON products(store_id, sku) WHERE sku IS NOT NULL AND sku != '';
+    `,
+  },
 ];
 
 /**
@@ -259,10 +278,10 @@ function splitStatements(sql: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
-/** Apply pending migrations; memoised per isolate. */
+/** Apply pending migrations; memoised per isolate (a rejection un-memoises it). */
 export async function migrate(env: Env): Promise<void> {
   if ((migrate as any).done) return;
-  (migrate as any).done = (async () => {
+  const attempt = (async () => {
     await run(
       env,
       `CREATE TABLE IF NOT EXISTS migrations (
@@ -280,16 +299,25 @@ export async function migrate(env: Env): Promise<void> {
         for (const statement of splitStatements(m.sql)) {
           await run(env, statement);
         }
-        await run(env, 'INSERT INTO migrations (name) VALUES (?)', m.name);
       } catch (err) {
         // 004/005 ALTERs fail if another cold start applied them first — accept.
         const msg = String((err as Error).message || '');
-        if (!/duplicate column|already exists/i.test(msg)) throw err;
-        await run(env, 'INSERT OR IGNORE INTO migrations (name) VALUES (?)', m.name);
+        if (!/duplicate column|already exists|unique constraint/i.test(msg)) throw err;
       }
+      // OR IGNORE: a concurrent isolate may have recorded this migration first
+      // (the UNIQUE constraint on name is the loser's only failure mode).
+      await run(env, 'INSERT OR IGNORE INTO migrations (name) VALUES (?)', m.name);
     }
   })();
-  return (migrate as any).done;
+  (migrate as any).done = attempt;
+  try {
+    await attempt;
+  } catch (err) {
+    // Never memoise failure — a losing isolate must be able to retry on the
+    // next request instead of 500ing for its whole lifetime.
+    (migrate as any).done = undefined;
+    throw err;
+  }
 }
 
 /** Get (or lazily create + persist) the session-signing secret. */
@@ -309,7 +337,7 @@ async function resolveSessionSecret(env: Env): Promise<string> {
  */
 export async function bootstrap(env: Env, selfHosted: boolean): Promise<string> {
   if ((bootstrap as any).done) return (bootstrap as any).done;
-  (bootstrap as any).done = (async () => {
+  const attempt = (async () => {
     await migrate(env);
     const secret = await resolveSessionSecret(env);
     if (selfHosted && (await count(env, 'SELECT COUNT(*) AS n FROM stores')) === 0) {
@@ -323,5 +351,12 @@ export async function bootstrap(env: Env, selfHosted: boolean): Promise<string> 
     }
     return secret;
   })();
-  return (bootstrap as any).done;
+  (bootstrap as any).done = attempt;
+  try {
+    return await attempt;
+  } catch (err) {
+    // same rule as migrate(): don't memoise failure, so the isolate can retry.
+    (bootstrap as any).done = undefined;
+    throw err;
+  }
 }

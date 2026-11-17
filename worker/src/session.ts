@@ -8,7 +8,6 @@ import { parseCookies, setCookie, clearCookie } from './cookies';
 import { json } from './http';
 
 const COOKIE = 'st_session';
-const STATE_COOKIE = 'st_oauth';
 
 export interface UserRow {
   id: string;
@@ -60,22 +59,6 @@ export async function attachUser(c: Context, next: () => Promise<void>): Promise
 export async function requireAuth(c: Context, next: () => Promise<void>): Promise<Response | void> {
   if (!c.get('user')) return json(c, 401, { error: 'Authentication required' });
   await next();
-}
-
-/** OAuth state round-trip: random value stored in a short-lived cookie. */
-export function makeState(c: Context): string {
-  const state = crypto.randomUUID().replace(/-/g, '');
-  setCookie(c, STATE_COOKIE, state, { maxAge: 600 });
-  return state;
-}
-
-export function checkState(c: Context, state: unknown): boolean {
-  const expected = parseCookies(c)[STATE_COOKIE];
-  return Boolean(state) && Boolean(expected) && state === expected;
-}
-
-export function clearState(c: Context): void {
-  clearCookie(c, STATE_COOKIE);
 }
 
 /** Upsert a user from an OIDC identity claim set (or dev login). */

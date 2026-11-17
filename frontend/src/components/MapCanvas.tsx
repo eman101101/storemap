@@ -6,7 +6,9 @@ import {
   type HandleType, type Viewport, type WorldPt,
 } from '../lib/geometry';
 import { TYPE_COLOR, TYPE_STROKE, shade } from '../lib/mapColors';
-import { aisleContents } from '../lib/aisleInfo';
+import { placeGlyph } from '../lib/placeSymbols';
+import { aisleContents, shelfContents } from '../lib/aisleInfo';
+import { AisleTooltip } from './Map3D';
 
 export type EditorTool =
   | 'select' | 'shelf' | 'aisle-pair' | 'wall' | 'wall-line' | 'aisle' | 'zone' | 'zone-poly'
@@ -17,7 +19,7 @@ const TOOL_DEF: Record<Exclude<EditorTool, 'select' | 'product'>, { type: MapEle
   'aisle-pair': { type: 'shelf', shape: 'rect' }, // EditorPage adds the facing row on commit
   wall: { type: 'wall', shape: 'rect' },
   'wall-line': { type: 'wall', shape: 'polyline' },
-  aisle: { type: 'aisle', shape: 'polyline' },
+  aisle: { type: 'aisle', shape: 'rect' }, // placed as a reshaping labelled zone
   zone: { type: 'zone', shape: 'rect' },
   'zone-poly': { type: 'zone', shape: 'polygon' },
   entrance: { type: 'entrance', shape: 'point' },
@@ -49,7 +51,7 @@ interface Props {
   draftPts?: WorldPt[];
   onSelect?: (id: string | null) => void;
   /** 'begin' snapshots undo history at gesture start, 'live' applies silently, 'push' snapshots + applies. */
-  onElementsChange?: (els: MapElement[], history: 'begin' | 'live' | 'push') => void;
+  onElementsChange?: (els: MapElement[], history: 'begin' | 'live' | 'push', label?: string) => void;
   onAddElement?: (el: MapElement) => void;
   onDraftAdd?: (p: WorldPt) => void;
   onDraftFinish?: () => void;
@@ -90,6 +92,13 @@ type Interaction =
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
 
+/** Constrain `to` to the dominant axis from `from` — straight lanes for drafts. */
+function straightSnap(from: WorldPt, to: WorldPt): WorldPt {
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  return dx >= dy ? { x: to.x, y: from.y } : { x: from.x, y: to.y };
+}
+
 export default function MapCanvas(props: Props) {
   const {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
@@ -100,9 +109,14 @@ export default function MapCanvas(props: Props) {
   } = props;
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  /** Viewer: the shelf under the pointer, and where to pin its card. */
+  const [hoverShelf, setHoverShelf] = useState<{ id: string; sx: number; sy: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+  // latest viewport for the always-attached wheel listener (ref pattern, Map3D-style)
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
   const interaction = useRef<Interaction>(null);
   const pointers = useRef(new Map<number, WorldPt>());
   const pinch = useRef<{ dist: number; vp: Viewport; mid: WorldPt } | null>(null);
@@ -147,15 +161,17 @@ export default function MapCanvas(props: Props) {
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  });
+    // zoomAt reads the viewport through viewportRef — nothing here goes stale
+  }, []);
 
   const zoomAt = (p: WorldPt, k: number) => {
-    const s = Math.min(60, Math.max(1.2, viewport.scale * k));
-    const applied = s / viewport.scale;
+    const vp = viewportRef.current;
+    const s = Math.min(60, Math.max(1.2, vp.scale * k));
+    const applied = s / vp.scale;
     onViewport({
       scale: s,
-      tx: p.x - (p.x - viewport.tx) * applied,
-      ty: p.y - (p.y - viewport.ty) * applied,
+      tx: p.x - (p.x - vp.tx) * applied,
+      ty: p.y - (p.y - vp.ty) * applied,
     });
   };
 
@@ -206,16 +222,32 @@ export default function MapCanvas(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [edit, draftPts.length, selectedId, elements]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [edit, draftPts.length, selectedId, selectedIds, elements, grid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const replaceElement = (next: MapElement, history: 'begin' | 'live' | 'push') => {
     onElementsChange?.(elements.map((el) => (el.id === next.id ? next : el)), history);
   };
 
-  // Programmatic zoom (toolbar buttons): zoom around the current view center.
+  // Programmatic zoom (pad buttons): one tap glides the zoom over ~0.25 s,
+  // eased, centered on the current view — no jump.
   useEffect(() => {
-    if (!zoomCommand) return;
-    zoomAt({ x: size.w / 2, y: size.h / 2 }, zoomCommand.k);
+    if (!zoomCommand || zoomCommand.k === 1) return;
+    const start = performance.now();
+    const DUR = 250;
+    const total = Math.log(zoomCommand.k);
+    let done = 0;
+    let raf = 0;
+    const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / DUR);
+      const e = easeInOut(t);
+      const chunk = e - done;
+      done = e;
+      if (chunk > 0) zoomAt({ x: size.w / 2, y: size.h / 2 }, Math.exp(total * chunk));
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomCommand?.seq]);
 
@@ -270,8 +302,8 @@ export default function MapCanvas(props: Props) {
       floor_id: floor.id,
       type: def.type,
       shape: 'rect',
-      geom: { x: a.x <= b.x ? x : b.x, y: a.y <= b.y ? y : b.y, w, h, rot: 0 },
-      label: '',
+      geom: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w, h, rot: 0 },
+      label: def.type === 'aisle' ? 'Aisle' : '',
       color: '',
       meta: '{}',
       z_index: maxZ + 1,
@@ -302,6 +334,9 @@ export default function MapCanvas(props: Props) {
       // synthetic/untracked pointer (e.g. automated events) — capture is best-effort
     }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // a press starts a gesture — hide hover cards until the pointer settles again
+    setHoverShelf(null);
+    setHoverAisle(null);
 
     // Two pointers → pinch zoom takes over (viewer and editor).
     if (pointers.current.size === 2) {
@@ -313,6 +348,17 @@ export default function MapCanvas(props: Props) {
         vp: viewport,
         mid,
       };
+      // the pinch takes over — settle any in-progress fixture gesture exactly
+      // as a normal release would (final 'push': history entry, autosave, pin
+      // re-homing), or the editor stays stuck mid-gesture
+      const cur = interaction.current;
+      if (
+        cur &&
+        (cur.kind === 'move' || cur.kind === 'move-many' || cur.kind === 'resize' || cur.kind === 'rotate') &&
+        cur.began
+      ) {
+        onElementsChange?.(elements, 'push', cur.kind === 'move-many' ? 'move' : cur.kind);
+      }
       interaction.current = null;
       setDraftRect(null);
       return;
@@ -442,11 +488,17 @@ export default function MapCanvas(props: Props) {
         return;
       }
     }
-    onDraftAdd?.(snapPt(w, grid));
+    onDraftAdd?.(e.shiftKey && draftPts.length ? straightSnap(draftPts[draftPts.length - 1], snapPt(w, grid)) : snapPt(w, grid));
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (edit) setCursorWorld(toWorld(e));
+    // Shift while drafting keeps the lane straight: the live vertex is pinned
+    // to the dominant axis from the last placed point (the cursor position is
+    // only consumed while a draft is in progress)
+    if (edit && draftPts.length > 0) {
+      const w = toWorld(e);
+      setCursorWorld(e.shiftKey ? straightSnap(draftPts[draftPts.length - 1], w) : w);
+    }
 
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch.current && pointers.current.size === 2) {
@@ -542,6 +594,13 @@ export default function MapCanvas(props: Props) {
         const hit = hitElement(toWorld(e));
         if (hit) onElementClick?.(hit);
       }
+    } else if (
+      (it.kind === 'move' || it.kind === 'move-many' || it.kind === 'resize' || it.kind === 'rotate') &&
+      it.began
+    ) {
+      // fixture gestures end with a 'push' of the final state: history entry,
+      // autosave and pin re-homing all settle once, at release
+      onElementsChange?.(elements, 'push', it.kind === 'move-many' ? 'move' : it.kind);
     }
     // a still pointer that started on a pin = product select (works in any filter)
     if (pendingPin.current) {
@@ -558,17 +617,24 @@ export default function MapCanvas(props: Props) {
   };
 
   const scale = viewport.scale;
-  const floorEls = useMemo(() => elements, [elements]);
+  const floorEls = elements;
   const floorPins = useMemo(() => pins.filter((p) => p.location.floor_id === floor.id), [pins, floor.id]);
 
   const sel = selectedId ? floorEls.find((el) => el.id === selectedId) : null;
 
   // viewer-only: wide invisible hit paths over aisle ribbons → hover tooltip
-  const aisleEls = useMemo(() => floorEls.filter((el) => el.type === 'aisle' && el.shape === 'polyline'), [floorEls]);
+  const aisleEls = useMemo(() => floorEls.filter((el) => el.type === 'aisle'), [floorEls]);
   const hoverAisleEl = hoverAisle ? floorEls.find((el) => el.id === hoverAisle.id) ?? null : null;
   const hoverContents = useMemo(
     () => (hoverAisleEl ? aisleContents(hoverAisleEl, stockPins) : null),
     [hoverAisleEl, stockPins]
+  );
+  // viewer-only: invisible hit areas over shelves → "what's on this shelf" hover
+  const shelfEls = useMemo(() => floorEls.filter((el) => el.type === 'shelf' && el.shape === 'rect'), [floorEls]);
+  const hoverShelfEl = hoverShelf ? floorEls.find((el) => el.id === hoverShelf.id) ?? null : null;
+  const hoverShelfContents = useMemo(
+    () => (hoverShelfEl?.type === 'shelf' ? shelfContents(hoverShelfEl, stockPins) : null),
+    [hoverShelfEl, stockPins]
   );
   const svgPoint = (e: React.PointerEvent) => {
     const rect = svgRef.current!.getBoundingClientRect();
@@ -589,10 +655,10 @@ export default function MapCanvas(props: Props) {
       <defs>
         {/* strokes are in world meters: pattern content ignores vectorEffect */}
         <pattern id="grid-min" width={1} height={1} patternUnits="userSpaceOnUse">
-          <path d="M 1 0 L 0 0 0 1" fill="none" stroke="#e2e6dd" strokeWidth={0.02} />
+          <path d="M 1 0 L 0 0 0 1" fill="none" stroke="var(--map-grid-min)" strokeWidth={0.02} />
         </pattern>
         <pattern id="grid-maj" width={5} height={5} patternUnits="userSpaceOnUse">
-          <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#cdd4c5" strokeWidth={0.035} />
+          <path d="M 5 0 L 0 0 0 5" fill="none" stroke="var(--map-grid-maj)" strokeWidth={0.035} />
         </pattern>
       </defs>
 
@@ -613,8 +679,8 @@ export default function MapCanvas(props: Props) {
           y={0}
           width={floor.width_m}
           height={floor.height_m}
-          fill={floor.background_url ? 'none' : '#fbfaf6'}
-          stroke="#b9c1b0"
+          fill={floor.background_url ? 'none' : 'var(--map-floor)'}
+          stroke="var(--map-floor-line)"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
         />
@@ -651,6 +717,26 @@ export default function MapCanvas(props: Props) {
                 />
               );
             })}
+
+        {!edit &&
+          shelfEls.map((el) => {
+            const r = el.geom as RectGeom;
+            return (
+              <rect
+                key={`shelf-hit-${el.id}`}
+                x={r.x}
+                y={r.y}
+                width={r.w}
+                height={r.h}
+                transform={r.rot ? `rotate(${r.rot} ${r.x + r.w / 2} ${r.y + r.h / 2})` : undefined}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onPointerEnter={(e) => { if (!interaction.current) { const p = svgPoint(e); setHoverShelf({ id: el.id, sx: p.x, sy: p.y }); } }}
+                onPointerMove={(e) => { if (!interaction.current && hoverShelf?.id !== el.id) { const p = svgPoint(e); setHoverShelf({ id: el.id, sx: p.x, sy: p.y }); } }}
+                onPointerLeave={() => setHoverShelf(null)}
+              />
+            );
+          })}
 
         {draftRect && <RectPreview r={draftRect} type={TOOL_DEF[tool as keyof typeof TOOL_DEF]?.type ?? 'shelf'} />}
 
@@ -694,6 +780,14 @@ export default function MapCanvas(props: Props) {
             <text x={stop.point.x} y={stop.point.y} textAnchor="middle" dominantBaseline="central" fontSize={0.5} fill="#fff" fontWeight={700}>
               {i + 1}
             </text>
+            {/* every stop carries its item's name — a trip reads from the map alone */}
+            <text
+              x={stop.point.x + 0.95} y={stop.point.y} dominantBaseline="central" fontSize={0.55} fontWeight={600}
+              fill="#333a33" stroke="rgba(255,255,255,0.9)"
+              strokeWidth={0.16} paintOrder="stroke" strokeLinejoin="round"
+            >
+              {stop.name.length > 26 ? `${stop.name.slice(0, 25)}…` : stop.name}
+            </text>
           </g>
         ))}
 
@@ -715,64 +809,44 @@ export default function MapCanvas(props: Props) {
         )}
 
         {!edit &&
-          aisleEls.map((el) => (
-            <polyline
-              key={`aisle-hit-${el.id}`}
-              points={polyPoints(el).map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={2.2}
-              strokeLinecap="round"
-              style={{ cursor: 'pointer' }}
-              onPointerEnter={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
-              onPointerMove={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
-              onPointerLeave={() => setHoverAisle(null)}
-            />
-          ))}
+          aisleEls.map((el) => {
+            const pts =
+              el.shape === 'polyline'
+                ? polyPoints(el)
+                : rectCorners(el.geom as RectGeom);
+            return (
+              <polygon
+                key={`aisle-hit-${el.id}`}
+                points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="transparent"
+                stroke="transparent"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                style={{ cursor: 'pointer' }}
+                onPointerEnter={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
+                onPointerMove={(e) => { const p = svgPoint(e); setHoverAisle({ id: el.id, sx: p.x, sy: p.y }); }}
+                onPointerLeave={() => setHoverAisle(null)}
+              />
+            );
+          })}
       </g>
       </svg>
       {hoverAisle && hoverAisleEl && (
-        <AisleTip
+        <AisleTooltip
           style={{ left: hoverAisle.sx, top: hoverAisle.sy }}
           label={hoverAisleEl.label || 'Aisle'}
           contents={hoverContents}
         />
       )}
-    </>
-  );
-}
-
-/** Aisle hover card — positioned in screen px inside the map container. */
-function AisleTip({
-  style,
-  label,
-  contents,
-}: {
-  style: React.CSSProperties;
-  label: string;
-  contents: { categories: { name: string; color: string; count: number }[]; count: number; examples: string[] } | null;
-}) {
-  return (
-    <div className="aisle-tip" style={style} role="tooltip">
-      <b>{label}</b>
-      {contents && contents.count > 0 ? (
-        <>
-          <div className="aisle-tip-cats">
-            {contents.categories.slice(0, 4).map((c) => (
-              <span key={c.name} className="aisle-tip-cat">
-                <span className="dot" style={{ background: c.color }} />
-                {c.name} · {c.count}
-              </span>
-            ))}
-          </div>
-          <span className="aisle-tip-count">
-            {contents.count} item{contents.count === 1 ? '' : 's'} nearby
-          </span>
-        </>
-      ) : (
-        <span className="aisle-tip-count">No pinned products along this aisle yet</span>
+      {hoverShelf && hoverShelfEl?.type === 'shelf' && (
+        <AisleTooltip
+          style={{ left: hoverShelf.sx, top: hoverShelf.sy }}
+          label={hoverShelfEl.label || 'Shelf'}
+          contents={hoverShelfContents}
+          kind="shelf"
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -781,10 +855,16 @@ function AisleTip({
 function ElementNode({
   el, scale, selected, highlighted, edit,
 }: { el: MapElement; scale: number; selected: boolean; highlighted?: boolean; edit: boolean }) {
-  const fill = el.color || TYPE_COLOR[el.type];
-  const stroke = el.color ? shade(el.color, -0.25) : TYPE_STROKE[el.type];
+  const fill =
+    el.color || (el.type === 'wall' ? 'var(--el-wall-fill)' : TYPE_COLOR[el.type]);
+  const stroke =
+    el.color ? shade(el.color, -0.25) : el.type === 'wall' ? 'var(--el-wall-stroke)' : TYPE_STROKE[el.type];
   const label = el.label;
-  const fs = 12.5 / scale;
+  let fs = 12.5 / scale;
+  try {
+    const m = JSON.parse(el.meta || '{}');
+    if (typeof m.labelScale === 'number') fs *= m.labelScale;
+  } catch { /* default size */ }
 
   if (el.shape === 'rect') {
     const r = el.geom as RectGeom;
@@ -798,7 +878,7 @@ function ElementNode({
           fill={fill}
           fillOpacity={el.type === 'zone' ? (highlighted ? 0.5 : 0.3) : 1}
           stroke={stroke}
-          strokeWidth={1.4}
+          strokeWidth={el.type === 'wall' ? 2.4 : 1.4}
           strokeDasharray={el.type === 'aisle' ? '7 5' : undefined}
           vectorEffect="non-scaling-stroke"
           rx={Math.min(0.15, r.w / 4)}
@@ -813,14 +893,17 @@ function ElementNode({
   }
   if (el.shape === 'point') {
     const p = el.geom as PointGeom;
-    const glyph = el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★';
+    // common places read as symbols, not words — a matched glyph replaces the
+    // name label entirely (see placeSymbols)
+    const sym = placeGlyph(el.type, el.label);
+    const glyph = sym ?? (el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★');
     return (
       <g>
         <circle cx={p.x} cy={p.y} r={0.45} fill={fill} stroke="#fff" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
         <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={0.52} fill="#fff" pointerEvents="none">
           {glyph}
         </text>
-        {label && (
+        {label && !sym && (
           <text x={p.x + 0.7} y={p.y} dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
@@ -841,8 +924,7 @@ function ElementNode({
         fill={closed ? fill : 'none'}
         fillOpacity={el.type === 'zone' ? (highlighted ? 0.5 : 0.28) : closed ? 1 : 0}
         stroke={stroke}
-        strokeWidth={el.shape === 'polyline' ? Math.max(0.18, 0.1) : 1.4}
-        strokeDasharray={el.shape === 'polyline' ? undefined : undefined}
+        strokeWidth={el.shape === 'polyline' ? 0.18 : 1.4}
         strokeLinejoin="round"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
@@ -887,27 +969,51 @@ function RectPreview({ r, type }: { r: RectGeom; type: MapElement['type'] }) {
 
 function ProductPin({
   location, product, scale, focused, clickable, anchor, onClick,
-}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: WorldPt | null; onClick: () => void }) {
+}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: (WorldPt & { nx?: number; ny?: number }) | null; onClick: () => void }) {
   const color = product.category_color || '#2f6f3e';
-  // the dot sits on the shelf's outline — the wall the item is stocked against
+  // the marker sits on the shelf's outline — the wall the item is stocked against
   const px = anchor?.x ?? location.x;
   const py = anchor?.y ?? location.y;
+  // flat facing: a slim bar ALONG the shelf edge (anchored, like stock on a
+  // shelf); free-standing pins keep a small square
+  const anchored = anchor && typeof anchor.nx === 'number' && typeof anchor.ny === 'number';
+  const along = Math.atan2(anchor?.ny ?? 0, anchor?.nx ?? 0) * (180 / Math.PI) + 90;
+  const w = focused ? 0.62 : 0.5; // facing width along the shelf edge
+  const h = focused ? 0.26 : 0.2; // depth off the face
   return (
     <g
       onPointerDown={clickable ? (e) => { e.stopPropagation(); onClick(); } : undefined}
       style={{ cursor: clickable ? 'pointer' : 'default' }}
     >
       {focused && <circle className="pin-pulse" cx={px} cy={py} r={0.5} fill={color} />}
-      <circle
-        cx={px}
-        cy={py}
-        r={focused ? 0.55 : 0.42}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={2}
-        vectorEffect="non-scaling-stroke"
-      />
-      <circle cx={px} cy={py} r={0.13} fill="#fff" pointerEvents="none" />
+      {anchored ? (
+        <rect
+          x={px - w / 2}
+          y={py - h / 2}
+          width={w}
+          height={h}
+          transform={along ? `rotate(${along} ${px} ${py})` : undefined}
+          rx={0.05}
+          fill={color}
+          stroke="#fff"
+          strokeWidth={2}
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : (
+        <rect
+          x={px - 0.21}
+          y={py - 0.21}
+          width={0.42}
+          height={0.42}
+          rx={0.08}
+          fill={color}
+          stroke="#fff"
+          strokeWidth={2}
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      {/* invisible fat hit target so the slim bar is still easy to click */}
+      <circle cx={px} cy={py} r={0.45} fill="transparent" pointerEvents={clickable ? 'all' : 'none'} />
       {focused && product.name && (
         <text
           x={px}
@@ -915,7 +1021,7 @@ function ProductPin({
           textAnchor="middle"
           fontSize={13 / scale}
           className="el-label"
-          stroke="#ffffff"
+          stroke="var(--map-floor)"
           strokeWidth={3.5 / scale}
           paintOrder="stroke"
           fontWeight={700}
@@ -928,6 +1034,19 @@ function ProductPin({
 }
 
 /** Selection outline + 8 resize handles + rotation handle (screen-constant sizes). */
+
+/** Resize cursors per handle direction (diagonals / vertical / horizontal). */
+const HANDLE_CURSOR: Record<HandleType, string> = {
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+};
+
 function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; label: string }) {
   const corners = rectCorners(r);
   const cx = r.x + r.w / 2;
@@ -959,7 +1078,6 @@ function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; lab
         strokeDasharray="5 3"
         vectorEffect="non-scaling-stroke"
       />
-      {label ? null : null}
       {handles.map((h) => (
         <rect
           key={h.t}
@@ -973,7 +1091,7 @@ function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; lab
           strokeWidth={1.6}
           vectorEffect="non-scaling-stroke"
           pointerEvents="all"
-          style={{ cursor: 'nwse-resize' }}
+          style={{ cursor: HANDLE_CURSOR[h.t] }}
         />
       ))}
       <line x1={rotStem.x} y1={rotStem.y} x2={rotHandle.x} y2={rotHandle.y} stroke="#2f6f3e" strokeWidth={1.4} vectorEffect="non-scaling-stroke" />

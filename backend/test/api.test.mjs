@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -52,10 +53,16 @@ function sessionCookie(setCookie) {
   return c.split(';')[0];
 }
 
+// dev-login is rate-limited per IP (30/min) and the whole suite shares one —
+// cache sessions so repeat logins for the same email don't burn the budget.
+const sessions = new Map();
 async function loginAs(email) {
+  if (sessions.has(email)) return sessions.get(email);
   const res = await call('/api/auth/dev-login', { method: 'POST', body: { email } });
   assert.equal(res.status, 200);
-  return sessionCookie(res.setCookie);
+  const cookie = sessionCookie(res.setCookie);
+  sessions.set(email, cookie);
+  return cookie;
 }
 
 test('health endpoint responds', async () => {
@@ -344,6 +351,45 @@ test('catalog: categories, products, locations, and search', async () => {
   assert.equal(noHits.body.results.length, 0);
 });
 
+test('pin shelfId persists in meta and round-trips through every payload', async () => {
+  const cookie = await loginAs('shelfy@example.com');
+  const { body } = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Shelf Mart' } });
+  const storeId = body.store.id;
+  await call(`/api/stores/${storeId}`, { method: 'PATCH', cookie, body: { is_public: true } });
+  const floorId = (await call(`/api/stores/${storeId}/full`, { cookie })).body.floors[0].id;
+  const prod = await call(`/api/stores/${storeId}/products`, { method: 'POST', cookie, body: { name: 'Shelf Cola' } });
+  const productId = prod.body.product.id;
+
+  // create with a shelfId → top-level field + meta JSON
+  const loc = await call(`/api/products/${productId}/locations`, {
+    method: 'POST', cookie, body: { floor_id: floorId, x: 3, y: 4, shelfId: 'shelf-7' },
+  });
+  assert.equal(loc.status, 201);
+  assert.equal(loc.body.location.shelfId, 'shelf-7');
+  assert.equal(JSON.parse(loc.body.location.meta).shelfId, 'shelf-7');
+
+  // the store full payload carries it too
+  const after = await call(`/api/stores/${storeId}/full`, { cookie });
+  assert.equal(after.body.locations[0].shelfId, 'shelf-7');
+  assert.equal(JSON.parse(after.body.locations[0].meta).shelfId, 'shelf-7');
+
+  // and so does the public shopper payload (meta + derived shelfId)
+  const pub = await call('/api/public/stores/shelf-mart');
+  assert.equal(pub.body.locations[0].shelfId, 'shelf-7');
+  assert.ok(pub.body.locations[0].meta);
+
+  // re-pinning the same product+floor without a shelfId clears the association
+  const cleared = await call(`/api/products/${productId}/locations`, {
+    method: 'POST', cookie, body: { floor_id: floorId, x: 5, y: 6 },
+  });
+  assert.equal(cleared.status, 201);
+  assert.equal(cleared.body.location.id, loc.body.location.id, 'same pin, updated in place');
+  assert.equal(cleared.body.location.shelfId, null);
+  assert.equal(cleared.body.location.meta, '{}');
+  const afterClear = await call(`/api/stores/${storeId}/full`, { cookie });
+  assert.equal(afterClear.body.locations[0].shelfId, null);
+});
+
 test('price validation rejects negative values', async () => {
   const cookie = await loginAs('price@example.com');
   const { body } = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Price Check' } });
@@ -400,8 +446,10 @@ test('unknown API routes return JSON 404s', async () => {
 
 test('upload endpoint validates content type and magic bytes', async () => {
   const cookie = await loginAs('upload@example.com');
+  const { body } = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Upload Co' } });
+  const storeParam = `?store=${body.store.id}`;
   const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(32).fill(0)]);
-  const ok = await fetch(base + '/api/uploads', {
+  const ok = await fetch(base + '/api/uploads' + storeParam, {
     method: 'POST',
     headers: { 'Content-Type': 'image/png', Cookie: cookie },
     body: pngBytes,
@@ -412,19 +460,75 @@ test('upload endpoint validates content type and magic bytes', async () => {
   const served = await fetch(base + url);
   assert.equal(served.status, 200);
 
-  const fake = await fetch(base + '/api/uploads', {
+  const fake = await fetch(base + '/api/uploads' + storeParam, {
     method: 'POST',
     headers: { 'Content-Type': 'image/png', Cookie: cookie },
     body: Buffer.from('this is not a png at all'),
   });
   assert.equal(fake.status, 400, 'text masquerading as PNG must be rejected');
 
-  const wrongType = await fetch(base + '/api/uploads', {
+  const wrongType = await fetch(base + '/api/uploads' + storeParam, {
     method: 'POST',
     headers: { 'Content-Type': 'application/pdf', Cookie: cookie },
     body: Buffer.from('%PDF-1.4'),
   });
   assert.equal(wrongType.status, 400);
+});
+
+test('uploads are store-scoped: `store` field + stock role required', async () => {
+  const cookie = await loginAs('upload@example.com'); // owns 'Upload Co'
+  const mine = await call('/api/stores/mine', { cookie });
+  const storeId = mine.body.stores.find((s) => s.name === 'Upload Co').id;
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(32).fill(0)]);
+
+  // no store → 400
+  const bare = await fetch(base + '/api/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png', Cookie: cookie },
+    body: pngBytes,
+  });
+  assert.equal(bare.status, 400);
+
+  // a store the caller has no role on → rejected
+  const foreign = await fetch(base + `/api/uploads?store=${'no-such-store'}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png', Cookie: cookie },
+    body: pngBytes,
+  });
+  assert.equal(foreign.status, 404);
+
+  // multipart contract: field `store` = store id, image as a file part
+  const form = new FormData();
+  form.set('store', storeId);
+  form.set('file', new Blob([pngBytes], { type: 'image/png' }), 'floor.png');
+  const multipart = await fetch(base + '/api/uploads', {
+    method: 'POST',
+    headers: { Cookie: cookie },
+    body: form,
+  });
+  assert.equal(multipart.status, 201);
+  const { url } = await multipart.json();
+  assert.match(url, /^\/uploads\/[0-9a-f-]+\.png$/);
+  assert.equal((await fetch(base + url)).status, 200);
+});
+
+test('uploaded-image serving rejects path tricks without crashing', async () => {
+  const port = server.address().port;
+  const rawGet = (p) =>
+    new Promise((resolve, reject) => {
+      http
+        .get({ host: '127.0.0.1', port, path: p }, (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode));
+        })
+        .on('error', reject);
+    });
+  assert.equal(await rawGet('/uploads/..'), 404);
+  assert.equal(await rawGet('/uploads/.'), 404);
+  assert.equal(await rawGet('/uploads/ok.png%00'), 404);
+  // the process must have survived all three (no unhandled stream error)
+  const health = await call('/api/health');
+  assert.equal(health.status, 200);
 });
 
 test('search: FTS5 index — prefix, category, updates stay in sync', async () => {
@@ -490,7 +594,7 @@ test('transfer: export → import round trip (catalog, pins, elements, stock, me
   await call(`/api/stores/${storeId}/stock/set`, { method: 'POST', cookie: alice, body: { product_id: prod.body.product.id, quantity: 12 } });
   // one product image via the upload endpoint → embedded media in the bundle
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex');
-  const up = await call('/api/uploads', { method: 'POST', cookie: alice, headers: { 'Content-Type': 'image/png' }, body: png });
+  const up = await call(`/api/uploads?store=${storeId}`, { method: 'POST', cookie: alice, headers: { 'Content-Type': 'image/png' }, body: png });
   await call(`/api/products/${prod.body.product.id}`, { method: 'PATCH', cookie: alice, body: { image_url: up.body.url } });
 
   // export from alice…
@@ -530,6 +634,25 @@ test('transfer: export → import round trip (catalog, pins, elements, stock, me
   // junk is rejected cleanly
   const bad = await call('/api/stores/import', { method: 'POST', cookie: bob, body: { hello: 1 } });
   assert.equal(bad.status, 400);
+  // non-array list fields are a 400, not a 500
+  const nonArray = await call('/api/stores/import', {
+    method: 'POST', cookie: bob, body: { format: 'storemap.export/1', floors: [], categories: 5 },
+  });
+  assert.equal(nonArray.status, 400);
+});
+
+test('import accepts bundles larger than the 2mb API default', async () => {
+  // bundles embed product images — the import path has its own 64mb parser
+  const alice = await loginAs('alice-transfer@example.com'); // owns 'Transfer Source'
+  const mine = await call('/api/stores/mine', { cookie: alice });
+  const storeId = mine.body.stores.find((s) => s.name === 'Transfer Source').id;
+  const exp = await call(`/api/stores/${storeId}/export`, { cookie: alice, headers: { Accept: 'application/json' } });
+  assert.equal(exp.status, 200);
+  // pad a description so the JSON body exceeds the 2mb API-wide limit
+  exp.body.products[0].description = 'x'.repeat(2_600_000);
+  const imp = await call('/api/stores/import', { method: 'POST', cookie: alice, body: exp.body });
+  assert.equal(imp.status, 201);
+  assert.equal(imp.body.store.name, 'Transfer Source');
 });
 
 test('employees: invite → accept → scoped role enforcement', async () => {
@@ -604,4 +727,93 @@ test('employees: invite → accept → scoped role enforcement', async () => {
   assert.equal(remove.status, 200);
   const after = await call(`/api/stores/${storeId}/full`, { cookie: employee });
   assert.equal(after.status, 404, 'removed employee loses access');
+});
+
+test('viewers cannot modify the catalog (stock role is the baseline)', async () => {
+  // reuse the Team Mart owner + store from the employees test above
+  const owner = await loginAs('owner-shop@example.com');
+  const mine = await call('/api/stores/mine', { cookie: owner });
+  const storeId = mine.body.stores.find((s) => s.name === 'Team Mart').id;
+  const floorId = (await call(`/api/stores/${storeId}/full`, { cookie: owner })).body.floors[0].id;
+  const prodId = (await call(`/api/stores/${storeId}/full`, { cookie: owner })).body.products[0].id;
+  const loc = await call(`/api/products/${prodId}/locations`, {
+    method: 'POST', cookie: owner, body: { floor_id: floorId, x: 2, y: 2 },
+  });
+  assert.equal(loc.status, 201);
+
+  // invite a viewer via the members flow
+  const invite = await call(`/api/stores/${storeId}/members/invite`, {
+    method: 'POST', cookie: owner, body: { email: 'watcher@shop.com', role: 'viewer' },
+  });
+  assert.equal(invite.status, 201);
+  const token = invite.body.inviteUrl.split('/invite/')[1];
+  const viewer = await loginAs('watcher@shop.com');
+  assert.equal((await call(`/api/invitations/${token}/accept`, { method: 'POST', cookie: viewer })).status, 200);
+
+  // the viewer can read the store but not touch its catalog
+  assert.equal((await call(`/api/stores/${storeId}/full`, { cookie: viewer })).status, 200);
+  const patch = await call(`/api/products/${prodId}`, { method: 'PATCH', cookie: viewer, body: { price: 9 } });
+  assert.equal(patch.status, 403);
+  const del = await call(`/api/products/${prodId}`, { method: 'DELETE', cookie: viewer });
+  assert.equal(del.status, 403);
+  const delLoc = await call(`/api/locations/${loc.body.location.id}`, { method: 'DELETE', cookie: viewer });
+  assert.equal(delLoc.status, 403);
+
+  // …while a stock-role member still can
+  const invite2 = await call(`/api/stores/${storeId}/members/invite`, {
+    method: 'POST', cookie: owner, body: { email: 'stocker@shop.com', role: 'stock' },
+  });
+  const token2 = invite2.body.inviteUrl.split('/invite/')[1];
+  const stocker = await loginAs('stocker@shop.com');
+  assert.equal((await call(`/api/invitations/${token2}/accept`, { method: 'POST', cookie: stocker })).status, 200);
+  const okPatch = await call(`/api/products/${prodId}`, { method: 'PATCH', cookie: stocker, body: { price: 2 } });
+  assert.equal(okPatch.status, 200);
+
+  // missing rows are a 404 like every other guard
+  assert.equal((await call('/api/products/nope', { method: 'PATCH', cookie: owner, body: { price: 1 } })).status, 404);
+});
+
+test('dev login cannot take over an existing social account', async () => {
+  const { db, newId } = await import('../src/db.js');
+  db.prepare("INSERT INTO users (id, email, name, provider, provider_sub) VALUES (?, ?, ?, 'google', ?)").run(
+    newId(), 'googler@example.com', 'Google User', 'g-sub-1'
+  );
+  const takeover = await call('/api/auth/dev-login', { method: 'POST', body: { email: 'googler@example.com' } });
+  assert.equal(takeover.status, 403);
+  // the account was not re-pointed to the dev identity
+  const row = db.prepare('SELECT provider FROM users WHERE email = ?').get('googler@example.com');
+  assert.equal(row.provider, 'google');
+  // fresh emails (and existing dev accounts) still sign in fine
+  const fresh = await loginAs('after-takeover@example.com');
+  assert.ok(fresh.startsWith('st_session='));
+});
+
+test('shopper meta escapes hostile store fields (no script breakout)', async () => {
+  const cookie = await loginAs('sharer@example.com'); // owns the public 'Share Mart'
+  const mine = await call('/api/stores/mine', { cookie });
+  const storeId = mine.body.stores.find((s) => s.name === 'Share Mart').id;
+  const hostile = 'Escape </script><meta http-equiv=refresh content=0>';
+  const patched = await call(`/api/stores/${storeId}`, { method: 'PATCH', cookie, body: { name: hostile } });
+  assert.equal(patched.status, 200);
+  const page = await call('/s/share-mart');
+  assert.equal(page.status, 200);
+  // JSON-LD is escaped, the store field cannot close the script element
+  assert.ok(page.text.includes('\\u003cmeta http-equiv=refresh'), 'JSON-LD escapes < as \\u003c');
+  assert.ok(!page.text.includes('<meta http-equiv'), 'no injected meta tag from store data');
+  // the <title> replacement is escaped too
+  assert.ok(page.text.includes('<title>Escape &lt;/script&gt;'));
+});
+
+test('catalog PATCH rejects non-string fields with 400, not 500', async () => {
+  const cookie = await loginAs('dave@example.com'); // owns 'Search Foods'
+  const mine = await call('/api/stores/mine', { cookie });
+  const storeId = mine.body.stores.find((s) => s.name === 'Search Foods').id;
+  const prodId = (await call(`/api/stores/${storeId}/full`, { cookie })).body.products[0].id;
+  for (const field of ['brand', 'name', 'image_url']) {
+    const res = await call(`/api/products/${prodId}`, { method: 'PATCH', cookie, body: { [field]: 123 } });
+    assert.equal(res.status, 400, `${field}: 123 must be a 400`);
+  }
+  const cat = await call(`/api/stores/${storeId}/categories`, { method: 'POST', cookie, body: { name: 'Cat' } });
+  const iconRes = await call(`/api/categories/${cat.body.category.id}`, { method: 'PATCH', cookie, body: { icon: 5 } });
+  assert.equal(iconRes.status, 400);
 });

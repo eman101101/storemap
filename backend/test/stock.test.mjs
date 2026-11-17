@@ -123,6 +123,11 @@ test('API keys: create once, authenticate the v1 API, revoke kills access', asyn
   assert.equal(made.status, 201);
   assert.equal(made.body.level.quantity, 30);
 
+  // a legitimate price of 0 survives creation (0 is not "no price")
+  const free = await call('/api/v1/products', { method: 'POST', headers: auth, body: { name: 'Free Sample', sku: 'FREE-1', price: 0 } });
+  assert.equal(free.status, 201);
+  assert.equal(free.body.product.price, 0);
+
   // map endpoint exposes the layout
   const map = await call('/api/v1/map', { headers: auth });
   assert.equal(map.status, 200);

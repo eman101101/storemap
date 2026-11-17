@@ -9,6 +9,9 @@ import { ownedStore, touchStore } from '../ownership';
 import { entitlementsFor } from '../entitlements';
 import { buildExportBundle, importBundle, TransferError } from '../transfer';
 import { storesForUser, roleForStore } from '../members';
+import { locationJson } from './catalog';
+import { purgeStoreSlug } from '../cache';
+import { deleteImage } from '../storage';
 
 const app = new Hono<AppEnv>();
 
@@ -144,7 +147,10 @@ app.get('/:id/full', async (c) => {
       )
     : [];
   const role = await roleForStore(env, c.get('user').id, String(store.id));
-  return json(c, 200, { store: storeJson(c, store), role, floors, elements, categories, products, locations });
+  return json(c, 200, {
+    store: storeJson(c, store), role, floors, elements, categories, products,
+    locations: locations.map(locationJson),
+  });
 });
 
 app.patch('/:id', async (c) => {
@@ -174,8 +180,13 @@ app.patch('/:id', async (c) => {
   // Note: slug intentionally stays stable after creation so public links never break.
   const keys = Object.keys(updates);
   if (keys.length) {
-    await touchStore(c, env, store.id);
+    // Write first, THEN purge — a purge before the write lets a concurrent
+    // cache miss re-serve the stale payload for the full TTL.
     await run(env, `UPDATE stores SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => updates[k]), store.id);
+    await touchStore(c, env, store.id);
+    if (updates.logo_url !== undefined && updates.logo_url !== store.logo_url) {
+      await deleteImage(env, store.logo_url); // orphaned R2 object otherwise
+    }
   }
   const fresh = await first(env, 'SELECT * FROM stores WHERE id = ?', store.id);
   return json(c, 200, { store: storeJson(c, fresh!) });
@@ -185,7 +196,19 @@ app.delete('/:id', async (c) => {
   const env = c.env as Env;
   const store = await ownedStore(c, env, c.req.param('id'), 'owner');
   if (store instanceof Response) return store;
+  // Collect stored image URLs before the rows cascade away (product images,
+  // floor backgrounds, logo); external URLs are skipped by deleteImage.
+  const images = [
+    ...(await all(env, 'SELECT image_url AS u FROM products WHERE store_id = ? AND image_url LIKE ?', store.id, '/uploads/%')).map((r) => r.u),
+    ...(await all(env, 'SELECT background_url AS u FROM floors WHERE store_id = ? AND background_url LIKE ?', store.id, '/uploads/%')).map((r) => r.u),
+    ...(typeof store.logo_url === 'string' && store.logo_url.startsWith('/uploads/') ? [store.logo_url] : []),
+  ];
+  const slug = String(store.slug);
   await run(env, 'DELETE FROM stores WHERE id = ?', store.id);
+  // Purge the (now-gone) store's cached public payload — by slug, since the
+  // row lookup inside purgeStoreCache would find nothing after the delete.
+  await purgeStoreSlug(c, slug);
+  for (const url of images) await deleteImage(env, url); // best-effort R2 cleanup
   return json(c, 200, { ok: true });
 });
 

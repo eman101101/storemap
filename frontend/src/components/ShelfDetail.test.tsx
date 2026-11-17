@@ -46,7 +46,7 @@ describe('ShelfDetail', () => {
     ];
     render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
     expect(screen.getByRole('dialog')).toHaveTextContent('Aisle 1 — shelf layout');
-    expect(screen.getByRole('dialog')).toHaveTextContent('2 bays × 2 levels');
+    expect(screen.getByRole('dialog')).toHaveTextContent('2 bays × 2 rows');
     expect(screen.getByRole('dialog')).toHaveTextContent('Bay 1: Oat Milk');
     expect(screen.getByRole('dialog')).toHaveTextContent('Bay 2: Rye Bread');
   });

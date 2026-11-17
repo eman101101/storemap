@@ -46,7 +46,7 @@ export default function ShelfDetail({
   return (
     <Modal title={`${layout.label} — shelf layout`} onClose={onClose} wide>
       <p className="muted" style={{ marginTop: -8, marginBottom: 10 }}>
-        {layout.bays.length} bays × {layout.levels} levels · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
+        {layout.bays.length} bays × {layout.levels} rows · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
         shelf · {layout.width.toFixed(1)} m wide
       </p>
 

@@ -42,11 +42,16 @@ export function createApp() {
         "frame-ancestors 'none'",
       ].join('; '),
     });
-    if (req.path.startsWith('/api')) {
+    if (req.path.startsWith('/api') && !res.getHeader('Cache-Control')) {
       res.set('Cache-Control', 'no-store');
     }
     next();
   });
+
+  // Import bundles embed product images, so this path needs a larger body than
+  // the API-wide parser — and Express runs middleware in registration order,
+  // so it must be mounted BEFORE the /api-wide json parser below.
+  app.use('/api/stores/import', express.json({ limit: '64mb' }));
 
   app.use('/api', express.json({ limit: '2mb' }), attachUser);
 
@@ -125,6 +130,8 @@ app.use('/api', memberRoutes); // members + invitations (organizes /api/stores/:
         `${prodCount} products mapped${cats.length ? ` across ${cats.join(', ')}` : ''}. Search any item and see exactly where it is.`;
       const abs = (u) => (u && /^https?:/.test(u) ? u : u ? config.publicBaseUrl + u : u);
       const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // JSON-LD lives inside a <script> element: escape HTML-significant
+      // characters so a `</script>` in store data can't break out of it.
       const jsonLd = JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Store',
@@ -135,7 +142,7 @@ app.use('/api', memberRoutes); // members + invitations (organizes /api/stores/:
         ...(store.logo_url ? { image: abs(store.logo_url) } : {}),
         ...(store.lat && store.lng ? { geo: { '@type': 'GeoCoordinates', latitude: store.lat, longitude: store.lng } } : {}),
         ...(store.hours ? { openingHours: store.hours } : {}),
-      });
+      }).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
       const noscript = `<noscript><h1>${esc(store.name)}</h1><p>${esc(desc)}</p>${
         store.hours ? `<p>Hours: ${esc(store.hours)}</p>` : ''
       }${store.address ? `<p>Address: ${esc(store.address)}</p>` : ''}</noscript>`;
@@ -149,14 +156,14 @@ app.use('/api', memberRoutes); // members + invitations (organizes /api/stores/:
         ['twitter:title', title],
         ['twitter:description', desc],
       ]
-        .map(([k, v]) => `<meta property="${k}" content="${String(v).replace(/"/g, '&quot;')}">`)
+        .map(([k, v]) => `<meta property="${k}" content="${esc(String(v)).replace(/"/g, '&quot;')}">`)
         .join('');
       fs.readFile(distIndex, 'utf8', (err, html) => {
         if (err) return res.sendFile(distIndex);
         res.type('html').send(
           html
             .replace('</title>', `</title>${metas}<script type="application/ld+json">${jsonLd}</script>`)
-            .replace('<title>StoreMap — Find products in-store</title>', `<title>${store.name} · StoreMap</title>`)
+            .replace('<title>StoreMap — Find products in-store</title>', `<title>${esc(store.name)} · StoreMap</title>`)
             .replace('<div id="root"></div>', `${noscript}<div id="root"></div>`)
         );
       });

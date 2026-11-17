@@ -73,22 +73,25 @@ export async function signEs256(payload: Record<string, unknown>, keyPem: string
 
 /** Minimal SEC1 RFC5915 → PKCS#8 wrapper for P-256 keys. */
 function sec1ToPkcs8(sec1: Uint8Array): Uint8Array {
-  // PKCS#8 header for a P-256 EC key: 0x30 len 30 02 01 01 04 len [32-byte key]
-  // preceded by the AlgorithmIdentifier. Build it around the SEC1 payload.
-  const inner = new Uint8Array(sec1.length + 7);
-  inner.set([0x30, sec1.length + 9, 0x02, 0x01, 0x01, 0x04, sec1.length], 0);
-  inner.set(sec1, 7);
+  // PKCS#8 PrivateKeyInfo = SEQUENCE {
+  //   INTEGER 0,                                    — version
+  //   SEQUENCE { OID ecPublicKey, OID prime256v1 }, — AlgorithmIdentifier
+  //   OCTET STRING <the SEC1 ECPrivateKey DER>      — wraps the SEC1 blob whole
+  // }
+  // A P-256 SEC1 DER is at most 121 bytes, so single-byte DER lengths suffice.
+  const version = new Uint8Array([0x02, 0x01, 0x00]);
   const algId = new Uint8Array([0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07]);
-  const out = new Uint8Array(inner.length + algId.length + 4);
-  out[0] = 0x30;
-  out[1] = 0x82; // lengths here exceed 127 bytes → long form
-  out[2] = (inner.length + algId.length + 4) >> 8;
-  out[3] = (inner.length + algId.length + 4) & 0xff;
-  out[4] = 0x02;
-  out[5] = 0x01;
-  out[6] = 0x00; // version 0
-  out.set(algId, 7);
-  out.set(inner, 7 + algId.length);
+  const octet = new Uint8Array(2 + sec1.length);
+  octet[0] = 0x04;
+  octet[1] = sec1.length;
+  octet.set(sec1, 2);
+  const contentLen = version.length + algId.length + octet.length;
+  const header = contentLen < 128 ? [0x30, contentLen] : [0x30, 0x81, contentLen];
+  const out = new Uint8Array(header.length + contentLen);
+  out.set(header, 0);
+  out.set(version, header.length);
+  out.set(algId, header.length + version.length);
+  out.set(octet, header.length + version.length + algId.length);
   return out;
 }
 

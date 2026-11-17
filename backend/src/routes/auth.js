@@ -2,7 +2,7 @@ import { Router, urlencoded } from 'express';
 import { config, providersConfigured } from '../config.js';
 import { handler, sendJson, setCookie, clearCookie, parseCookies, rateLimit } from '../lib/http.js';
 import { randomToken } from '../lib/jwt.js';
-import { issueSession, clearSession, upsertUser, currentUser } from '../auth/session.js';
+import { issueSession, clearSession, upsertUser, currentUser, devLoginAllowed } from '../auth/session.js';
 import * as google from '../auth/google.js';
 import * as apple from '../auth/apple.js';
 
@@ -95,6 +95,9 @@ router.post(
 router.post('/dev-login', loginLimiter, handler(async (req, res) => {
   if (!providersConfigured().dev) return sendJson(res, 403, { error: 'Dev login is disabled.' });
   const email = String(req.body?.email || 'owner@example.com').toLowerCase().slice(0, 200);
+  if (!devLoginAllowed(email)) {
+    return sendJson(res, 403, { error: 'This email belongs to a Google/Apple account — sign in with that provider.' });
+  }
   const name = String(req.body?.name || email.split('@')[0]).slice(0, 100);
   const user = upsertUser({ provider: 'dev', sub: email, email, name, avatarUrl: '' });
   issueSession(res, user.id);
@@ -108,6 +111,9 @@ router.post('/dev-login', loginLimiter, handler(async (req, res) => {
 router.post('/demo-login', loginLimiter, handler(async (_req, res) => {
   if (!providersConfigured().dev) return sendJson(res, 403, { error: 'Demo login is disabled.' });
   const email = config.demoLoginEmail;
+  if (!devLoginAllowed(email)) {
+    return sendJson(res, 403, { error: 'This email belongs to a Google/Apple account — sign in with that provider.' });
+  }
   const user = upsertUser({ provider: 'dev', sub: email, email, name: 'Demo Map Owner', avatarUrl: '' });
   issueSession(res, user.id);
   sendJson(res, 200, { user: { id: user.id, email: user.email, name: user.name } });

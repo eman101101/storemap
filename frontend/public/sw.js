@@ -7,6 +7,9 @@
  */
 const SHELL_CACHE = 'storemap-shell-v1';
 const DATA_CACHE = 'storemap-data-v1';
+const CACHE_PREFIX = 'storemap-';
+const ASSETS_MAX = 200;
+const ASSETS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // ~30 days
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -18,9 +21,38 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => ![SHELL_CACHE, DATA_CACHE].includes(k)).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    (async () => {
+      // prune our own caches from older deployments (versioned names only —
+      // never touch caches this app doesn't own)
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((k) => k.startsWith(CACHE_PREFIX) && k !== SHELL_CACHE && k !== DATA_CACHE)
+          .map((k) => caches.delete(k))
+      );
+      // best-effort housekeeping on the shell cache: hashed /assets/ entries
+      // accumulate across deployments — evict stale ones, cap the rest
+      try {
+        const c = await caches.open(SHELL_CACHE);
+        const dated = [];
+        for (const req of await c.keys()) {
+          if (!new URL(req.url).pathname.startsWith('/assets/')) continue;
+          const res = await c.match(req);
+          dated.push([req, Date.parse(res?.headers.get('date') || '') || 0]);
+        }
+        const now = Date.now();
+        for (const [req, when] of dated) {
+          if (when && when < now - ASSETS_MAX_AGE_MS) await c.delete(req);
+        }
+        if (dated.length > ASSETS_MAX) {
+          dated.sort((a, b) => a[1] - b[1]); // oldest (undated first) go
+          for (const [req] of dated.slice(0, dated.length - ASSETS_MAX)) await c.delete(req);
+        }
+      } catch {
+        /* housekeeping is best-effort */
+      }
+      await self.clients.claim();
+    })()
   );
 });
 
@@ -54,11 +86,20 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (!url.pathname.startsWith('/api/')) {
+    // only HTML navigations maintain the offline shell — other same-origin
+    // GETs (manifest, icons, misc files) are served from their own cache
+    // entries and must never overwrite the '/' shell key
+    if (e.request.mode !== 'navigate') {
+      e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+      return;
+    }
     e.respondWith(
       fetch(e.request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put('/', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((c) => c.put('/', copy));
+          }
           return res;
         })
         .catch(() => caches.match('/'))

@@ -94,6 +94,17 @@ export async function acceptInvitation(env: Env, token: string, user: Record<str
   if (String(user.email || '').toLowerCase() !== String(inv.email)) {
     return { error: `This invitation was sent to ${inv.email} — sign in with that account.`, status: 403 };
   }
+  // The owner's authority comes from stores.owner_id, but roleForStore prefers
+  // a members row — accepting an invite to their own store would downgrade
+  // them to the invited role. Never let that happen.
+  const owner = await first(
+    env,
+    'SELECT u.email AS email FROM stores s JOIN users u ON u.id = s.owner_id WHERE s.id = ?',
+    inv.store_id
+  );
+  if (owner && String(owner.email).toLowerCase() === String(inv.email)) {
+    return { error: 'This email owns the store and cannot join it as a member.', status: 403 };
+  }
   await run(
     env,
     `INSERT INTO store_members (id, store_id, user_id, role) VALUES (?, ?, ?, ?)

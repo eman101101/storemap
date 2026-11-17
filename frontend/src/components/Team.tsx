@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../App';
+import { Modal, copyToClipboard } from './ui';
 
 /** Team management modal — roster, invite with copyable link, role changes. */
 export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () => void }) {
@@ -13,6 +14,7 @@ export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () =
   const [inviteUrl, setInviteUrl] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [removing, setRemoving] = useState<{ user_id: string; email: string; name: string } | null>(null);
 
   const load = useCallback(() => { api.members(storeId).then((r) => { setMembers(r.members); setMyRole(r.role); }).catch((e) => setError(e.message)); }, [storeId]);
   useEffect(() => { load(); }, [load]);
@@ -30,18 +32,33 @@ export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () =
   };
 
   const copyLink = async () => {
-    await navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (await copyToClipboard(inviteUrl)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } else {
+      setError('Could not copy the link — select it and copy manually.');
+    }
+  };
+
+  const removeMember = async () => {
+    if (!removing) return;
+    setError('');
+    try {
+      await api.removeMember(storeId, removing.user_id);
+      setRemoving(null);
+      load();
+    } catch (err) {
+      setRemoving(null);
+      setError(err instanceof Error ? err.message : 'Could not remove that member');
+    }
   };
 
   const canManage = myRole === 'owner';
   const canInvite = myRole === 'owner' || myRole === 'manager';
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal fade-in" role="dialog" aria-label="Store team" style={{ maxWidth: 540 }}>
-        <h3>Team</h3>
+    <>
+      <Modal title="Team" onClose={onClose}>
         {error && <div className="error-note">{error}</div>}
         {members === null ? (
           <p className="muted">Loading…</p>
@@ -69,7 +86,7 @@ export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () =
                     <button
                       className="btn sm ghost"
                       title="Remove from team"
-                      onClick={() => api.removeMember(storeId, m.user_id).then(load).catch((err) => setError(err.message))}
+                      onClick={() => setRemoving(m)}
                     >
                       ✕
                     </button>
@@ -99,7 +116,7 @@ export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () =
                   <button className="btn sm" onClick={copyLink}>{copied ? '✓ Copied' : 'Copy link'}</button>
                 </div>
                 <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
-                  Send this link to the employee — it works for 48 hours and only for {inviteUrl && 'the invited email'}. They sign in with Google (or the demo login on private instances).
+                  Send this link to the employee — it works for 48 hours and only for the invited email. They sign in with Google (or the demo login on private instances).
                 </p>
               </div>
             )}
@@ -110,8 +127,17 @@ export function TeamModal({ storeId, onClose }: { storeId: string; onClose: () =
           <span className="muted" style={{ marginRight: 'auto', fontSize: 12 }}>You are: {myRole}{user ? ` · ${user.email}` : ''}</span>
           <button className="btn" onClick={onClose}>Close</button>
         </div>
-      </div>
-    </div>
+      </Modal>
+      {removing && (
+        <Modal title={`Remove ${removing.name || removing.email}?`} onClose={() => setRemoving(null)}>
+          <p className="muted">They immediately lose access to this store.</p>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setRemoving(null)}>Cancel</button>
+            <button className="btn danger" onClick={removeMember}>Remove</button>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

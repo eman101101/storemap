@@ -2,11 +2,11 @@ import { Router } from 'express';
 import express from 'express';
 import { db, newId } from '../db.js';
 import { requireAuth } from '../auth/session.js';
-import { handler, sendJson, badRequest, rateLimit } from '../lib/http.js';
+import { handler, sendJson, badRequest, notFound, rateLimit } from '../lib/http.js';
 import { str, num } from '../lib/validate.js';
 import { ownedStore, ownedFloor, touchStore } from '../lib/ownership.js';
 import { reindexStoreFts } from '../lib/search.js';
-import { roleForStore } from '../lib/members.js';
+import { roleForStore, roleAtLeast } from '../lib/members.js';
 import { productImagesEnabled } from '../lib/entitlements.js';
 import { saveImage } from '../lib/storage.js';
 import { config } from '../config.js';
@@ -19,6 +19,21 @@ function productJson(row) {
   return { ...row, price: row.price ?? null };
 }
 
+/**
+ * Serialize a product_locations row: the owning shelf travels both in the
+ * raw `meta` JSON ({"shelfId": "…"}) and as a top-level `shelfId` field.
+ */
+export function locationJson(row) {
+  let shelfId = null;
+  try {
+    const meta = JSON.parse(String(row.meta || '{}'));
+    if (meta && typeof meta.shelfId === 'string') shelfId = meta.shelfId;
+  } catch {
+    /* unparseable meta → no owner */
+  }
+  return { ...row, shelfId };
+}
+
 const PRODUCT_JOIN = `SELECT p.*, c.name AS category_name, c.color AS category_color
   FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id = ?`;
 
@@ -29,9 +44,11 @@ router.post('/stores/:storeId/categories', requireAuth, handler(async (req, res)
   const name = str(req.body?.name, { max: 60, allowEmpty: false });
   if (!name) return badRequest(res, 'Category name is required');
   const color = HEX.test(req.body?.color || '') ? req.body.color : '#4f7d3f';
+  const icon = str(req.body?.icon, { max: 16 });
+  if (icon === undefined) return badRequest(res, 'Invalid value for icon');
   const id = newId();
   db.prepare('INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)').run(
-    id, store.id, name, color, str(req.body?.icon, { max: 16 })
+    id, store.id, name, color, icon
   );
   sendJson(res, 201, { category: db.prepare('SELECT * FROM categories WHERE id = ?').get(id) });
 }));
@@ -40,8 +57,13 @@ function ownedCategory(req, res, id) {
   const row = db
     .prepare('SELECT c.*, s.owner_id FROM categories c JOIN stores s ON s.id = c.store_id WHERE c.id = ?')
     .get(String(id));
-  if (!row || !roleForStore(req.user.id, row.store_id)) {
-    badRequest(res, 'Category not found');
+  if (!row) {
+    notFound(res, 'Category not found');
+    return null;
+  }
+  // catalog edits are the stock baseline — viewers are read-only
+  if (!roleAtLeast(roleForStore(req.user.id, row.store_id), 'stock')) {
+    sendJson(res, 403, { error: 'Editing the catalog requires at least the stock role' });
     return null;
   }
   return row;
@@ -60,7 +82,11 @@ router.patch('/categories/:id', requireAuth, handler(async (req, res) => {
     if (!HEX.test(req.body.color || '')) return badRequest(res, 'Color must be a hex value');
     updates.color = req.body.color;
   }
-  if (req.body?.icon !== undefined) updates.icon = str(req.body.icon, { max: 16 });
+  if (req.body?.icon !== undefined) {
+    const icon = str(req.body.icon, { max: 16 });
+    if (icon === undefined) return badRequest(res, 'Invalid value for icon');
+    updates.icon = icon;
+  }
   const keys = Object.keys(updates);
   if (keys.length) {
     db.prepare(`UPDATE categories SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(
@@ -100,14 +126,23 @@ router.post('/stores/:storeId/products', requireAuth, handler(async (req, res) =
     if (price === undefined || price < 0) return badRequest(res, 'Invalid price');
   }
   const id = newId();
+  const fields = {
+    brand: str(req.body?.brand, { max: 100 }),
+    sku: str(req.body?.sku, { max: 60 }),
+    barcode: str(req.body?.barcode, { max: 60 }),
+    description: str(req.body?.description, { max: 1000 }),
+    image_url: str(req.body?.image_url, { max: 400 }),
+  };
+  for (const [field, v] of Object.entries(fields)) {
+    if (v === undefined) return badRequest(res, `Invalid value for ${field}`);
+  }
   db.prepare(
     `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, store.id, categoryId, name,
-    str(req.body?.brand, { max: 100 }), str(req.body?.sku, { max: 60 }),
-    str(req.body?.barcode, { max: 60 }), str(req.body?.description, { max: 1000 }),
-    price, str(req.body?.image_url, { max: 400 })
+    fields.brand, fields.sku, fields.barcode, fields.description,
+    price, fields.image_url
   );
   const product = productJson(db.prepare(PRODUCT_JOIN).get(id));
   touchStore(store.id);
@@ -118,8 +153,13 @@ function ownedProduct(req, res, id) {
   const row = db
     .prepare('SELECT p.*, s.owner_id FROM products p JOIN stores s ON s.id = p.store_id WHERE p.id = ?')
     .get(String(id));
-  if (!row || !roleForStore(req.user.id, row.store_id)) {
-    badRequest(res, 'Product not found');
+  if (!row) {
+    notFound(res, 'Product not found');
+    return null;
+  }
+  // catalog edits are the stock baseline — viewers are read-only
+  if (!roleAtLeast(roleForStore(req.user.id, row.store_id), 'stock')) {
+    sendJson(res, 403, { error: 'Editing the catalog requires at least the stock role' });
     return null;
   }
   return row;
@@ -186,7 +226,11 @@ router.patch('/products/:id', requireAuth, handler(async (req, res) => {
     updates.name = name;
   }
   for (const field of ['brand', 'sku', 'barcode', 'description', 'image_url']) {
-    if (req.body?.[field] !== undefined) updates[field] = str(req.body[field], { max: 1000 });
+    if (req.body?.[field] !== undefined) {
+      const v = str(req.body[field], { max: 1000 });
+      if (v === undefined) return badRequest(res, `Invalid value for ${field}`);
+      updates[field] = v;
+    }
   }
   if (req.body?.price !== undefined) {
     if (req.body.price === null || req.body.price === '') {
@@ -233,21 +277,26 @@ router.post('/products/:id/locations', requireAuth, handler(async (req, res) => 
   const x = num(req.body?.x);
   const y = num(req.body?.y);
   if (x === undefined || y === undefined) return badRequest(res, 'x and y are required');
+  const rot = num(req.body?.rot) ?? 0;
+  // The shelf the product was pinned to — persisted in meta so the editor's
+  // "a persisted meta.shelfId wins" owner derivation survives reloads.
+  const shelfId =
+    typeof req.body?.shelfId === 'string' && req.body.shelfId.trim() ? req.body.shelfId.trim().slice(0, 64) : null;
+  const meta = JSON.stringify(shelfId ? { shelfId } : {});
   // One pin per product per floor: moving it updates the existing pin.
   const existing = db
     .prepare('SELECT * FROM product_locations WHERE product_id = ? AND floor_id = ?')
     .get(product.id, floor.id);
-  const rot = num(req.body?.rot) ?? 0;
   if (existing) {
-    db.prepare('UPDATE product_locations SET x = ?, y = ?, rot = ? WHERE id = ?').run(x, y, rot, existing.id);
+    db.prepare('UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?').run(x, y, rot, meta, existing.id);
     var id = existing.id;
   } else {
     id = newId();
-    db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id, product.id, floor.id, x, y, rot
+    db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      id, product.id, floor.id, x, y, rot, meta
     );
   }
-  sendJson(res, 201, { location: db.prepare('SELECT * FROM product_locations WHERE id = ?').get(id) });
+  sendJson(res, 201, { location: locationJson(db.prepare('SELECT * FROM product_locations WHERE id = ?').get(id)) });
 }));
 
 router.delete('/locations/:id', requireAuth, handler(async (req, res) => {
@@ -256,7 +305,10 @@ router.delete('/locations/:id', requireAuth, handler(async (req, res) => {
               JOIN products p ON p.id = l.product_id
               JOIN stores s ON s.id = p.store_id WHERE l.id = ?`)
     .get(String(req.params.id));
-  if (!row || !roleForStore(req.user.id, row.store_id)) return badRequest(res, 'Location not found');
+  if (!row) return notFound(res, 'Location not found');
+  if (!roleAtLeast(roleForStore(req.user.id, row.store_id), 'stock')) {
+    return sendJson(res, 403, { error: 'Editing the catalog requires at least the stock role' });
+  }
   db.prepare('DELETE FROM product_locations WHERE id = ?').run(row.id);
   sendJson(res, 200, { ok: true });
 }));

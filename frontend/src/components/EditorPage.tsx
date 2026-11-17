@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api } from '../api';
+import { LocalSession, type EditorApi } from '../localStore';
 import MapCanvas, { TOOL_DEF, TYPE_COLOR, type EditorTool } from './MapCanvas';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
@@ -10,19 +11,27 @@ import type {
 } from '../types';
 import { elementToRow, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
-import { MODERN_THEME, DARK_THEME, type Camera3D } from '../lib/render3d';
+import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useTheme } from '../theme';
-import { Field, Modal } from './ui';
+import { CameraPad, Field, Modal, ZoomPad } from './ui';
+import { removeBackground } from '../lib/imageBg';
+
+/**
+ * The editor's data source. On the dashboard it's the real api; in the
+ * no-account sandbox (/try/:slug) TryEditor provides a LocalSession, and this
+ * context carries it down to every panel below without touching call sites.
+ */
+const EditorApiContext = createContext<EditorApi>(api);
+const useEditorApi = () => useContext(EditorApiContext);
 
 const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] = [
   { id: 'select', label: 'Select', icon: '⬚' },
   { id: 'shelf', label: 'Shelf', icon: '▬', group: 'draw' },
   { id: 'aisle-pair', label: 'Aisle pair', icon: '☰', group: 'draw' },
   { id: 'wall', label: 'Wall', icon: '▥', group: 'draw' },
-  { id: 'wall-line', label: 'Wall line', icon: '╱', group: 'draw' },
   { id: 'zone', label: 'Zone', icon: '▣', group: 'mark' },
   { id: 'zone-poly', label: 'Zone (poly)', icon: '⬟', group: 'mark' },
-  { id: 'aisle', label: 'Aisle', icon: '⇢', group: 'mark' },
+  { id: 'aisle', label: 'Label', icon: '🏷', group: 'mark' },
   { id: 'entrance', label: 'Entrance', icon: '⬆', group: 'point' },
   { id: 'exit', label: 'Exit', icon: '⬇', group: 'point' },
   { id: 'poi', label: 'Point', icon: '★', group: 'point' },
@@ -34,10 +43,10 @@ const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
   shelf: 'Drag to draw a shelf rectangle (or click for a default size)',
   'aisle-pair': 'Drag one shelf row — a facing row appears 1.5 m across the aisle',
   wall: 'Drag to draw a wall segment',
-  'wall-line': 'Click to add wall vertices · Enter or double-click to finish',
-  aisle: 'Click to add aisle vertices · Enter or double-click to finish',
+  'wall-line': 'Click to add wall vertices · hold Shift for straight runs · Enter to finish',
+  aisle: 'Click to place a labelled aisle zone · drag to size it · reshape with the handles or the panel',
   zone: 'Drag to draw a zone rectangle',
-  'zone-poly': 'Click to add zone vertices · Enter or double-click to finish',
+  'zone-poly': 'Click to add zone vertices · hold Shift for straight runs · Enter to finish',
   entrance: 'Click to place the entrance marker',
   exit: 'Click to place the exit marker',
   poi: 'Click to place a point of interest',
@@ -46,10 +55,13 @@ const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
 
 type SideTab = 'map' | 'products' | 'store' | 'history';
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error';
+/** Undo/redo stacks are capped — an editing session can't grow them forever. */
+const HISTORY_CAP = 100;
 
-export default function EditorPage() {
+export default function EditorPage({ tryMode = false, session }: { tryMode?: boolean; session?: LocalSession } = {}) {
   const { storeId } = useParams<{ storeId: string }>();
   const navigate = useNavigate();
+  const apix = session ?? useContext(EditorApiContext);
 
   const [store, setStore] = useState<Store | null>(null);
   const [floors, setFloors] = useState<Floor[]>([]);
@@ -67,6 +79,25 @@ export default function EditorPage() {
   const [zoomCmd, setZoomCmd] = useState({ k: 1, seq: 0 });
   const [sideTab, setSideTab] = useState<SideTab>('map');
   const [pickFilter, setPickFilter] = useState<'all' | 'products'>('all');
+  // the side panel is a pull-out drawer over the map (desktop); remembered per device
+  const [sideOpen, setSideOpen] = useState(() => {
+    try {
+      return localStorage.getItem('storemap.side') === 'open';
+    } catch {
+      return false;
+    }
+  });
+  const switchSide = (open: boolean) => {
+    setSideOpen(open);
+    try {
+      localStorage.setItem('storemap.side', open ? 'open' : 'closed');
+    } catch { /* private mode */ }
+  };
+  /** map interactions that need details pull the drawer out automatically */
+  const showTab = (t: SideTab) => {
+    setSideTab(t);
+    setSideOpen(true);
+  };
   const [flashProductId, setFlashProductId] = useState<string | null>(null);
   const [placeProductId, setPlaceProductId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
@@ -88,12 +119,73 @@ export default function EditorPage() {
   // shelves can't Hoover up their products
   const pinGestureBase = useRef<MapElement[] | null>(null);
   const pinSaveTimer = useRef<number | null>(null);
-  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string }[]>([]);
+  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string; shelfId?: string }[]>([]);
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
+  // shelves mid-gesture: their owned pins hide while the shelf moves and
+  // reappear (re-homed) when the gesture ends — no pins floating mid-drag
+  const [movingShelfIds, setMovingShelfIds] = useState<Set<string>>(new Set());
 
-  const history = useRef<{ past: { els: MapElement[]; label: string }[]; future: { els: MapElement[]; label: string }[] }>({
+  // Pin→shelf association: a pin belongs to the shelf the USER put it on
+  // (derived once at load, re-stamped only by explicit pin placement/drag).
+  // Shelf moves follow owned pins and can NEVER change membership.
+  const shelfOwner = useRef<Map<string, string | null>>(new Map());
+  const ownerOf = (loc: ProductLocation) => shelfOwner.current.get(loc.id) ?? null;
+  const stampOwner = (locationId: string, shelfId: string | null) =>
+    shelfOwner.current.set(locationId, shelfId);
+  /** Which rect shelf contains this point (rotation aware, small tolerance)? */
+  const shelfIdAtPoint = useCallback(
+    (pt: WorldPt, els: MapElement[]): string | null => {
+      let best: string | null = null;
+      let bestD = Infinity;
+      for (const el of els) {
+        if (el.type !== 'shelf' || el.shape !== 'rect') continue;
+        const r = el.geom as RectGeom;
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        const a = (-r.rot * Math.PI) / 180;
+        const lx = r.w / 2 + (pt.x - cx) * Math.cos(a) - (pt.y - cy) * Math.sin(a);
+        const ly = r.h / 2 + (pt.x - cx) * Math.sin(a) + (pt.y - cy) * Math.cos(a);
+        if (lx < -0.25 || lx > r.w + 0.25 || ly < -0.25 || ly > r.h + 0.25) continue;
+        const d = Math.max(-Math.min(lx, r.w - lx), -Math.min(ly, r.h - ly), 0);
+        if (d < bestD) {
+          bestD = d;
+          best = el.id;
+        }
+      }
+      return best;
+    },
+    []
+  );
+  /** Derive owners for the given locations: the persisted association (the
+   *  user's own pinning — top-level `shelfId`, falling back to `meta.shelfId`)
+   *  wins; only gaps fall back to where the pin sits. */
+  const deriveOwners = useCallback((locs: ProductLocation[], els: MapElement[]) => {
+    const byFloor = new Map<string, MapElement[]>();
+    const ids = new Set(els.map((e) => e.id));
+    for (const el of els) {
+      const list = byFloor.get(el.floor_id) ?? [];
+      list.push(el);
+      byFloor.set(el.floor_id, list);
+    }
+    for (const l of locs) {
+      let stamped: string | null =
+        typeof l.shelfId === 'string' && ids.has(l.shelfId) ? l.shelfId : null;
+      if (!stamped) {
+        try {
+          const m = JSON.parse(l.meta || '{}');
+          stamped = typeof m.shelfId === 'string' && ids.has(m.shelfId) ? m.shelfId : null;
+        } catch { /* no meta */ }
+      }
+      shelfOwner.current.set(l.id, stamped ?? shelfIdAtPoint({ x: l.x, y: l.y }, byFloor.get(l.floor_id) ?? []));
+    }
+  }, [shelfIdAtPoint]);
+
+  const history = useRef<{
+    past: { els: MapElement[]; pins: ProductLocation[]; label: string }[];
+    future: { els: MapElement[]; pins: ProductLocation[]; label: string }[];
+  }>({
     past: [],
     future: [],
   });
@@ -106,8 +198,9 @@ export default function EditorPage() {
 
   // ---- load ----
   useEffect(() => {
-    if (!storeId) return;
-    api.storeFull(storeId)
+    const load = session ? session.storeFull() : storeId ? api.storeFull(storeId) : null;
+    if (!load) return;
+    load
       .then((data) => {
         setStore(data.store);
         setFloors(data.floors);
@@ -116,9 +209,10 @@ export default function EditorPage() {
         setLocations(data.locations);
         setElements(data.elements.map(parseElement));
         setActiveFloorId(data.floors[0]?.id ?? '');
+        deriveOwners(data.locations, data.elements.map(parseElement));
       })
       .catch((e) => setLoadError(e.message || 'Failed to load store'));
-  }, [storeId]);
+  }, [storeId, session]);
 
   const floor = floors.find((f) => f.id === activeFloorId) ?? floors[0] ?? null;
   const floorElements = useMemo(() => elements.filter((e) => e.floor_id === floor?.id), [elements, floor?.id]);
@@ -132,63 +226,128 @@ export default function EditorPage() {
         .filter(Boolean) as { location: ProductLocation; product: Product }[],
     [locations, products]
   );
+  // pins the map renders: owned pins of a shelf mid-gesture are hidden until
+  // the move settles (they jump with the shelf at release)
+  const visibleFloorPins = useMemo(
+    () =>
+      movingShelfIds.size
+        ? pins.filter((p) => p.location.floor_id === floor?.id && !movingShelfIds.has(ownerOf(p.location) ?? ''))
+        : pins.filter((p) => p.location.floor_id === floor?.id),
+    [pins, floor?.id, movingShelfIds, /* ownerOf is a stable ref reader */]
+  );
+
+
+  /** Owner shelf id persisted on a location — top-level `shelfId` first, then
+   *  `meta.shelfId` (falls back to the live map). */
+  const metaOwnerOf = useCallback((l: ProductLocation): string | null => {
+    if (typeof l.shelfId === 'string') return l.shelfId;
+    try {
+      const m = JSON.parse(l.meta || '{}');
+      return typeof m.shelfId === 'string' ? m.shelfId : null;
+    } catch {
+      return ownerOf(l);
+    }
+  }, []);
+
+  /** Queue pin-position saves (debounced, mirroring the elements autosave). */
+  const schedulePinSaves = useCallback(
+    (saves: { productId: string; x: number; y: number; floorId: string; shelfId?: string }[]) => {
+      if (!saves.length) return;
+      pendingPinSaves.current = [
+        ...pendingPinSaves.current.filter((s) => !saves.some((n) => n.productId === s.productId)),
+        ...saves,
+      ];
+      if (pinSaveTimer.current) window.clearTimeout(pinSaveTimer.current);
+      pinSaveTimer.current = window.setTimeout(() => {
+        for (const s of pendingPinSaves.current) {
+          apix.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y, shelfId: s.shelfId })
+            .catch(() => { /* keep the optimistic position */ });
+        }
+        pendingPinSaves.current = [];
+      }, 700);
+    },
+    []
+  );
 
   // ---- element mutations + history ----
   const changeElements = useCallback(
     (nextFloorEls: MapElement[], mode: 'begin' | 'live' | 'push', label = 'edit') => {
       if (!floor) return;
-      // shelves carry their products: the total gesture transform (vs where the
-      // shelf was when the gesture began) applies to every pin inside that
-      // starting footprint. Containment per live frame would let a shelf
-      // dragged across the store Hoover up other shelves' products.
-      if (mode === 'begin' || pinGestureBase.current === null) {
-        pinGestureBase.current = mode === 'begin' ? elements : elements;
+      // gesture-start snapshot: while a drag streams 'live' frames the shelf
+      // moves ALONE — pins are re-homed exactly once, when the gesture ends
+      // ('push'), against the shelf's footprint at the gesture start. Moving
+      // them per frame left pins behind: after the first frame they sat
+      // outside the starting footprint and stopped following.
+      if (mode === 'begin' && pinGestureBase.current === null) pinGestureBase.current = elements;
+      const base = pinGestureBase.current;
+      if (mode === 'push') {
+        setMovingShelfIds(new Set());
+      } else if (base) {
+        const baseById = new Map(base.map((e) => [e.id, e]));
+        const changed = new Set<string>();
+        for (const el of nextFloorEls) {
+          const b = baseById.get(el.id);
+          if (!b || el.type !== 'shelf') continue;
+          const bg = b.geom as RectGeom;
+          const ng = el.geom as RectGeom;
+          if (
+            bg.x !== ng.x || bg.y !== ng.y || bg.w !== ng.w || bg.h !== ng.h ||
+            (bg.rot ?? 0) !== (ng.rot ?? 0)
+          ) {
+            changed.add(el.id);
+          }
+        }
+        setMovingShelfIds(changed);
       }
-      const baseEls = pinGestureBase.current ?? [];
       const pinFollows: { location: ProductLocation; x: number; y: number }[] = [];
-      const baseById = new Map(baseEls.map((e) => [e.id, e]));
-      const prevById = new Map(elements.map((e) => [e.id, e]));
-      for (const el of nextFloorEls) {
-        const start = baseById.get(el.id);
-        const before = prevById.get(el.id);
-        if (!start || !before || before.type !== 'shelf' || el.type !== 'shelf') continue;
-        if (before.shape !== 'rect' || el.shape !== 'rect') continue;
-        const bg = start.geom as RectGeom;
-        const ng = el.geom as RectGeom;
-        const dxT = ng.x - bg.x;
-        const dyT = ng.y - bg.y;
-        const dRot = (ng.rot ?? 0) - (bg.rot ?? 0);
-        if (!dxT && !dyT && !dRot) continue;
-        const bcx = bg.x + bg.w / 2;
-        const bcy = bg.y + bg.h / 2;
-        const ncx = ng.x + ng.w / 2;
-        const ncy = ng.y + ng.h / 2;
-        const a = (dRot * Math.PI) / 180;
-        const cos = Math.cos(a);
-        const sin = Math.sin(a);
-        const ca = (bg.rot ?? 0) * (Math.PI / 180);
-        const cca = Math.cos(ca);
-        const csa = Math.sin(ca);
-        for (const loc of locations) {
-          if (loc.floor_id !== floor.id) continue;
-          const lx = loc.x - bcx;
-          const ly = loc.y - bcy;
-          // inside the shelf's starting footprint (local frame, small tolerance)?
-          const shx = bg.w / 2 + lx * cca + ly * csa;
-          const shy = bg.h / 2 + -lx * csa + ly * cca;
-          if (shx < -0.25 || shx > bg.w + 0.25 || shy < -0.25 || shy > bg.h + 0.25) continue;
-          // total gesture transform: rotate about the start center, then shift
-          const nx = ncx + lx * cos - ly * sin;
-          const ny = ncy + lx * sin + ly * cos;
-          pinFollows.push({ location: loc, x: Math.round(nx * 100) / 100, y: Math.round(ny * 100) / 100 });
+      if (mode === 'push') {
+        // no gesture (delete/add/panel edit): "before" is the current state
+        const baseEls = base ?? elements;
+        const baseById = new Map(baseEls.map((e) => [e.id, e]));
+        for (const el of nextFloorEls) {
+          const start = baseById.get(el.id);
+          if (!start || start.type !== 'shelf' || el.type !== 'shelf') continue;
+          if (start.shape !== 'rect' || el.shape !== 'rect') continue;
+          const bg = start.geom as RectGeom;
+          const ng = el.geom as RectGeom;
+          const dxT = ng.x - bg.x;
+          const dyT = ng.y - bg.y;
+          const dRot = (ng.rot ?? 0) - (bg.rot ?? 0);
+          if (!dxT && !dyT && !dRot) continue;
+          const bcx = bg.x + bg.w / 2;
+          const bcy = bg.y + bg.h / 2;
+          const ncx = ng.x + ng.w / 2;
+          const ncy = ng.y + ng.h / 2;
+          const a = (dRot * Math.PI) / 180;
+          const cos = Math.cos(a);
+          const sin = Math.sin(a);
+          for (const loc of locations) {
+            if (loc.floor_id !== floor.id) continue;
+            // OWNED pins only — the ones the user put on this shelf. No
+            // geometric containment: a shelf can never pick up (or drop)
+            // items just by being moved around.
+            if (ownerOf(loc) !== el.id) continue;
+            const lx = loc.x - bcx;
+            const ly = loc.y - bcy;
+            // total gesture transform: rotate about the start center, then shift
+            const nx = ncx + lx * cos - ly * sin;
+            const ny = ncy + lx * sin + ly * cos;
+            pinFollows.push({ location: loc, x: Math.round(nx * 100) / 100, y: Math.round(ny * 100) / 100 });
+          }
         }
       }
-      const before = elements.filter((e) => e.floor_id === floor.id);
-      if (mode !== 'live') {
-        history.current.past.push({ els: before, label });
+      const before = (base ?? elements).filter((e) => e.floor_id === floor.id);
+      if (mode === 'push') {
+        // one history entry per gesture, captured from its start (pins included,
+        // so undoing a shelf move brings its products back with it)
+        history.current.past.push({ els: before, pins: locations, label });
+        if (history.current.past.length > HISTORY_CAP) history.current.past.shift();
+        if (tryMode) session?.logAction(label);
         history.current.future = [];
         setHistoryLen({ past: history.current.past.length, future: 0 });
-        if (mode === 'push') setUndoLabel(label);
+        setUndoLabel(label);
+        // the gesture is settled — the next push starts from a fresh baseline
+        pinGestureBase.current = null;
       }
       const others = elements.filter((e) => e.floor_id !== floor.id);
       setElements([...others, ...nextFloorEls]);
@@ -196,44 +355,40 @@ export default function EditorPage() {
         const movedIds = new Set(pinFollows.map((f) => f.location.id));
         const posById = new Map(pinFollows.map((f) => [f.location.id, f]));
         setLocations((prev) => prev.map((l) => (movedIds.has(l.id) ? { ...l, x: posById.get(l.id)!.x, y: posById.get(l.id)!.y } : l)));
-        // move gestures end on 'live' (no push), so pin persistence is a
-        // trailing debounced save of the latest positions — mirrors the
-        // elements autosave timing
-        pendingPinSaves.current = [
-          ...pendingPinSaves.current.filter((s) => !movedIds.has(s.productId)),
-          ...pinFollows.map((f) => ({ productId: f.location.product_id, x: f.x, y: f.y, floorId: floor.id })),
-        ];
-        if (pinSaveTimer.current) window.clearTimeout(pinSaveTimer.current);
-        pinSaveTimer.current = window.setTimeout(() => {
-          for (const s of pendingPinSaves.current) {
-            api.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y })
-              .catch(() => { /* keep the optimistic position */ });
-          }
-          pendingPinSaves.current = [];
-        }, 700);
+        schedulePinSaves(
+          pinFollows.map((f) => ({
+            productId: f.location.product_id,
+            x: f.x,
+            y: f.y,
+            floorId: floor.id,
+            shelfId: ownerOf(f.location) ?? undefined,
+          }))
+        );
       }
       dirtyRef.current = true;
       setSaveState('dirty');
     },
-    [elements, floor, locations]
+    [elements, floor, locations, schedulePinSaves]
   );
 
   // 3D drag: deltas are relative to the drag start, applied to the element as
-  // it was when the gesture began (same contract as MapCanvas's move gesture)
+  // it was when the gesture began (same contract as MapCanvas's move gesture).
+  // changeElements expects ONLY the current floor's elements — mapping over the
+  // full multi-floor array would duplicate every other floor once per frame.
   const dragElement3d = useCallback(
     (id: string, dx: number, dy: number, phase: 'begin' | 'live' | 'push') => {
       if (phase === 'begin') {
-        dragOrig3d.current = elements.find((e) => e.id === id) ?? null;
+        dragOrig3d.current = floorElements.find((e) => e.id === id) ?? null;
       }
       const orig = dragOrig3d.current;
       if (!orig || orig.id !== id) return;
       changeElements(
-        elements.map((e) => (e.id === id ? translateElement(orig, dx, dy) : e)),
+        floorElements.map((e) => (e.id === id ? translateElement(orig, dx, dy) : e)),
         phase,
         'move'
       );
     },
-    [elements, changeElements]
+    [floorElements, changeElements]
   );
 
   const switchView3d = useCallback((v: boolean) => {
@@ -278,34 +433,69 @@ export default function EditorPage() {
     const entry = h.past.pop();
     if (!entry || !floor) return;
     const prev = entry.els;
-    h.future.push({ els: floorElements, label: entry.label });
+    h.future.push({ els: floorElements, pins: locations, label: entry.label });
+    if (h.future.length > HISTORY_CAP) h.future.shift();
     setUndoLabel(h.past[h.past.length - 1]?.label ?? '');
-    setElements([...elements.filter((e) => e.floor_id !== floor.id), ...prev]);
+    const nextEls = [...elements.filter((e) => e.floor_id !== floor.id), ...prev];
+    // pins created after the gesture snapshot were never part of it — keep
+    // them (they were only dropped locally, never deleted server-side)
+    const snapIds = new Set(entry.pins.map((p) => p.id));
+    const restored = [...entry.pins, ...locations.filter((l) => !snapIds.has(l.id))];
+    setElements(nextEls);
+    setLocations(restored);
+    // ownership follows the restored pins — the live map still holds the
+    // post-gesture owners
+    deriveOwners(restored, nextEls);
     setHistoryLen({ past: h.past.length, future: h.future.length });
+    // persist the restored positions (only pins that actually changed)
+    const curById = new Map(locations.map((l) => [l.id, l]));
+    schedulePinSaves(
+      entry.pins
+        .filter((pl) => {
+          const cur = curById.get(pl.id);
+          return !cur || Math.abs(cur.x - pl.x) > 0.001 || Math.abs(cur.y - pl.y) > 0.001;
+        })
+        .map((pl) => ({ productId: pl.product_id, x: pl.x, y: pl.y, floorId: pl.floor_id, shelfId: metaOwnerOf(pl) ?? undefined }))
+    );
     dirtyRef.current = true;
     setSaveState('dirty');
     setSelectedId(null);
-  }, [elements, floor, floorElements]);
+  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf]);
 
   const redo = useCallback(() => {
     const h = history.current;
     const entry = h.future.pop();
     if (!entry || !floor) return;
     const next = entry.els;
-    h.past.push({ els: floorElements, label: entry.label });
+    h.past.push({ els: floorElements, pins: locations, label: entry.label });
+    if (h.past.length > HISTORY_CAP) h.past.shift();
     setUndoLabel(entry.label);
-    setElements([...elements.filter((e) => e.floor_id !== floor.id), ...next]);
+    const nextEls = [...elements.filter((e) => e.floor_id !== floor.id), ...next];
+    const snapIds = new Set(entry.pins.map((p) => p.id));
+    const restored = [...entry.pins, ...locations.filter((l) => !snapIds.has(l.id))];
+    setElements(nextEls);
+    setLocations(restored);
+    deriveOwners(restored, nextEls);
     setHistoryLen({ past: h.past.length, future: h.future.length });
+    const curById = new Map(locations.map((l) => [l.id, l]));
+    schedulePinSaves(
+      entry.pins
+        .filter((pl) => {
+          const cur = curById.get(pl.id);
+          return !cur || Math.abs(cur.x - pl.x) > 0.001 || Math.abs(cur.y - pl.y) > 0.001;
+        })
+        .map((pl) => ({ productId: pl.product_id, x: pl.x, y: pl.y, floorId: pl.floor_id, shelfId: metaOwnerOf(pl) ?? undefined }))
+    );
     dirtyRef.current = true;
     setSaveState('dirty');
-  }, [elements, floor, floorElements]);
+  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf]);
 
   // ---- autosave ----
   const saveNow = useCallback(async () => {
     if (!floor || !dirtyRef.current) return;
     setSaveState('saving');
     try {
-      await api.saveElements(floor.id, floorElements.map(elementToRow));
+      await apix.saveElements(floor.id, floorElements.map(elementToRow));
       dirtyRef.current = false;
       setSaveState('saved');
     } catch {
@@ -347,6 +537,30 @@ export default function EditorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo, placeProductId]);
 
+  /** One camera-pad tap = one smooth glide (~0.45 s). onMove arrives per frame
+   *  with an eased progress chunk (sums to 1 over the tap): a pan covers ~18%
+   *  of the current view, a zoom step is ×0.78 in or out. */
+  const cam3dMove = (dirX: number, dirY: number, zoom: number, dt: number) => {
+    if (!floor) return;
+    setCam3d((c) => {
+      const base = c ?? fitCamera(floor); // adopt Map3D's default view on first move
+      const next = { ...base };
+      if (zoom) next.dist = Math.min(DIST_MAX, Math.max(DIST_MIN, next.dist * Math.exp(-0.25 * zoom * dt)));
+      if (dirX || dirY) {
+        const step = next.dist * 0.18 * dt;
+        const rx = Math.cos(next.yaw);
+        const ry = -Math.sin(next.yaw); // screen-right on the ground
+        const ux = Math.sin(next.yaw);
+        const uy = Math.cos(next.yaw); // screen-up on the ground
+        // up/down follow the content (map-drag feel): the target moves TOWARD the
+        // viewer for ▲ so the scene itself slides up
+        next.tx = next.tx + (rx * dirX - ux * dirY) * step;
+        next.ty = next.ty + (ry * dirX - uy * dirY) * step;
+      }
+      return next;
+    });
+  };
+
   const switchFloor = async (id: string) => {
     await saveNow();
     setActiveFloorId(id);
@@ -386,8 +600,11 @@ export default function EditorPage() {
   // ---- product placement ----
   const placeProduct = async (p: WorldPt) => {
     if (!placeProductId || !floor) return;
+    const shelfId = shelfIdAtPoint(p, floorElements);
+    if (tryMode) session?.logAction('pin product');
     try {
-      const { location } = await api.setProductLocation(placeProductId, { floor_id: floor.id, x: p.x, y: p.y });
+      const { location } = await apix.setProductLocation(placeProductId, { floor_id: floor.id, x: p.x, y: p.y, shelfId: shelfId ?? undefined });
+      stampOwner(location.id, shelfId);
       setLocations((prev) => [
         ...prev.filter((l) => !(l.product_id === placeProductId && l.floor_id === floor.id)),
         location,
@@ -448,7 +665,9 @@ export default function EditorPage() {
     setLocations((prev) => prev.map((l) => (l.id === locationId ? { ...l, x, y } : l)));
     if (commit) {
       if (!floor) return;
-      api.setProductLocation(productId, { floor_id: floor.id, x, y })
+      const shelfId = shelfIdAtPoint({ x, y }, floorElements);
+      stampOwner(locationId, shelfId);
+      apix.setProductLocation(productId, { floor_id: floor.id, x, y, shelfId: shelfId ?? undefined })
         .then(({ location }) => setLocations((prev) => prev.map((l) => (l.id === locationId ? location : l))))
         .catch(() => { /* keep the optimistic position; the badge shows save state */ });
     }
@@ -474,10 +693,14 @@ export default function EditorPage() {
   const shelfPreview = shelfPreviewId ? elements.find((e) => e.id === shelfPreviewId) ?? null : null;
 
   return (
+    <EditorApiContext.Provider value={apix}>
     <div className="editor">
       <div className="editor-top">
-        <Link to="/dashboard" className="btn ghost sm">← Stores</Link>
-        <span className="store-name">{store.name}</span>
+        <Link to={tryMode ? '/' : '/dashboard'} className="btn ghost sm">{tryMode ? '← Home' : '← Stores'}</Link>
+        <span className="store-name">
+          {store.name}
+          {tryMode && <span className="try-chip" title="No account — your map is saved on this device only">sandbox</span>}
+        </span>
         <div className="floor-tabs">
           {floors.map((f) => (
             <button key={f.id} className={`floor-tab ${f.id === floor.id ? 'active' : ''}`} onClick={() => switchFloor(f.id)}>
@@ -515,41 +738,74 @@ export default function EditorPage() {
           ⧉ Duplicate
         </button>
         <button className="btn sm" onClick={() => setFitSignal((n) => n + 1)} title="Fit map to screen">⤢ Fit</button>
-        <SaveBadge state={saveState} onRetry={() => { setSaveState('dirty'); dirtyRef.current = true; }} />
+        {tryMode ? (
+          <button className="btn sm" onClick={() => session?.exportDownload()} title="Download this store as a transfer bundle">
+            ⬇ Export
+          </button>
+        ) : (
+          <SaveBadge state={saveState} onRetry={() => { setSaveState('dirty'); dirtyRef.current = true; }} />
+        )}
       </div>
 
-      <div className="editor-body">
+      {tryMode && (
+        <div className="try-banner">
+          <span className="try-banner-text">
+            🧪 Sandbox — everything works, and your map is saved <b>on this device only</b>. Create an account to put it online.
+          </span>
+          <div className="try-banner-actions">
+            <button className="btn sm" onClick={() => session?.exportDownload()}>⬇ Export</button>
+            {session?.canPersist && (
+              <button
+                className="btn sm"
+                title="Discard the copy saved on this device and start fresh"
+                onClick={() => {
+                  if (confirm('Discard this map from your device and start over?')) {
+                    session.discard();
+                    window.location.reload();
+                  }
+                }}
+              >
+                Start over
+              </button>
+            )}
+            <Link className="btn sm primary" to="/login">Save with an account</Link>
+          </div>
+        </div>
+      )}
+
+      <div className={`editor-body ${sideOpen ? "side-open" : "side-closed"}`}>
         <div className="map-wrap">
           {view3d ? (
             <Map3D
               floor={floor}
               elements={floorElements}
-              pins={pins.filter((p) => p.location.floor_id === floor.id)}
-              stockPins={pins.filter((p) => p.location.floor_id === floor.id)}
+              pins={visibleFloorPins}
+              stockPins={visibleFloorPins}
               camera={cam3d}
               onCamera={setCam3d}
               edit
               selectedId={selectedId}
               onSelectElement={(id) => {
                 setSelectedId(id);
-                if (id) setSideTab('map');
+                if (id) showTab('map');
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
               onElementDrag={dragElement3d}
               onElementsChange={changeElements}
               onPinClick={(productId) => {
                 setFlashProductId(productId);
-                setSideTab('products');
+                showTab('products');
               }}
               focusElement={focus3d}
               fitSignal={fitSignal}
+              zoomCommand={zoomCmd}
               theme={sceneTheme}
             />
           ) : (
             <MapCanvas
               floor={floor}
               elements={floorElements}
-              pins={pins}
+              pins={visibleFloorPins}
               viewport={viewport}
               onViewport={setViewport}
               edit
@@ -558,7 +814,7 @@ export default function EditorPage() {
               draftPts={draftPts}
               onSelect={(id) => {
                 setSelectedId(id);
-                if (id) setSideTab('map');
+                if (id) showTab('map');
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
               onElementsChange={changeElements}
@@ -578,12 +834,83 @@ export default function EditorPage() {
               onPinMove={movePin}
               onPinSelect={(productId) => {
                 setFlashProductId(productId);
-                setSideTab('products');
+                showTab('products');
               }}
               fitSignal={fitSignal}
               zoomCommand={zoomCmd}
             />
           )}
+          {/* editing tools as a left icon rail: add-tools, delete, pick filter */}
+          <div className="tool-rail" role="toolbar" aria-label="Map editing tools">
+            {TOOLS.map((t) => (
+              <button
+                key={t.id}
+                className={`tool-btn ${tool === t.id ? 'active' : ''}`}
+                onClick={() => { setTool(t.id); setSelectedId(t.id === 'select' ? selectedId : null); }}
+                disabled={t.id === 'product' && !placeProductId}
+                aria-label={t.id === 'product' ? 'Product pin — pick a product in the Products tab first' : t.label}
+                data-tip={t.id === 'product' ? 'Product pin (pick one in Products first)' : t.label}
+              >
+                <span aria-hidden>{t.icon}</span>
+              </button>
+            ))}
+            <span className="rail-sep" aria-hidden />
+            <button
+              className="tool-btn danger"
+              disabled={!selected}
+              aria-label="Delete the selected element"
+              data-tip="Delete selected"
+              onClick={() => {
+                if (!selected) return;
+                changeElements(floorElements.filter((e) => e.id !== selected.id), 'push');
+                setSelectedId(null);
+              }}
+            >
+              <span aria-hidden>🗑</span>
+            </button>
+            {tool === 'select' && (
+              <>
+                <button
+                  className={`tool-btn ${pickFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setPickFilter('all')}
+                  aria-label="Pick fixtures"
+                  data-tip="Pick: fixtures"
+                >
+                  <span aria-hidden>▦</span>
+                </button>
+                <button
+                  className={`tool-btn ${pickFilter === 'products' ? 'active' : ''}`}
+                  onClick={() => setPickFilter('products')}
+                  aria-label="Pick products"
+                  data-tip="Pick: products only"
+                >
+                  <span aria-hidden>◉</span>
+                </button>
+              </>
+            )}
+            {draftPts.length > 0 && (
+              <>
+                <span className="rail-sep" aria-hidden />
+                <button className="tool-btn active" data-tip={`Finish shape (${draftPts.length} pts)`} onClick={finishDraft}>✓</button>
+                <button className="tool-btn" data-tip="Cancel draft" onClick={() => setDraftPts([])}>✕</button>
+              </>
+            )}
+          </div>
+          {!placing && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
+          {/* pull-out handle for the side panel */}
+          <button
+            className={`side-handle ${sideOpen ? 'open' : ''}`}
+            onClick={() => switchSide(!sideOpen)}
+            aria-expanded={sideOpen}
+            aria-label={sideOpen ? 'Hide the side panel' : 'Show the side panel'}
+            title={sideOpen ? 'Hide panel' : 'Show panel'}
+          >
+            {sideOpen ? 'close »' : '« panel'}
+          </button>
+          {view3d && floor && (
+            <CameraPad onMove={cam3dMove} />
+          )}
+          <ZoomPad onZoom={(dir) => setZoomCmd((z) => ({ k: dir > 0 ? 1.3 : 0.77, seq: z.seq + 1 }))} />
           <button
             className="btn controls-btn"
             onClick={() => setShowControls((v) => !v)}
@@ -643,12 +970,6 @@ export default function EditorPage() {
               Drawing is 2D-only — switch to 2D to draw.
             </div>
           )}
-          {!view3d && (
-            <div className="zoom-controls">
-              <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 1.25, seq: z.seq + 1 }))} title="Zoom in">+</button>
-              <button className="btn" onClick={() => setZoomCmd((z) => ({ k: 0.8, seq: z.seq + 1 }))} title="Zoom out">−</button>
-            </div>
-          )}
           {placing && (
             <div className="map-hint" style={{ pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
               📍 Click the map to pin <b>{placing.name}</b>
@@ -668,13 +989,13 @@ export default function EditorPage() {
           {shelfPreview && (
             <ShelfDetail
               shelf={shelfPreview}
-              pins={pins.filter((p) => p.location.floor_id === floor.id)}
+              pins={visibleFloorPins}
               onClose={() => setShelfPreviewId(null)}
             />
           )}
         </div>
 
-        <aside className="editor-side">
+        <aside className={`editor-side ${sideOpen ? "open" : ""}`}>
           {(selectedIds?.size ?? 0) > 1 && (
             <div className="panel-section" style={{ borderBottom: '1px solid var(--line)' }}>
               <b style={{ fontSize: 13 }}>{selectedIds.size} selected</b>
@@ -710,6 +1031,14 @@ export default function EditorPage() {
                   el={selected}
                   floor={floor}
                   elements={floorElements}
+                  items={
+                    selected.type === 'shelf'
+                      ? locations
+                          .filter((l) => l.floor_id === floor.id && ownerOf(l) === selected.id)
+                          .map((l) => products.find((pr) => pr.id === l.product_id))
+                          .filter(Boolean as unknown as (p: Product | undefined) => p is Product)
+                      : undefined
+                  }
                   onChange={(next) => changeElements(next, 'push')}
                   onDelete={() => { changeElements(floorElements.filter((e) => e.id !== selected.id), 'push'); setSelectedId(null); }}
                   onDuplicate={() => {
@@ -734,15 +1063,17 @@ export default function EditorPage() {
                   onFinishDraft={finishDraft}
                   onCancelDraft={() => setDraftPts([])}
                   onUpdated={(f) => setFloors((prev) => prev.map((x) => (x.id === f.id ? f : x)))}
-                  onDeleted={(id) => {
-                    saveNow().then(async () => {
-                      await api.deleteFloor(id);
-                      const rest = floors.filter((f) => f.id !== id);
-                      setFloors(rest);
-                      setActiveFloorId(rest[0]?.id ?? '');
-                    });
-                  }}
                   floorCount={floors.length}
+                  onDeleted={() => {
+                    const rest = floors.filter((f) => f.id !== floor.id);
+                    setFloors(rest);
+                    setSelectedId(null);
+                    if (activeFloorId === floor.id) setActiveFloorId(rest[0]?.id ?? '');
+                    // the floor's history entries are gone with it — start clean
+                    history.current = { past: [], future: [] };
+                    setHistoryLen({ past: 0, future: 0 });
+                    setFitSignal((n) => n + 1);
+                  }}
                 />
                 <ElementOutline
                   elements={floorElements}
@@ -778,7 +1109,11 @@ export default function EditorPage() {
                 onData={(d: { products?: Product[]; categories?: Category[]; locations?: ProductLocation[] }) => {
                   if (d.products) setProducts(d.products);
                   if (d.categories) setCategories(d.categories);
-                  if (d.locations) setLocations(d.locations);
+                  if (d.locations) {
+                    setLocations(d.locations);
+                    // wholesale replace: re-derive pin→shelf ownership for it
+                    deriveOwners(d.locations, elements);
+                  }
                 }}
                 placingId={placeProductId}
                 flashId={flashProductId}
@@ -791,21 +1126,24 @@ export default function EditorPage() {
                 }}
               />
             )}
-            {sideTab === 'history' && (
+            {sideTab === 'history' && (tryMode && session ? (
+              <SandboxHistory session={session} />
+            ) : (
               <HistoryPanel
                 floorId={floor.id}
                 currentElements={floorElements}
                 onRestore={(rows) => {
                   changeElements(rows, 'push', 'restore snapshot');
                   setSelectedId(null);
-                  setSideTab('map');
+                  showTab('map');
                 }}
               />
-            )}
+            ))}
             {sideTab === 'store' && (
               <StorePanel
                 store={store}
                 productCount={products.length}
+                tryMode={tryMode}
                 onUpdated={(s) => setStore(s)}
                 onDeleted={() => navigate('/dashboard')}
               />
@@ -814,51 +1152,8 @@ export default function EditorPage() {
         </aside>
       </div>
 
-      <div className="tool-palette">
-        {TOOLS.map((t) => (
-          <span key={t.id} style={{ display: 'contents' }}>
-            {t.group && <span className="tool-sep" aria-hidden />}
-            <button
-              className={`tool-btn ${tool === t.id ? 'active' : ''}`}
-              onClick={() => { setTool(t.id); setSelectedId(t.id === 'select' ? selectedId : null); }}
-              disabled={t.id === 'product' && !placeProductId}
-              title={t.id === 'product' ? 'Pick a product in the Products tab first' : t.label}
-            >
-              <span aria-hidden>{t.icon}</span> {t.label}
-            </button>
-          </span>
-        ))}
-        {draftPts.length > 0 && (
-          <>
-            <span className="tool-sep" />
-            <button className="tool-btn active" onClick={finishDraft}>✓ Finish ({draftPts.length} pts)</button>
-            <button className="tool-btn" onClick={() => setDraftPts([])}>✕ Cancel</button>
-          </>
-        )}
-        {tool === 'select' && (
-          <>
-            <span className="tool-sep" />
-            <span className="muted" style={{ fontSize: 12 }}>Pick:</span>
-            <button
-              className={`tool-btn ${pickFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setPickFilter('all')}
-              title="Clicks select shelves, walls, zones — anything"
-            >
-              Fixtures
-            </button>
-            <button
-              className={`tool-btn ${pickFilter === 'products' ? 'active' : ''}`}
-              onClick={() => setPickFilter('products')}
-              title="Clicks select and drag product pins only — floors and walls are never grabbed"
-            >
-              Products
-            </button>
-          </>
-        )}
-        <span className="tool-sep" />
-        <span className="muted" style={{ fontSize: 12 }}>{TOOL_HINTS[tool]}</span>
-      </div>
     </div>
+    </EditorApiContext.Provider>
   );
 }
 
@@ -880,6 +1175,7 @@ function SaveBadge({ state, onRetry }: { state: SaveState; onRetry: () => void }
 }
 
 function AddFloorButton({ storeId, onCreated }: { storeId: string; onCreated: (f: Floor) => void }) {
+  const api = useEditorApi();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -925,7 +1221,7 @@ const TYPES_BY_SHAPE: Record<string, MapElement['type'][]> = {
 };
 
 function ElementPanel({
-  el, floor, elements, onChange, onDelete, onDuplicate, onPreviewShelf,
+  el, floor, elements, onChange, onDelete, onDuplicate, onPreviewShelf, items,
 }: {
   el: MapElement;
   floor: Floor;
@@ -934,6 +1230,8 @@ function ElementPanel({
   onDelete: () => void;
   onDuplicate: () => void;
   onPreviewShelf?: () => void;
+  /** Items the user pinned to this shelf (owned association, not geometry). */
+  items?: Product[];
 }) {
   const patch = (fields: Partial<MapElement>) =>
     onChange(elements.map((e) => (e.id === el.id ? { ...e, ...fields } : e)));
@@ -952,15 +1250,57 @@ function ElementPanel({
     const bb = bboxOf(elementPoints(el));
     return { x: bb.minX, y: bb.minY };
   })();
+  const shelfItems = el.type === 'shelf' && items ? items : null;
   const shelfMeta = el.type === 'shelf' && el.shape === 'rect' ? parseMeta(el.meta) : null;
   const patchMeta = (fields: Record<string, unknown>) => {
     if (!shelfMeta) return;
     patch({ meta: JSON.stringify({ ...shelfMeta, ...fields }) });
   };
+  // label text scale: stored on the element meta, read by both renderers
+  const labelMeta = el.label ? parseMeta(el.meta) : null;
+  const labelScale = Number(labelMeta?.labelScale) || 1;
+  const setLabelScale = (v: number) =>
+    patch({ meta: JSON.stringify({ ...parseMeta(el.meta), labelScale: v }) });
   return (
     <div>
       <div className="panel-section">
         <h4>Selected · {el.shape}</h4>
+        {labelMeta && (
+          <div style={{ marginBottom: 12 }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)', marginBottom: 5 }}>Label size</span>
+            <div className="theme-seg" role="radiogroup" aria-label="Label size" style={{ maxWidth: 160 }}>
+              {[['S', 1], ['M', 1.4], ['L', 1.9]].map(([lbl, v]) => (
+                <button
+                  key={lbl as string}
+                  type="button"
+                  role="radio"
+                  aria-checked={labelScale === v}
+                  className={labelScale === v ? 'active' : ''}
+                  style={{ fontSize: 11 * (v as number) }}
+                  onClick={() => setLabelScale(v as number)}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {shelfItems && (
+          <div className="shelf-items">
+            <span className="muted" style={{ fontSize: 12 }}>
+              Items on this shelf ({shelfItems.length}) — moves with the shelf, never changed by it:
+            </span>
+            {shelfItems.length === 0 ? (
+              <span className="muted" style={{ fontSize: 12 }}>nothing pinned here yet</span>
+            ) : (
+              <div className="chips">
+                {shelfItems.map((it) => (
+                  <span key={it.id} className="badge gray" title={it.name}>{it.name}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <Field label="Type">
           <select className="select" value={el.type} onChange={(e) => patch({ type: e.target.value as MapElement['type'] })}>
             {TYPES_BY_SHAPE[el.shape].map((t) => (
@@ -1049,12 +1389,38 @@ function ElementPanel({
                 onChange={(e) => patchMeta({ bays: e.target.value === '' ? undefined : Number(e.target.value) })}
               />
             </Field>
-            <Field label="Levels">
+            <Field label="Rows">
               <input
-                className="input" type="number" min={1} max={12}
+                className="input" type="number" min={1} max={8}
                 value={shelfMeta.levels ?? ''}
-                placeholder="3"
+                placeholder="4"
                 onChange={(e) => patchMeta({ levels: e.target.value === '' ? undefined : Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Height (m)">
+              <input
+                className="input" type="number" step={0.1} min={0.3} max={3}
+                value={shelfMeta.height ?? ''}
+                placeholder="1.5"
+                onChange={(e) => patchMeta({ height: e.target.value === '' ? undefined : Number(e.target.value) })}
+              />
+            </Field>
+          </div>
+          <div className="field-row">
+            <Field label="Item height (m)">
+              <input
+                className="input" type="number" step={0.01} min={0.05} max={1.2}
+                value={shelfMeta.itemH ?? ''}
+                placeholder="0.24"
+                onChange={(e) => patchMeta({ itemH: e.target.value === '' ? undefined : Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Item length (m)">
+              <input
+                className="input" type="number" step={0.01} min={0.05} max={1.2}
+                value={shelfMeta.itemW ?? ''}
+                placeholder="0.20"
+                onChange={(e) => patchMeta({ itemW: e.target.value === '' ? undefined : Number(e.target.value) })}
               />
             </Field>
           </div>
@@ -1063,6 +1429,7 @@ function ElementPanel({
           </div>
           <p className="muted" style={{ fontSize: 12.5 }}>
             Shoppers can tap this shelf on the public map to see this front view. Leave bays empty to divide evenly.
+            Rows and height shape the 3D fixture; item size shapes the products on it.
           </p>
         </div>
       )}
@@ -1103,24 +1470,25 @@ function ElementPanel({
 }
 
 function FloorPanel({
-  floor, isDraft, onFinishDraft, onCancelDraft, onUpdated, onDeleted, floorCount,
-  bgOpacity, onBgOpacity,
+  floor, isDraft, onFinishDraft, onCancelDraft, onUpdated,
+  bgOpacity, onBgOpacity, floorCount, onDeleted,
 }: {
   floor: Floor;
   isDraft: boolean;
   onFinishDraft: () => void;
   onCancelDraft: () => void;
   onUpdated: (f: Floor) => void;
-  onDeleted: (id: string) => void;
-  floorCount: number;
   bgOpacity: number;
   onBgOpacity: (v: number) => void;
+  /** Floors on this store — the last one can't be deleted. */
+  floorCount: number;
+  onDeleted: () => void;
 }) {
+  const api = useEditorApi();
   const [name, setName] = useState(floor.name);
   const [w, setW] = useState(String(floor.width_m));
   const [h, setH] = useState(String(floor.height_m));
   const [busy, setBusy] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
   useEffect(() => {
     setName(floor.name);
     setW(String(floor.width_m));
@@ -1144,7 +1512,7 @@ function FloorPanel({
   const uploadPlan = async (file: File) => {
     setBusy(true);
     try {
-      const { url } = await api.uploadImage(file);
+      const { url } = await api.uploadImage(file, floor.store_id);
       const { floor: f } = await api.updateFloor(floor.id, { background_url: url });
       onUpdated(f);
     } finally {
@@ -1206,6 +1574,31 @@ function FloorPanel({
         )}
       </div>
 
+      {floorCount > 1 && (
+        <div className="panel-section">
+          <h4>Danger zone</h4>
+          <button
+            className="btn danger"
+            disabled={busy}
+            onClick={async () => {
+              if (!confirm(`Delete floor “${floor.name}” and everything on it?`)) return;
+              setBusy(true);
+              try {
+                await api.deleteFloor(floor.id);
+                onDeleted();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Delete this floor
+          </button>
+          <p className="muted" style={{ fontSize: 12.5, margin: '6px 0 0' }}>
+            Removes the floor, its fixtures and the pins on it. The last remaining floor can’t be deleted.
+          </p>
+        </div>
+      )}
+
       {isDraft ? (
         <div className="panel-section">
           <h4>Drawing in progress</h4>
@@ -1216,20 +1609,34 @@ function FloorPanel({
         </div>
       ) : null}
 
-      <div className="panel-section">
-        <h4>Danger zone</h4>
-        {confirmDel ? (
-          <div className="stack">
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>Delete this floor and everything on it?</p>
-            <button className="btn danger" disabled={floorCount <= 1} onClick={() => onDeleted(floor.id)}>
-              {floorCount <= 1 ? 'A store needs at least one floor' : 'Yes, delete floor'}
-            </button>
-            <button className="btn" onClick={() => setConfirmDel(false)}>Keep floor</button>
-          </div>
-        ) : (
-          <button className="btn danger" onClick={() => setConfirmDel(true)}>Delete this floor</button>
-        )}
-      </div>
+    </div>
+  );
+}
+
+/* ---------------- Sandbox history (device save log) ---------------- */
+
+function SandboxHistory({ session }: { session: LocalSession }) {
+  const entries = [...session.log].reverse(); // newest first
+  return (
+    <div className="panel-section">
+      <h4>Save log · this device</h4>
+      <p className="muted" style={{ fontSize: 12.5, margin: '0 0 8px' }}>
+        Every change saved on this device, newest first. Nothing leaves your browser.
+      </p>
+      {entries.length === 0 ? (
+        <p className="muted" style={{ fontSize: 13 }}>No changes yet — draw something first.</p>
+      ) : (
+        <div className="products-scroll">
+          {entries.map((e, i) => (
+            <div key={`${e.ts}-${i}`} className="snapshot-item">
+              <span className="snapshot-info">
+                <b>{e.label}</b>
+                <span>{new Date(e.ts).toLocaleTimeString()} · {e.elements} elements · {e.products} products</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1254,6 +1661,7 @@ function HistoryPanel({
   currentElements: MapElement[];
   onRestore: (els: MapElement[]) => void;
 }) {
+  const api = useEditorApi();
   const [snaps, setSnaps] = useState<{ id: string; element_count: number; created_at_ms: number }[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -1360,6 +1768,11 @@ function HistoryPanel({
 const TYPE_ICON: Record<string, string> = {
   shelf: '▬', wall: '▥', aisle: '⇢', zone: '▣', entrance: '⬆', exit: '⬇', poi: '★',
 };
+/** Outline groups, in the order a store planner thinks about them. */
+const TYPE_ORDER = ['shelf', 'wall', 'zone', 'aisle', 'entrance', 'exit', 'poi'];
+const TYPE_LABEL: Record<string, string> = {
+  shelf: 'Shelves', wall: 'Walls', zone: 'Zones', aisle: 'Aisles', entrance: 'Entrances', exit: 'Exits', poi: 'Points of interest',
+};
 
 function ElementOutline({
   elements, floor, onSelectEl, onToggleLock,
@@ -1370,6 +1783,7 @@ function ElementOutline({
   onToggleLock: (id: string, locked: boolean) => void;
 }) {
   const [q, setQ] = useState('');
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const isLocked = (el: MapElement) => {
     try {
       return Boolean(JSON.parse(el.meta || '{}')?.locked);
@@ -1380,32 +1794,71 @@ function ElementOutline({
   const filtered = elements.filter((el) =>
     `${el.label} ${el.type}`.toLowerCase().includes(q.toLowerCase())
   );
+  const row = (el: MapElement) => (
+    <div key={el.id} className={`outline-row ${isLocked(el) ? 'locked' : ''}`}>
+      <button
+        className="outline-pick"
+        onClick={() => onSelectEl(el.id)}
+        title={isLocked(el) ? 'Locked — click to select, unlock to drag' : el.label || el.type}
+      >
+        <span aria-hidden>{TYPE_ICON[el.type] ?? '▪'}</span>
+        <b>{el.label || el.type}</b>
+        <span className="muted">{el.type}</span>
+      </button>
+      <button
+        className="btn sm ghost"
+        title={isLocked(el) ? 'Unlock' : 'Lock (protect from accidental drags)'}
+        onClick={() => onToggleLock(el.id, !isLocked(el))}
+      >
+        {isLocked(el) ? '🔒' : '🔓'}
+      </button>
+    </div>
+  );
+
+  const searching = q.trim().length > 0;
+  const groups = TYPE_ORDER.filter((t) => elements.some((e) => e.type === t)).map((t) => ({
+    type: t,
+    items: filtered.filter((e) => e.type === t),
+  }));
+
   return (
     <div className="panel-section">
       <h4>Outline · {elements.length} elements</h4>
       <input className="input" placeholder="Find elements…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="outline-list">
-        {filtered.slice(0, 60).map((el) => (
-          <div key={el.id} className={`outline-row ${isLocked(el) ? 'locked' : ''}`}>
-            <button
-              className="outline-pick"
-              onClick={() => onSelectEl(el.id)}
-              title={isLocked(el) ? 'Locked — click to select, unlock to drag' : el.label || el.type}
-            >
-              <span aria-hidden>{TYPE_ICON[el.type] ?? '▪'}</span>
-              <b>{el.label || el.type}</b>
-              <span className="muted">{el.type}</span>
-            </button>
-            <button
-              className="btn sm ghost"
-              title={isLocked(el) ? 'Unlock' : 'Lock (protect from accidental drags)'}
-              onClick={() => onToggleLock(el.id, !isLocked(el))}
-            >
-              {isLocked(el) ? '🔒' : '🔓'}
-            </button>
-          </div>
-        ))}
-        {filtered.length > 60 && <p className="muted" style={{ fontSize: 12 }}>…and {filtered.length - 60} more — keep typing to narrow.</p>}
+        {searching ? (
+          <>
+            {filtered.slice(0, 100).map(row)}
+            {filtered.length > 100 && (
+              <p className="muted" style={{ fontSize: 12 }}>…and {filtered.length - 100} more — keep typing to narrow.</p>
+            )}
+          </>
+        ) : (
+          groups.map((g) => (
+            <div key={g.type} className="outline-group">
+              <button
+                className="outline-group-head"
+                aria-expanded={open.has(g.type)}
+                onClick={() =>
+                  setOpen((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(g.type)) next.delete(g.type);
+                    else next.add(g.type);
+                    return next;
+                  })
+                }
+              >
+                <span className={`outline-chev ${open.has(g.type) ? 'open' : ''}`} aria-hidden>▸</span>
+                {TYPE_LABEL[g.type] ?? g.type}
+                <span className="muted">{g.items.length}</span>
+              </button>
+              {open.has(g.type) && <div className="outline-group-items">{g.items.map(row)}</div>}
+            </div>
+          ))
+        )}
+        {!searching && filtered.length === 0 && (
+          <p className="muted" style={{ fontSize: 12 }}>Nothing on this floor yet.</p>
+        )}
       </div>
     </div>
   );
@@ -1427,6 +1880,7 @@ function ProductsPanel({
   flashId: string | null;
   onQueueMany: (ids: string[]) => void;
 }) {
+  const api = useEditorApi();
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
   const [newCat, setNewCat] = useState('');
@@ -1451,9 +1905,14 @@ function ProductsPanel({
     return () => clearTimeout(t);
   }, [flashId]);
 
-  const filtered = products.filter((p) =>
-    `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(q.toLowerCase())
+  const [catFilter, setCatFilter] = useState<'all' | 'none' | string>('all');
+  const filtered = products.filter(
+    (p) =>
+      `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(q.toLowerCase()) &&
+      (catFilter === 'all' || (catFilter === 'none' ? !p.category_id : p.category_id === catFilter))
   );
+  const countByCat = new Map<string | null, number>();
+  for (const p of products) countByCat.set(p.category_id, (countByCat.get(p.category_id) ?? 0) + 1);
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1498,6 +1957,36 @@ function ProductsPanel({
           </div>
         </div>
         <input className="input" style={{ marginTop: 8 }} placeholder="Filter products…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {categories.length > 0 && (
+          <div className="chips" style={{ marginTop: 8 }} role="group" aria-label="Filter by category">
+            <button
+              className={`cat-chip ${catFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setCatFilter('all')}
+            >
+              All · {products.length}
+            </button>
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                className={`cat-chip ${catFilter === c.id ? 'active' : ''}`}
+                style={catFilter === c.id ? { color: c.color } : undefined}
+                onClick={() => setCatFilter((cur) => (cur === c.id ? 'all' : c.id))}
+                title={`Show only ${c.name}`}
+              >
+                <span className="swatch" style={{ background: c.color }} />
+                {c.name} · {countByCat.get(c.id) ?? 0}
+              </button>
+            ))}
+            {(countByCat.get(null) ?? 0) > 0 && (
+              <button
+                className={`cat-chip ${catFilter === 'none' ? 'active' : ''}`}
+                onClick={() => setCatFilter((cur) => (cur === 'none' ? 'all' : 'none'))}
+              >
+                Uncategorized · {countByCat.get(null)}
+              </button>
+            )}
+          </div>
+        )}
         {checked.size > 0 && (
           <div className="multi-row" style={{ marginTop: 8 }}>
             <span className="muted" style={{ fontSize: 12.5 }}>{checked.size} selected</span>
@@ -1544,7 +2033,9 @@ function ProductsPanel({
       <div className="panel-section">
         {filtered.length === 0 ? (
           <p className="muted" style={{ fontSize: 13 }}>
-            No products yet. Add your top sellers first — shoppers search by these names.
+            {products.length === 0
+              ? 'No products yet. Add your top sellers first — shoppers search by these names.'
+              : 'No products match this filter.'}
           </p>
         ) : (
           <div className="products-scroll">
@@ -1579,14 +2070,16 @@ function ProductsPanel({
                   <b title={p.name}>{p.name}</b>
                   <span>{[p.brand, p.price != null ? `$${p.price.toFixed(2)}` : ''].filter(Boolean).join(' · ')}</span>
                 </div>
-                {loc ? (
-                  <button className="btn sm ghost" title="Remove pin" onClick={() => unpin(p.id)}>📍 ✓</button>
-                ) : (
-                  <span className="pin-flag none">unpinned</span>
-                )}
-                <button className="btn sm" title="Place / move pin on map" onClick={() => onStartPlacing(p.id)}>📍</button>
-                <button className="btn sm" title="Edit product" onClick={() => setEditing(p)}>✎</button>
-                <button className="btn sm danger" title="Delete product" onClick={() => removeProduct(p.id)}>✕</button>
+                <div className="product-actions">
+                  {loc ? (
+                    <button className="btn sm ghost" title="Remove pin" onClick={() => unpin(p.id)}>📍 ✓</button>
+                  ) : (
+                    <span className="pin-flag none">unpinned</span>
+                  )}
+                  <button className="btn sm" title="Place / move pin on map" onClick={() => onStartPlacing(p.id)}>📍</button>
+                  <button className="btn sm" title="Edit product" onClick={() => setEditing(p)}>✎</button>
+                  <button className="btn sm danger" title="Delete product" onClick={() => removeProduct(p.id)}>✕</button>
+                </div>
               </div>
             );
           })}
@@ -1641,6 +2134,7 @@ function ProductModal({
   onSaved: (p: Product) => void;
   entitlements?: { productImages: boolean };
 }) {
+  const api = useEditorApi();
   const [name, setName] = useState(product?.name ?? '');
   const [brand, setBrand] = useState(product?.brand ?? '');
   const [sku, setSku] = useState(product?.sku ?? '');
@@ -1660,6 +2154,24 @@ function ProductModal({
       setImageUrl(updated.image_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  /** Local background removal: flood out the studio backdrop, keep the product. */
+  const removeBg = async () => {
+    if (!product || !imageUrl) return;
+    setImgBusy(true);
+    setError('');
+    try {
+      const blob = await removeBackground(imageUrl);
+      if (!blob) throw new Error('Could not process that image');
+      const file = new File([blob], 'product.png', { type: 'image/png' });
+      const { product: updated } = await api.productImage(product.id, file);
+      setImageUrl(updated.image_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Background removal failed');
     } finally {
       setImgBusy(false);
     }
@@ -1733,15 +2245,27 @@ function ProductModal({
         <Field label="Photo">
           {entitlements?.productImages ? (
             product ? (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {imageUrl ? (
-                  <img src={imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)' }} />
+                  <img src={imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)', background: 'var(--chip)' }} />
                 ) : (
                   <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
                 )}
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => pickImage(e.target.files?.[0])} style={{ fontSize: 12.5 }} />
+                <label className="btn sm" title="Use the device camera">
+                  📷 Take photo
+                  <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                <label className="btn sm" title="Choose an image file">
+                  🖼 Upload
+                  <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {imageUrl && (
+                  <button type="button" className="btn sm" disabled={imgBusy} onClick={removeBg} title="Cut the studio background out right in this browser">
+                    ✂ Remove background
+                  </button>
+                )}
                 {imageUrl && <button type="button" className="btn sm danger" disabled={imgBusy} onClick={clearImage}>Remove</button>}
-                {imgBusy && <span className="muted" style={{ fontSize: 12 }}>Uploading…</span>}
+                {imgBusy && <span className="muted" style={{ fontSize: 12 }}>Working…</span>}
               </div>
             ) : (
               <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Save the product first, then add its photo.</p>
@@ -1765,8 +2289,9 @@ function ProductModal({
 /* ---------------- Store panel ---------------- */
 
 function StorePanel({
-  store, productCount, onUpdated, onDeleted,
-}: { store: Store; productCount: number; onUpdated: (s: Store) => void; onDeleted: () => void }) {
+  store, productCount, onUpdated, onDeleted, tryMode = false,
+}: { store: Store; productCount: number; onUpdated: (s: Store) => void; onDeleted: () => void; tryMode?: boolean }) {
+  const api = useEditorApi();
   const [form, setForm] = useState({
     name: store.name, address: store.address, description: store.description,
     phone: store.phone, website: store.website, hours: store.hours,
@@ -1797,7 +2322,7 @@ function StorePanel({
   };
 
   const uploadLogo = async (file: File) => {
-    const { url } = await api.uploadImage(file);
+    const { url } = await api.uploadImage(file, store.id);
     const { store: s } = await api.updateStore(store.id, { logo_url: url });
     onUpdated(s);
   };
@@ -1823,39 +2348,51 @@ function StorePanel({
         </div>
       </div>
 
-      <div className="panel-section">
-        <h4>Publish</h4>
-        <div className="row-between" style={{ marginBottom: 8 }}>
-          <span>Visible to shoppers</span>
-          <label className="toggle">
-            <input type="checkbox" checked={store.is_public} onChange={async (e) => onUpdated((await api.updateStore(store.id, { is_public: e.target.checked })).store)} />
-            <span className="track" />
-          </label>
+      {tryMode ? (
+        <div className="panel-section">
+          <h4>Publish</h4>
+          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+            Publishing, the shopper link and the printable QR become available once you save this store
+            with an account. Your map is still fully editable — export it and import it after signing up.
+          </p>
         </div>
-        <div className="public-link-row" style={{ marginBottom: 8 }}>
-          <code>{publicUrl}</code>
-          <button className="btn sm" onClick={() => navigator.clipboard.writeText(publicUrl)}>Copy</button>
+      ) : (
+        <div className="panel-section">
+          <h4>Publish</h4>
+          <div className="row-between" style={{ marginBottom: 8 }}>
+            <span>Visible to shoppers</span>
+            <label className="toggle">
+              <input type="checkbox" checked={store.is_public} onChange={async (e) => onUpdated((await api.updateStore(store.id, { is_public: e.target.checked })).store)} />
+              <span className="track" />
+            </label>
+          </div>
+          <div className="public-link-row" style={{ marginBottom: 8 }}>
+            <code>{publicUrl}</code>
+            <button className="btn sm" onClick={() => navigator.clipboard.writeText(publicUrl)}>Copy</button>
+          </div>
+          {qrSrc && <img src={qrSrc} alt="QR code" width={130} height={130} style={{ imageRendering: 'pixelated' }} />}
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            {productCount} products mapped. Print the QR code for the entrance once your map is public.
+          </p>
         </div>
-        {qrSrc && <img src={qrSrc} alt="QR code" width={130} height={130} style={{ imageRendering: 'pixelated' }} />}
-        <p className="muted" style={{ fontSize: 12.5 }}>
-          {productCount} products mapped. Print the QR code for the entrance once your map is public.
-        </p>
-      </div>
+      )}
 
-      <div className="panel-section">
-        <h4>Danger zone</h4>
-        <button
-          className="btn danger"
-          onClick={async () => {
-            if (confirm(`Delete “${store.name}” and all of its maps?`)) {
-              await api.deleteStore(store.id);
-              onDeleted();
-            }
-          }}
-        >
-          Delete store
-        </button>
-      </div>
+      {!tryMode && (
+        <div className="panel-section">
+          <h4>Danger zone</h4>
+          <button
+            className="btn danger"
+            onClick={async () => {
+              if (confirm(`Delete “${store.name}” and all of its maps?`)) {
+                await api.deleteStore(store.id);
+                onDeleted();
+              }
+            }}
+          >
+            Delete store
+          </button>
+        </div>
+      )}
     </div>
   );
 }

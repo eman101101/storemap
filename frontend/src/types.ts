@@ -132,6 +132,8 @@ export interface ProductLocation {
   y: number;
   rot: number;
   meta: string;
+  /** Persisted pin→shelf association (mirrored in meta.shelfId). */
+  shelfId?: string | null;
 }
 
 export type MemberRole = 'owner' | 'manager' | 'stock' | 'viewer';

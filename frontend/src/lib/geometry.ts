@@ -1,4 +1,4 @@
-import type { ElementShape, MapElement, PolyGeom, RectGeom, PointGeom } from '../types';
+import type { MapElement, PolyGeom, RectGeom, PointGeom } from '../types';
 
 export interface Viewport {
   scale: number; // screen px per meter
@@ -149,6 +149,8 @@ export interface ShelfAnchor {
   y: number;
   nx: number; // outward normal of the shelf face at the anchor point
   ny: number;
+  /** the shelf fixture the anchor is on (board heights / item size come from it) */
+  el: MapElement;
 }
 
 /**
@@ -160,6 +162,7 @@ export interface ShelfAnchor {
 export function shelfAnchor(p: WorldPt, elements: MapElement[], maxDist = 1.4): ShelfAnchor | null {
   let best: WorldPt | null = null;
   let bestN: WorldPt | null = null;
+  let bestEl: MapElement | null = null;
   let bestD = Infinity;
   for (const el of elements) {
     if (el.type !== 'shelf' || el.shape !== 'rect') continue;
@@ -179,11 +182,12 @@ export function shelfAnchor(p: WorldPt, elements: MapElement[], maxDist = 1.4): 
         const n1 = { x: (b.y - a.y) / el2, y: -(b.x - a.x) / el2 };
         const mid = { x: (a.x + b.x) / 2 - cx, y: (a.y + b.y) / 2 - cy };
         bestN = n1.x * mid.x + n1.y * mid.y >= 0 ? n1 : { x: -n1.x, y: -n1.y };
+        bestEl = el;
       }
     }
   }
-  if (best === null || bestN === null || bestD > maxDist) return null;
-  return { x: best.x, y: best.y, nx: bestN.x, ny: bestN.y };
+  if (best === null || bestN === null || bestEl === null || bestD > maxDist) return null;
+  return { x: best.x, y: best.y, nx: bestN.x, ny: bestN.y, el: bestEl };
 }
 
 /** Point-in-shape or near-boundary hit test, with tolerance in world meters. */
@@ -290,7 +294,3 @@ export function rotateRectTo(r: RectGeom, worldPt: WorldPt): RectGeom {
   const deg = (Math.atan2(worldPt.y - cy, worldPt.x - cx) * 180) / Math.PI + 90;
   return { ...r, rot: ((deg % 360) + 360) % 360 };
 }
-
-export const SHAPES_FOR_TOOL: Record<string, { shape: ElementShape; defaultSize?: [number, number] }> = {
-  rect: { shape: 'rect' },
-};

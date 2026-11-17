@@ -2,6 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+// Inter Variable — self-hosted (no font CDN, works offline with the PWA cache)
+import '@fontsource-variable/inter';
 import './styles.css';
 
 // PWA (INFRASTRUCTURE §11.1): offline shell + cached map payloads

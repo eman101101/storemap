@@ -37,14 +37,22 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-/* ---- Security headers (SPA-friendly CSP, mirrors the Express app) ---- */
-app.use('/api/*', async (c, next) => {
+/* ---- Security headers on every worker-served response (API, uploads,
+ * /s/* share pages, sitemap/robots) — /api gets the full set below; the SPA
+ * pages must not be framable either. Deliberately no CSP: index.html has an
+ * inline pre-paint script a strict CSP could break. ---- */
+app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('X-Frame-Options', 'DENY');
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  c.header('Cache-Control', 'no-store');
+  // API responses are dynamic — but keep a handler's own Cache-Control
+  // (edge-cached public payloads set `public, s-maxage`), only defaulting
+  // to no-store when none was set.
+  if (c.req.path.startsWith('/api') && !c.res.headers.has('Cache-Control')) {
+    c.header('Cache-Control', 'no-store');
+  }
 });
 
 app.use('/api/*', attachUser);

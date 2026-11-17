@@ -1,10 +1,9 @@
 import { config } from '../config.js';
 import { db } from '../db.js';
-import { signHs256, verifyHs256, randomToken } from '../lib/jwt.js';
+import { signHs256, verifyHs256 } from '../lib/jwt.js';
 import { parseCookies, setCookie, clearCookie, sendJson } from '../lib/http.js';
 
 const COOKIE = 'st_session';
-const STATE_COOKIE = 'st_oauth';
 
 export function issueSession(res, userId) {
   const now = Math.floor(Date.now() / 1000);
@@ -42,20 +41,15 @@ export function requireAuth(req, res, next) {
   next();
 }
 
-/** OAuth state round-trip: random value stored in a short-lived cookie. */
-export function makeState(res) {
-  const state = randomToken(20);
-  setCookie(res, STATE_COOKIE, state, { maxAge: 600 });
-  return state;
-}
-
-export function checkState(req, state) {
-  const expected = parseCookies(req)[STATE_COOKIE];
-  return Boolean(state) && Boolean(expected) && state === expected;
-}
-
-export function clearState(res) {
-  clearCookie(res, STATE_COOKIE);
+/**
+ * Dev/demo login may not touch an account created through a real provider:
+ * without this check, anyone could sign in as a Google/Apple user by just
+ * typing that email into dev-login. Unknown emails and existing dev accounts
+ * stay fine.
+ */
+export function devLoginAllowed(email) {
+  const row = db.prepare('SELECT provider FROM users WHERE email = ?').get(email);
+  return !row || row.provider === 'dev';
 }
 
 /** Upsert a user from an OIDC identity claim set. */

@@ -1,10 +1,11 @@
 /**
- * Aisle affordances shared by the 2D and 3D views: where an aisle's label /
- * symbol sits, and what "is in the aisle" — the products pinned to shelves
- * within arm's reach of its path. Pure functions, trivially testable.
+ * Aisle & shelf affordances shared by the 2D and 3D views: where an aisle's
+ * label / symbol sits, and what "is in the aisle / on the shelf" — the
+ * products pinned within arm's reach. Pure functions, trivially testable.
  */
-import type { MapElement } from '../types';
+import type { MapElement, RectGeom } from '../types';
 import { distToPolyline, polyMidpoint, polyPoints, type WorldPt } from './geometry';
+import { worldToShelfLocal } from './shelfLayout';
 
 /** Aisle marker position: the arc-length midpoint of its path. */
 export function aisleMidpoint(aisle: MapElement): WorldPt | null {
@@ -35,13 +36,47 @@ export const AISLE_REACH_M = 2.0;
  * category. `pins` should be every pin on the floor, not the search filter.
  */
 export function aisleContents(aisle: MapElement, pins: AislePin[], reach = AISLE_REACH_M): AisleContents {
-  if (aisle.shape !== 'polyline') return { categories: [], count: 0, examples: [] };
-  const pts = polyPoints(aisle);
+  if (aisle.shape === 'polyline') {
+    const pts = polyPoints(aisle);
+    return collectContents(pins, (pin) => distToPolyline({ x: pin.location.x, y: pin.location.y }, pts) <= reach);
+  }
+  if (aisle.shape === 'rect') {
+    const r = aisle.geom as RectGeom;
+    return collectContents(pins, (pin) => distToRect({ x: pin.location.x, y: pin.location.y }, r) <= reach);
+  }
+  return { categories: [], count: 0, examples: [] };
+}
+
+/** Distance from a point to a rect (0 inside), in the rect's rotated frame. */
+function distToRect(p: WorldPt, r: RectGeom): number {
+  const local = worldToShelfLocal(r, p);
+  const dx = Math.max(0, Math.max(-local.x, local.x - r.w));
+  const dy = Math.max(0, Math.max(-local.y, local.y - r.h));
+  return Math.hypot(dx, dy);
+}
+
+/** Pins sitting on a rect shelf count from its edge by this much — the same
+ *  tolerance the planogram (ShelfDetail) uses for "on this shelf". */
+export const SHELF_TOL_M = 0.35;
+
+/** Products pinned on a shelf (within SHELF_TOL_M of its footprint, rotation
+ *  aware), grouped by category — the shelf-hover hover card's data. */
+export function shelfContents(shelf: MapElement, pins: AislePin[], tol = SHELF_TOL_M): AisleContents {
+  if (shelf.shape !== 'rect') return { categories: [], count: 0, examples: [] };
+  const r = shelf.geom as RectGeom;
+  return collectContents(pins, (pin) => {
+    const local = worldToShelfLocal(r, pin.location);
+    return local.x >= -tol && local.x <= r.w + tol && local.y >= -tol && local.y <= r.h + tol;
+  });
+}
+
+/** Shared accumulator: filter pins, group by category (biggest first). */
+function collectContents(pins: AislePin[], include: (pin: AislePin) => boolean): AisleContents {
   const byCat = new Map<string, { color: string; count: number }>();
   const examples: string[] = [];
   let count = 0;
   for (const pin of pins) {
-    if (distToPolyline({ x: pin.location.x, y: pin.location.y }, pts) > reach) continue;
+    if (!include(pin)) continue;
     count++;
     const name = pin.product.category_name?.trim() || 'Other';
     const color = pin.product.category_color || '#5b6b5f';
@@ -59,7 +94,44 @@ export function aisleContents(aisle: MapElement, pins: AislePin[], reach = AISLE
   };
 }
 
-/** Screen-space tooltip model both views render. */
-export function aisleTooltipLabel(aisle: MapElement, contents: AisleContents): string {
-  return aisle.label?.trim() || 'Aisle';
+export interface DirectoryRow {
+  label: string;
+  /** shelf element ids carrying this label, in draw order */
+  shelfIds: string[];
+  /** categories across the whole labelled aisle, biggest first */
+  categories: { name: string; color: string; count: number }[];
+  count: number;
+}
+
+/**
+ * The pre-search "What's where" directory: rect shelves grouped by label
+ * ("Aisle 1", "North wall", …) with the categories pinned on them. Unlabelled
+ * shelves are skipped — they have nothing a shopper can navigate by.
+ */
+export function shelfDirectory(shelves: MapElement[], pins: AislePin[]): DirectoryRow[] {
+  const byLabel = new Map<string, { ids: string[]; pins: Set<AislePin> }>();
+  for (const shelf of shelves) {
+    if (shelf.type !== 'shelf' || shelf.shape !== 'rect') continue;
+    const label = shelf.label?.trim();
+    if (!label) continue;
+    const r = shelf.geom as RectGeom;
+    const entry = byLabel.get(label) ?? { ids: [], pins: new Set<AislePin>() };
+    entry.ids.push(shelf.id);
+    for (const pin of pins) {
+      const local = worldToShelfLocal(r, pin.location);
+      if (
+        local.x >= -SHELF_TOL_M && local.x <= r.w + SHELF_TOL_M &&
+        local.y >= -SHELF_TOL_M && local.y <= r.h + SHELF_TOL_M
+      ) {
+        entry.pins.add(pin); // identity-set: shelves sharing an edge don't double-count
+      }
+    }
+    byLabel.set(label, entry);
+  }
+  return [...byLabel.entries()]
+    .map(([label, { ids, pins: groupPins }]) => {
+      const contents = collectContents([...groupPins], () => true);
+      return { label, shelfIds: ids, categories: contents.categories, count: contents.count };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 }

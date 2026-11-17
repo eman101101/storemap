@@ -23,6 +23,20 @@ export const useTheme = () => useContext(ThemeContext);
 
 const MODE_KEY = 'storemap.mode';
 
+/**
+ * Colors cross-fade while the theme flips: a short-lived class on <html>
+ * turns on color transitions for everything (see styles.css), then goes away
+ * so normal hover/interaction transitions aren't affected.
+ */
+let transitionTimer = 0;
+function withThemeTransition(apply: () => void) {
+  const root = document.documentElement;
+  root.classList.add('theme-transition');
+  window.clearTimeout(transitionTimer);
+  transitionTimer = window.setTimeout(() => root.classList.remove('theme-transition'), 500);
+  apply();
+}
+
 function readStored<T extends string>(key: string, valid: readonly T[], fallback: T): T {
   try {
     const v = localStorage.getItem(key) as T | null;
@@ -41,7 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // follow the OS while in 'system' mode
   useEffect(() => {
     const mq = matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (e: MediaQueryListEvent) => setSysDark(e.matches);
+    const onChange = (e: MediaQueryListEvent) => withThemeTransition(() => setSysDark(e.matches));
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
@@ -53,7 +67,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolved]);
 
   const setMode = (m: ModePref) => {
-    setModeState(m);
+    withThemeTransition(() => setModeState(m));
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {

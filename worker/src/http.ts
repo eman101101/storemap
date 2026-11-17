@@ -24,16 +24,6 @@ export function slugify(text: unknown): string {
   return base || 'store';
 }
 
-export function requireFields(c: Context, body: any, fields: string[]): boolean {
-  for (const f of fields) {
-    if (body?.[f] === undefined || body?.[f] === null || body?.[f] === '') {
-      badRequest(c, `Missing field: ${f}`);
-      return false;
-    }
-  }
-  return true;
-}
-
 /**
  * Best-effort fixed-window rate limiter, per isolate (Workers keep one isolate
  * warm per POP, so this throttles bursts; it is not a global quota).

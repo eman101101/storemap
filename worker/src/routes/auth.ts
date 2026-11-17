@@ -4,7 +4,8 @@ import type { AppEnv, Env } from '../config';
 import { providersConfigured } from '../config';
 import { verifyOidcToken, signEs256 } from '../crypto';
 import { randomToken } from '../util';
-import { issueSession, clearSession, upsertUser, currentUser, makeState, checkState, clearState } from '../session';
+import { first } from '../db';
+import { issueSession, clearSession, upsertUser, currentUser } from '../session';
 import { parseCookies, setCookie, clearCookie } from '../cookies';
 import { json, rateLimit } from '../http';
 
@@ -206,6 +207,12 @@ app.post('/dev-login', loginLimiter, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = String(body?.email || 'owner@example.com').toLowerCase().slice(0, 200);
   const name = String(body?.name || email.split('@')[0]).slice(0, 100);
+  // Dev login accepts any email by design — but never one that already
+  // belongs to a real Google/Apple account (that would hand the keys over).
+  const existing = await first(env, 'SELECT provider FROM users WHERE email = ?', email);
+  if (existing && existing.provider !== 'dev') {
+    return json(c, 403, { error: 'This email belongs to an existing account — sign in with its original provider.' });
+  }
   const user = await upsertUser(env, { provider: 'dev', sub: email, email, name, avatarUrl: '' });
   await issueSession(c, env, user.id);
   return json(c, 200, { user: { id: user.id, email: user.email, name: user.name } });
@@ -236,8 +243,5 @@ app.post('/logout', (c) => {
   clearSession(c);
   return json(c, 200, { ok: true });
 });
-
-// OAuth state helpers are exported for potential reuse in tests
-export { makeState, checkState, clearState };
 
 export default app;

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler,
-  renderScene, screenToWorldFloor, pickFixture, shade, routeFaces, stockFaces, MODERN_THEME,
-  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem,
+  renderScene, screenToWorldFloor, pickFixture, scaleColor, routeFaces, stockFaces as buildStockFaces, MODERN_THEME,
+  DIST_MIN, DIST_MAX, shelfDetailForDist,
+  type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem, type ShelfDetail,
 } from '../lib/render3d';
 import { snap, elementPoints, shelfAnchor, translateElement, type WorldPt } from '../lib/geometry';
-import { aisleContents, AISLE_REACH_M } from '../lib/aisleInfo';
+import { aisleContents, shelfContents, AISLE_REACH_M } from '../lib/aisleInfo';
+import { shelfBoardZs, shelfItemSize } from '../lib/shelfLayout';
 
 export interface Pin {
   location: { id: string; x: number; y: number; product_id: string };
@@ -18,12 +20,16 @@ interface Props {
   elements: MapElement[];
   pins: Pin[];
   focusPinId?: string | null;
+  /** A whole group to highlight at once (search results / browsed category) — location ids. */
+  focusPinIds?: string[] | null;
   route?: WorldPt[] | null;
   /** When set (seq changes), the camera flies the route from its start to the item. */
   flythrough?: { points: WorldPt[]; seq: number } | null;
   onPinClick?: (productId: string) => void;
   /** All pins on the floor — drives the visual product blocks on the shelf faces. */
   stockPins?: Pin[];
+  /** Draw the per-product blocks on shelf faces (off for clean, pin-free maps). */
+  stockFaces?: boolean;
   /** Multi-stop trip: numbered markers at each ordered stop (A1). */
   tripStops?: { productId: string; name: string; point: WorldPt }[];
   /** Camera lives in the parent so toggling 2D↔3D doesn't reset the angle. */
@@ -48,12 +54,17 @@ interface Props {
   focusElement?: { id: string; seq: number } | null;
   /** When seq changes, refit the camera to the whole floor (the Fit button). */
   fitSignal?: number;
+  /** 2D-parity zoom buttons: a new seq glides the camera distance by k. */
+  zoomCommand?: { k: number; seq: number } | null;
 }
 
 const PITCH_MIN = 0.18;
 const PITCH_MAX = 1.45;
-const DIST_MIN = 3;
-const DIST_MAX = 160;
+
+/** Radius (m) of the "local area" stocking on very full floors: on a search,
+ *  item squares draw only within this distance of a focused pin (~its gondola
+ *  pair plus the neighbouring shelves). */
+const FOCUS_AREA_M = 10;
 
 const EYE_Z = 8; // drone-style: well above the shelves
 const EYE_BACK = 4; // camera trails the walker by this many meters along the path
@@ -95,7 +106,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, route, flythrough, onPinClick, stockPins = [], camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0 }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -108,10 +119,16 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const flownSeq = useRef<number | null>(null);
   const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[] }>({ pins: [], aisles: [] });
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
-  /** Hover pick preview (edit mode): what a click would select, and where. */
-  const [hoverPick, setHoverPick] = useState<{ id: string; sx: number; sy: number } | null>(null);
-  /** Viewer: pointer is over a tappable shelf. */
-  const [hoverShelf, setHoverShelf] = useState(false);
+  /** Hover pick preview (edit mode): the element id a click would select. Only
+   *  the ID lives here — it feeds the draw effect, so it must change exactly
+   *  when the pick changes, not on every mousemove. */
+  const [hoverPick, setHoverPick] = useState<string | null>(null);
+  /** Where the pick tip floats (cursor px) — cheap state, no draw on change. */
+  const [pickTipAt, setPickTipAt] = useState<{ sx: number; sy: number } | null>(null);
+  /** Viewer: the tappable shelf under the pointer, and where to pin its card. */
+  const [hoverShelf, setHoverShelf] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  /** Viewer: the product facing under the pointer (location id) — lifts its stack. */
+  const [hoverPinLocId, setHoverPinLocId] = useState<string | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
   const pinch = useRef<{ dist: number; startDist: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
@@ -124,32 +141,74 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   const floorRef = useRef(floor);
   floorRef.current = floor;
 
-  // visual product blocks on the shelf faces, from every pinned item on this floor
+  // visual product blocks on the shelf faces, from every pinned item on this
+  // floor — off (stockFaces=false) for clean, pin-free maps. On very full
+  // floors (big-box demo) the squares dominate the render budget: thousands of
+  // faces and BSP nodes. There they draw ONLY in the searched item's local
+  // area, and not at all until something is searched — the floor reads clean
+  // and the "found it" moment keeps its glowing neighbourhood. Hover
+  // highlighting stays off on those floors too: it changes the stocking
+  // faces, which would rebuild the whole scene BSP on every hover crossing.
+  const heavy = stockPins.length > 500;
+  const hoverLoc = heavy ? null : hoverPinLocId;
   const stocking = useMemo<StockItem[]>(
-    () =>
-      stockPins
-        .map((p) => {
+    () => {
+      if (!stockFaces) return [];
+      const focusSet = focusPinIds?.length ? new Set(focusPinIds) : null;
+      const isFocus = (id: string) => id === focusPinId || (focusSet?.has(id) ?? false);
+      // heavy floors: keep only pins inside the focused pin's local area
+      let inArea = (_x: number, _y: number): boolean => true;
+      if (heavy) {
+        const focusPts = stockPins.filter((p) => isFocus(p.location.id));
+        if (!focusPts.length) return [];
+        inArea = (x, y) =>
+          focusPts.some((p) => Math.hypot(p.location.x - x, p.location.y - y) <= FOCUS_AREA_M);
+      }
+      // one facing per pin keeps the big-box scene light (full stacks below 500)
+      return stockPins
+        .filter((p) => inArea(p.location.x, p.location.y))
+        .map((p): StockItem | null => {
           const a = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
           if (!a) return null;
+          const size = shelfItemSize(a.el);
+          const zs = shelfBoardZs(a.el);
           return {
             x: a.x,
             y: a.y,
             nx: a.nx,
             ny: a.ny,
-            color: shade(p.product.category_color || '#2f6f3e', 0.88 + (((p.location.x * 7 + p.location.y * 13) % 5) * 0.06)),
+            color: scaleColor(p.product.category_color || '#2f6f3e', 0.88 + (((p.location.x * 7 + p.location.y * 13) % 5) * 0.06)),
+            focused: isFocus(p.location.id),
+            hovered: p.location.id === hoverLoc,
+            zs: heavy ? [zs[Math.floor(zs.length / 2)] ?? zs[0]!] : zs,
+            h: size.h,
+            w: size.w,
           };
         })
-        .filter((s): s is StockItem => s !== null),
-    [stockPins, elements]
+        .filter((s): s is StockItem => s !== null);
+    },
+    [stockPins, elements, stockFaces, focusPinId, focusPinIds, hoverLoc, heavy]
   );
 
+  // zoom LOD for the shelf detailing (hysteresis): past solidBeyond the painted
+  // board strips are sub-pixel noise, so shelves draw as plain boxes; they earn
+  // the strips back only below fullBelow — the band is wider than wheel/pinch
+  // jitter, so a zoom resting on the boundary can't flap the geometry (each
+  // flip rebuilds the scene faces + the BSP).
+  const shelfDetailRef = useRef<ShelfDetail>('full');
+  const shelfDetail = shelfDetailForDist(cam.dist, shelfDetailRef.current);
+  shelfDetailRef.current = shelfDetail;
+
   // static geometry only depends on the floor + elements — build it once, not per frame
-  const sceneFaces = useMemo<Face[]>(() => buildSceneFaces(floor, elements, theme), [floor, elements, theme]);
+  const sceneFaces = useMemo<Face[]>(
+    () => buildSceneFaces(floor, elements, theme, { shelfDetail }),
+    [floor, elements, theme, shelfDetail]
+  );
 
   // one BSP per draw layer over the whole scene: exact back-to-front order for
   // any camera angle. Rebuilt only when the data changes, never per frame.
   const bspInput = useMemo(() => {
-    const faces = [...sceneFaces, ...stockFaces(stocking, theme)];
+    const faces = [...sceneFaces, ...buildStockFaces(stocking, theme)];
     if (route && route.length > 1) faces.push(...routeFaces(route, theme));
     return faces;
   }, [sceneFaces, stocking, route, theme, elements]);
@@ -192,6 +251,19 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     lastFit.current = fitSignal;
     setCam(fitCamera(floor));
   }, [fitSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // zoom buttons (the vertical ＋/− pad, shared with the 2D map): a new
+  // command glides `dist` by k with the same ease as every other camera move
+  const lastZoomSeq = useRef(0);
+  useEffect(() => {
+    if (!zoomCommand || zoomCommand.seq === lastZoomSeq.current) return;
+    lastZoomSeq.current = zoomCommand.seq;
+    tweenSignal.current.cancelled = true;
+    const signal = { cancelled: false };
+    tweenSignal.current = signal;
+    const c = camRef.current;
+    tweenCamera(c, { dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist * zoomCommand.k)) }, setCam, signal);
+  }, [zoomCommand?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // selection made elsewhere (outline/panel) → aim the camera target at it
   const lastFocusSeq = useRef<number | null>(null);
@@ -361,19 +433,44 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const pins3d: Pin3D[] = pins.map((p) => {
+    // every stocked product is tappable in 3D, not just the focused subset —
+    // one hit target per facing level so the whole stack is clickable, not a
+    // single point at its top
+    const focusSet = focusPinIds?.length ? new Set(focusPinIds) : null;
+    const hitPins = stockPins.length ? stockPins : pins;
+    const pins3d: Pin3D[] = [];
+    for (const p of hitPins) {
       const anchor = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
-      return {
+      const focused = p.location.id === focusPinId || (focusSet?.has(p.location.id) ?? false);
+      const base = {
         productId: p.location.product_id,
+        locId: p.location.id,
         x: p.location.x,
         y: p.location.y,
         color: p.product.category_color || '#2f6f3e',
-        label: p.location.id === focusPinId ? p.product.name : undefined,
-        focused: p.location.id === focusPinId,
-        ax: anchor?.x,
-        ay: anchor?.y,
+        focused,
       };
-    });
+      if (!anchor) {
+        pins3d.push({ ...base, label: p.location.id === focusPinId ? p.product.name : undefined });
+        continue;
+      }
+      const stand = shelfBoardZs(anchor.el);
+      const itemH = shelfItemSize(anchor.el).h;
+      // heavy floors: one hit target per pin (keeps hover loops + per-frame
+      // projection proportionate); otherwise the whole stack is tappable
+      const hitZs = heavy ? [stand[Math.floor(stand.length / 2)] ?? stand[0]!] : stand;
+      hitZs.forEach((z, i) => {
+        const last = i === hitZs.length - 1;
+        pins3d.push({
+          ...base,
+          // label floats at the top of the stack only
+          label: last && p.location.id === focusPinId ? p.product.name : undefined,
+          ax: anchor.x,
+          ay: anchor.y,
+          az: z + itemH / 2,
+        });
+      });
+    }
     hitsRef.current = renderScene(ctx, size.w, size.h, cam, floor, elements, {
       bsp: sceneBSP,
       route,
@@ -382,9 +479,9 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
       tripStops,
       theme,
       selectedId: edit ? selectedId : null,
-      hoverId: edit ? hoverPick?.id ?? null : null,
+      hoverId: edit ? hoverPick : null,
     });
-  }, [cam, size, floor, elements, pins, focusPinId, route, sceneBSP, theme, edit, selectedId, hoverPick]);
+  }, [cam, size, floor, elements, pins, stockPins, focusPinId, focusPinIds, route, sceneBSP, theme, edit, selectedId, hoverPick]);
 
   // middle-click autoscroll guard — pointerdown preventDefault can't stop it
   useEffect(() => {
@@ -437,6 +534,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     stopFlySignal();
     tweenSignal.current.cancelled = true;
     setHoverAisle(null);
+    setHoverShelf(null);
     if (pointers.current.size === 2) {
       const pts = [...pointers.current.values()];
       const c = camRef.current;
@@ -503,12 +601,39 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
               best = hit;
             }
           }
-          setHoverAisle(best ? { id: best.elementId, sx: best.sx, sy: best.sy } : null);
-          // hover picking: preview what a click would select (edit) / show
-          // the pointer cursor over tappable shelves (viewer)
-          const pick = edit || onElementClick ? fixtureAt(px, py) : null;
-          setHoverPick(edit && pick ? { id: pick.elementId, sx: px, sy: py } : null);
-          setHoverShelf(Boolean(pick));
+          // hover picking: preview what a click would select (edit) / show the
+          // shelf's contents card (viewer). Hover state only moves when the
+          // picked id CHANGES — fresh objects per mousemove would re-run the
+          // draw effect (hoverPick) or re-render for nothing. The pick tip's
+          // position tracks the cursor via a separate cheap state the draw
+          // effect doesn't depend on.
+          // product facings are hoverable in the viewer — the hovered stack
+          // lifts (see stockFaces) and a click selects it
+          let pinHit: PinHit | null = null;
+          let pinD = 14;
+          for (const hit of hitsRef.current.pins) {
+            const d = Math.hypot(hit.sx - px, hit.sy - py);
+            if (d < pinD) {
+              pinD = d;
+              pinHit = hit;
+            }
+          }
+          setHoverPinLocId((prev) => {
+            const id = !edit && pinHit ? pinHit.locId ?? null : null;
+            return prev === id ? prev : id;
+          });
+          const pick = edit || (onElementClick && !pinHit) ? fixtureAt(px, py) : null;
+          setHoverAisle((prev) => {
+            const id = best && !pick && !pinHit ? best.elementId : null;
+            return prev?.id === id ? prev : id ? { id, sx: best!.sx, sy: best!.sy } : null;
+          });
+          const pickedId = edit && pick ? pick.elementId : null;
+          setHoverPick((prev) => (prev === pickedId ? prev : pickedId));
+          setPickTipAt(pickedId ? { sx: px, sy: py } : null);
+          setHoverShelf((prev) => {
+            const id = !edit && pick ? pick.elementId : null;
+            return prev?.id === id ? prev : id ? { id, sx: px, sy: py } : null;
+          });
         }
       }
       return;
@@ -624,6 +749,16 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
     () => (hoverAisleEl ? aisleContents(hoverAisleEl, stockPins) : null),
     [hoverAisleEl, stockPins]
   );
+  const hoverShelfEl = hoverShelf ? elements.find((el) => el.id === hoverShelf.id) ?? null : null;
+  const hoverShelfContents = useMemo(
+    () =>
+      hoverShelfEl?.type === 'shelf'
+        ? shelfContents(hoverShelfEl, stockPins)
+        : hoverShelfEl?.type === 'aisle'
+          ? aisleContents(hoverShelfEl, stockPins)
+          : null,
+    [hoverShelfEl, stockPins]
+  );
 
   return (
     <>
@@ -631,7 +766,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         ref={canvasRef}
         style={{
           width: '100%', height: '100%', display: 'block', touchAction: 'none',
-          cursor: drag.current || elDrag.current || midPan.current ? 'grabbing' : hoverPick && edit ? 'move' : hoverShelf && onElementClick ? 'pointer' : hoverAisle ? 'pointer' : 'grab',
+          cursor: drag.current || elDrag.current || midPan.current ? 'grabbing' : hoverPick && edit ? 'move' : (!edit && hoverPinLocId) || (hoverShelf && onElementClick) || hoverAisle ? 'pointer' : 'grab',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -639,16 +774,18 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
         onPointerCancel={endPointer}
         onPointerLeave={() => {
           setHoverAisle(null);
+          setHoverPinLocId(null);
           setHoverPick(null);
-          setHoverShelf(false);
+          setPickTipAt(null);
+          setHoverShelf(null);
         }}
         aria-label="3D store map"
       />
       {hoverPick && edit && (() => {
-        const el = elements.find((x) => x.id === hoverPick.id);
+        const el = elements.find((x) => x.id === hoverPick);
         if (!el || el.id === selectedId) return null;
         return (
-          <div className="pick-tip" style={{ left: hoverPick.sx, top: hoverPick.sy }}>
+          <div className="pick-tip" style={{ left: pickTipAt?.sx, top: pickTipAt?.sy }}>
             {el.label || el.type}
           </div>
         );
@@ -660,6 +797,14 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
           contents={hoverContents}
         />
       )}
+      {hoverShelf && (hoverShelfEl?.type === 'shelf' || hoverShelfEl?.type === 'aisle') && (
+        <AisleTooltip
+          style={{ left: hoverShelf.sx, top: hoverShelf.sy }}
+          label={hoverShelfEl.label || (hoverShelfEl.type === 'aisle' ? 'Aisle' : 'Shelf')}
+          contents={hoverShelfContents}
+          kind={hoverShelfEl.type === 'aisle' ? 'aisle' : 'shelf'}
+        />
+      )}
       {flying && (
         <button className="fly-skip" onClick={() => arriveAt(flyGoal.current.x, flyGoal.current.y)}>
           Skip flight ✕
@@ -669,16 +814,20 @@ export default function Map3D({ floor, elements, pins, focusPinId, route, flythr
   );
 }
 
-/** Shared aisle hover card (3D canvas + 2D SVG both render it). */
+/** Shared hover card (3D canvas + 2D SVG both render it): what's in an aisle
+ *  or on a shelf — categories, a taste of the actual products, and a hint. */
 export function AisleTooltip({
   style,
   label,
   contents,
+  kind = 'aisle',
 }: {
   style: React.CSSProperties;
   label: string;
   contents: { categories: { name: string; color: string; count: number }[]; count: number; examples: string[] } | null;
+  kind?: 'aisle' | 'shelf';
 }) {
+  const empty = kind === 'shelf' ? 'No pinned products on this shelf yet' : 'No pinned products along this aisle yet';
   return (
     <div className="aisle-tip" style={style} role="tooltip">
       <b>{label}</b>
@@ -692,12 +841,17 @@ export function AisleTooltip({
               </span>
             ))}
           </div>
+          {contents.examples.length > 0 && (
+            <span className="aisle-tip-ex">{contents.examples.slice(0, 3).join(' · ')}</span>
+          )}
           <span className="aisle-tip-count">
-            {contents.count} item{contents.count === 1 ? '' : 's'} within {AISLE_REACH_M} m
+            {kind === 'shelf'
+              ? `Tap for all ${contents.count} item${contents.count === 1 ? '' : 's'}`
+              : `${contents.count} item${contents.count === 1 ? '' : 's'} within ${AISLE_REACH_M} m`}
           </span>
         </>
       ) : (
-        <span className="aisle-tip-count">No pinned products along this aisle yet</span>
+        <span className="aisle-tip-count">{empty}</span>
       )}
     </div>
   );

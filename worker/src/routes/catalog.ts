@@ -3,13 +3,13 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../config';
 import { all, first, run } from '../db';
 import { newId } from '../util';
-import { json, badRequest, rateLimit } from '../http';
+import { json, badRequest, notFound, rateLimit } from '../http';
 import { str, num } from '../validate';
 import { ownedStore, ownedFloor, touchStore } from '../ownership';
 import { productImagesEnabled } from '../entitlements';
-import { saveImage } from '../storage';
+import { saveImage, deleteImage } from '../storage';
 import { reindexStoreFts } from '../search';
-import { roleForStore } from '../members';
+import { roleForStore, roleAtLeast } from '../members';
 
 const app = new Hono<AppEnv>();
 
@@ -17,6 +17,21 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 
 function productJson(row: Record<string, unknown>) {
   return { ...row, price: row.price ?? null };
+}
+
+/**
+ * Serialize a product_locations row: the owning shelf travels both in the
+ * raw `meta` JSON ({"shelfId": "…"}) and as a top-level `shelfId` field.
+ */
+export function locationJson(row: Record<string, unknown>) {
+  let shelfId: string | null = null;
+  try {
+    const meta = JSON.parse(String(row.meta || '{}'));
+    if (meta && typeof meta.shelfId === 'string') shelfId = meta.shelfId;
+  } catch {
+    /* unparseable meta → no owner */
+  }
+  return { ...row, shelfId };
 }
 
 const PRODUCT_JOIN = `SELECT p.*, c.name AS category_name, c.color AS category_color
@@ -27,23 +42,27 @@ async function requireAuth(c: any, next: () => Promise<void>) {
   await next();
 }
 
+/** Load a category and require at least the `stock` role on its store (edit access). */
 async function ownedCategory(c: any, env: Env, id: unknown): Promise<Record<string, unknown> | Response> {
   const row = await first(
     env,
     'SELECT c.*, s.owner_id FROM categories c JOIN stores s ON s.id = c.store_id WHERE c.id = ?',
     String(id)
   );
-  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Category not found');
+  const role = row ? await roleForStore(env, c.get('user').id, String(row.store_id)) : null;
+  if (!row || !role || !roleAtLeast(role, 'stock')) return notFound(c, 'Category not found');
   return row;
 }
 
+/** Load a product and require at least the `stock` role on its store (edit access). */
 async function ownedProduct(c: any, env: Env, id: unknown): Promise<Record<string, unknown> | Response> {
   const row = await first(
     env,
     'SELECT p.*, s.owner_id FROM products p JOIN stores s ON s.id = p.store_id WHERE p.id = ?',
     String(id)
   );
-  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Product not found');
+  const role = row ? await roleForStore(env, c.get('user').id, String(row.store_id)) : null;
+  if (!row || !role || !roleAtLeast(role, 'stock')) return notFound(c, 'Product not found');
   return row;
 }
 
@@ -174,6 +193,7 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
   }
   await run(env, 'UPDATE products SET image_url = ? WHERE id = ?', url, product.id);
   await touchStore(c, env, product.store_id as string);
+  await deleteImage(env, product.image_url); // the replaced image, if any
   return json(c, 200, { url, product: productJson((await first(env, PRODUCT_JOIN, product.id))!) });
 });
 
@@ -187,6 +207,7 @@ app.delete('/products/:id/image', requireAuth, async (c) => {
     return json(c, 402, { error: 'Product photos are a paid feature', upgrade: true });
   await run(env, 'UPDATE products SET image_url = "" WHERE id = ?', product.id);
   await touchStore(c, env, product.store_id as string);
+  await deleteImage(env, product.image_url);
   return json(c, 200, { ok: true });
 });
 
@@ -224,13 +245,18 @@ app.patch('/products/:id', requireAuth, async (c) => {
   }
   const keys = Object.keys(updates);
   if (keys.length) {
-    await touchStore(c, env, product.store_id as string);
     await run(
       env,
       `UPDATE products SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
       ...keys.map((k) => updates[k]),
       product.id
     );
+    // Write first, THEN purge: purging before the write lets a concurrent
+    // cache miss re-serve the stale payload for the full TTL.
+    await touchStore(c, env, product.store_id as string);
+    if (updates.image_url !== undefined && updates.image_url !== product.image_url) {
+      await deleteImage(env, product.image_url); // orphaned R2 object otherwise
+    }
   }
   return json(c, 200, { product: productJson((await first(env, PRODUCT_JOIN, product.id))!) });
 });
@@ -257,18 +283,27 @@ app.post('/products/:id/locations', requireAuth, async (c) => {
   const x = num(body?.x);
   const y = num(body?.y);
   if (x === undefined || y === undefined) return badRequest(c, 'x and y are required');
+  const rot = num(body?.rot) ?? 0;
+  // The shelf the product was pinned to — persisted in meta so the editor's
+  // "a persisted meta.shelfId wins" owner derivation survives reloads.
+  const shelfId =
+    typeof body?.shelfId === 'string' && body.shelfId.trim() ? body.shelfId.trim().slice(0, 64) : null;
+  const meta = JSON.stringify(shelfId ? { shelfId } : {});
   // One pin per product per floor: moving it updates the existing pin.
   const existing = await first(env, 'SELECT * FROM product_locations WHERE product_id = ? AND floor_id = ?', product.id, floor.id);
-  const rot = num(body?.rot) ?? 0;
   let id: string;
   if (existing) {
-    await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ? WHERE id = ?', x, y, rot, existing.id);
+    await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?', x, y, rot, meta, existing.id);
     id = existing.id as string;
   } else {
     id = newId();
-    await run(env, 'INSERT INTO product_locations (id, product_id, floor_id, x, y, rot) VALUES (?, ?, ?, ?, ?, ?)', id, product.id, floor.id, x, y, rot);
+    await run(
+      env,
+      'INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id, product.id, floor.id, x, y, rot, meta
+    );
   }
-  return json(c, 201, { location: await first(env, 'SELECT * FROM product_locations WHERE id = ?', id) });
+  return json(c, 201, { location: locationJson((await first(env, 'SELECT * FROM product_locations WHERE id = ?', id))!) });
 });
 
 app.delete('/locations/:id', requireAuth, async (c) => {
@@ -280,7 +315,8 @@ app.delete('/locations/:id', requireAuth, async (c) => {
      JOIN stores s ON s.id = p.store_id WHERE l.id = ?`,
     String(c.req.param('id'))
   );
-  if (!row || !(await roleForStore(env, c.get('user').id, String(row.store_id)))) return badRequest(c, 'Location not found');
+  const role = row ? await roleForStore(env, c.get('user').id, String(row.store_id)) : null;
+  if (!row || !role || !roleAtLeast(role, 'stock')) return notFound(c, 'Location not found');
   await run(env, 'DELETE FROM product_locations WHERE id = ?', row.id);
   return json(c, 200, { ok: true });
 });

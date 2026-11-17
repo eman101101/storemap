@@ -5,6 +5,7 @@ import { all, first, run } from '../db';
 import { json, badRequest } from '../http';
 import { cachedJson } from '../cache';
 import { ftsExpression } from '../search';
+import { locationJson } from './catalog';
 
 const app = new Hono<AppEnv>();
 
@@ -62,12 +63,12 @@ async function publicStorePayload(env: Env, slug: string) {
   );
   const locations = await all(
     env,
-    `SELECT l.id, l.product_id, l.floor_id, l.x, l.y
+    `SELECT l.id, l.product_id, l.floor_id, l.x, l.y, l.meta
      FROM product_locations l JOIN products p ON p.id = l.product_id
      WHERE p.store_id = ?`,
     store.id
   );
-  return { store: pub, floors, elements, categories, products, locations };
+  return { store: pub, floors, elements, categories, products, locations: locations.map(locationJson) };
 }
 
 app.get('/stores/:slug', async (c) => {

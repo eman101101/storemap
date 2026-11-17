@@ -1,4 +1,5 @@
 /** Small HTTP helpers shared by all routes. */
+import { config } from '../config.js';
 
 export function sendJson(res, status, body) {
   res.status(status).type('application/json').send(JSON.stringify(body));
@@ -28,14 +29,14 @@ export function setCookie(res, name, value, { maxAge, httpOnly = true, path = '/
   let cookie = `${name}=${encodeURIComponent(value)}; Path=${path}; SameSite=Lax`;
   if (httpOnly) cookie += '; HttpOnly';
   if (maxAge !== undefined) cookie += `; Max-Age=${maxAge}`;
+  if (config.cookieSecure) cookie += '; Secure';
   res.setHeader('Set-Cookie', [...(res.getHeader('Set-Cookie') || []), cookie]);
 }
 
 export function clearCookie(res, name) {
-  res.setHeader('Set-Cookie', [
-    ...(res.getHeader('Set-Cookie') || []),
-    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`,
-  ]);
+  let cookie = `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+  if (config.cookieSecure) cookie += '; Secure';
+  res.setHeader('Set-Cookie', [...(res.getHeader('Set-Cookie') || []), cookie]);
 }
 
 /** Wrap an async express handler so rejections hit the error middleware. */

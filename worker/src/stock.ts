@@ -44,15 +44,27 @@ export async function setStock(
   quantity: number,
   opts: { reason?: string; source?: string } = {}
 ): Promise<Record<string, unknown> | null> {
-  const level = await first(
-    env,
-    `SELECT sl.quantity FROM stock_levels sl JOIN products p ON p.id = sl.product_id
-     WHERE sl.product_id = ? AND p.store_id = ?`,
-    String(productId), String(storeId)
-  );
-  const current = Number(level?.quantity ?? 0);
   if (!Number.isFinite(Number(quantity))) throw new Error('quantity must be a number');
-  return adjustStock(env, storeId, productId, Number(quantity) - current, opts);
+  const product = await first(env, 'SELECT id FROM products WHERE id = ? AND store_id = ?', String(productId), String(storeId));
+  if (!product) return null;
+  const q = Number(quantity);
+  // The delta is computed from the row's own quantity INSIDE the batch —
+  // reading the current level beforehand lets two concurrent sets derive
+  // from the same stale baseline. Batch statements run sequentially, so the
+  // movement's `? - quantity` sees the pre-update value.
+  const results = await env.DB.batch([
+    stmt(env, 'INSERT OR IGNORE INTO stock_levels (product_id, quantity) VALUES (?, 0)', product.id),
+    stmt(
+      env,
+      `INSERT INTO stock_movements (id, product_id, delta, resulting_quantity, reason, source)
+       SELECT ?, ?, ? - quantity, ?, ?, ? FROM stock_levels WHERE product_id = ?`,
+      newId(), product.id, q, q, String(opts.reason ?? '').slice(0, 200), String(opts.source ?? '').slice(0, 40), product.id
+    ),
+    stmt(env, `UPDATE stock_levels SET quantity = ?, updated_at = datetime('now') WHERE product_id = ?`, q, product.id),
+    stmt(env, 'SELECT * FROM stock_levels WHERE product_id = ?', product.id),
+  ]);
+  const selectResult = results[results.length - 1] as unknown as { results?: Record<string, unknown>[] };
+  return selectResult.results?.[0] ?? null;
 }
 
 /** All stock levels for a store, joined with product info. */
@@ -97,40 +109,62 @@ export async function upsertProduct(
   const barcode = s(input.barcode, 60);
   const name = s(input.name);
   if (!name && !sku && !barcode) return null;
-
-  let existing: Record<string, unknown> | null = null;
-  if (sku) existing = await first(env, 'SELECT * FROM products WHERE store_id = ? AND sku = ?', storeId, sku);
-  if (!existing && barcode)
-    existing = await first(env, 'SELECT * FROM products WHERE store_id = ? AND barcode = ?', storeId, barcode);
-  if (!existing && name && !sku && !barcode)
-    existing = await first(env, 'SELECT * FROM products WHERE store_id = ? AND name = ? AND sku = ?', storeId, name, '');
+  const price =
+    Number.isFinite(Number(input.price)) && input.price !== null && input.price !== '' ? Number(input.price) : null;
 
   let product: Record<string, unknown>;
   let created = false;
-  if (existing) {
+  if (sku) {
+    // Atomic SKU upsert on the UNIQUE(store_id, sku) partial index
+    // (migration 010) — the old check-then-insert let concurrent imports
+    // duplicate a SKU. SQLite requires the index's WHERE clause repeated in
+    // the conflict target for a partial index.
+    const before = await first(env, 'SELECT id FROM products WHERE store_id = ? AND sku = ?', storeId, sku);
+    if (!before && !name) return null;
     await run(
       env,
-      `UPDATE products SET
+      `INSERT INTO products (id, store_id, name, brand, sku, barcode, price) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (store_id, sku) WHERE sku IS NOT NULL AND sku != ''
+       DO UPDATE SET
          name = COALESCE(NULLIF(?, ''), name),
          brand = COALESCE(NULLIF(?, ''), brand),
-         price = ?, updated_at = datetime('now')
-       WHERE id = ?`,
-      name,
-      s(input.brand, 100),
-      Number.isFinite(Number(input.price)) && input.price !== null && input.price !== '' ? Number(input.price) : existing.price,
-      existing.id
+         price = COALESCE(?, price),
+         updated_at = datetime('now')`,
+      newId(), storeId, name, s(input.brand, 100), sku, barcode, price,
+      name, s(input.brand, 100), price
     );
-    product = (await first(env, 'SELECT * FROM products WHERE id = ?', existing.id))!;
+    product = (await first(env, 'SELECT * FROM products WHERE store_id = ? AND sku = ?', storeId, sku))!;
+    created = !before;
   } else {
-    if (!name) return null;
-    const id = newId();
-    await run(
-      env,
-      `INSERT INTO products (id, store_id, name, brand, sku, barcode, price) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      id, storeId, name, s(input.brand, 100), sku, barcode, Number(input.price) || null
-    );
-    product = (await first(env, 'SELECT * FROM products WHERE id = ?', id))!;
-    created = true;
+    // No SKU to key on — fall back to barcode, then a name-only match.
+    let existing: Record<string, unknown> | null = null;
+    if (barcode) existing = await first(env, 'SELECT * FROM products WHERE store_id = ? AND barcode = ?', storeId, barcode);
+    if (!existing && name) existing = await first(env, 'SELECT * FROM products WHERE store_id = ? AND name = ? AND sku = ?', storeId, name, '');
+    if (existing) {
+      await run(
+        env,
+        `UPDATE products SET
+           name = COALESCE(NULLIF(?, ''), name),
+           brand = COALESCE(NULLIF(?, ''), brand),
+           price = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+        name,
+        s(input.brand, 100),
+        price ?? existing.price,
+        existing.id
+      );
+      product = (await first(env, 'SELECT * FROM products WHERE id = ?', existing.id))!;
+    } else {
+      if (!name) return null;
+      const id = newId();
+      await run(
+        env,
+        `INSERT INTO products (id, store_id, name, brand, sku, barcode, price) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        id, storeId, name, s(input.brand, 100), sku, barcode, price
+      );
+      product = (await first(env, 'SELECT * FROM products WHERE id = ?', id))!;
+      created = true;
+    }
   }
 
   let level: Record<string, unknown> | null = null;

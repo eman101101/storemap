@@ -45,16 +45,67 @@ export interface ShelfLayout {
 }
 
 const DEFAULT_BAY_WIDTH = 1.25; // metres of shelf per bay
-const DEFAULT_LEVELS = 3;
+export const DEFAULT_LEVELS = 4;
+export const DEFAULT_SHELF_HEIGHT = 1.5; // m — typical grocery gondola (1.2–1.8 m range)
+export const MIN_SHELF_HEIGHT = 0.3;
+export const MAX_SHELF_HEIGHT = 3;
 const DEFAULT_FACING = 0.32; // metres per product facing
+/** Default drawn size of a product facing on a shelf face (m). */
+export const DEFAULT_ITEM_H = 0.24;
+export const DEFAULT_ITEM_W = 0.2;
+const MIN_ITEM = 0.05;
+const MAX_ITEM = 1.2;
 
-function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number } {
+function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number; height?: number; itemH?: number; itemW?: number } {
   try {
     const m = JSON.parse(el.meta || '{}');
     return typeof m === 'object' && m !== null ? m : {};
   } catch {
     return {};
   }
+}
+
+/** Row count (levels) a shelf renders and plans with — meta override clamped to 1..8, else the default. */
+export function shelfLevels(el: MapElement): number {
+  return clampInt(shelfMeta(el).levels, 1, 8) ?? DEFAULT_LEVELS;
+}
+
+/** Extrusion height of a shelf (m) — meta override clamped, else the default. */
+export function shelfHeight(el: MapElement): number {
+  return clampNum(shelfMeta(el).height, MIN_SHELF_HEIGHT, MAX_SHELF_HEIGHT) ?? DEFAULT_SHELF_HEIGHT;
+}
+
+/** Drawn product-facing size on a shelf (m): height and length along the shelf. */
+export function shelfItemSize(el: MapElement): { h: number; w: number } {
+  const m = shelfMeta(el);
+  return {
+    h: clampNum(m.itemH, MIN_ITEM, MAX_ITEM) ?? DEFAULT_ITEM_H,
+    w: clampNum(m.itemW, MIN_ITEM, MAX_ITEM) ?? DEFAULT_ITEM_W,
+  };
+}
+
+/**
+ * Board geometry shared by the 3D renderer and the stocking facings, so painted
+ * boards and product squares always line up: a base plinth, then `rows` board
+ * lines evenly spaced up to a small top margin under the cap. `zs` are the
+ * painted board lines (shadow strips); `stand` are the surface heights product
+ * facings stand on — one band below each line, so the bottom band (above the
+ * plinth) is used and nothing rises past the top board.
+ */
+export function boardGeometry(height: number, rows: number): { plinth: number; zs: number[]; stand: number[]; gapH: number } {
+  const h = Math.max(height, MIN_SHELF_HEIGHT);
+  const n = Math.min(8, Math.max(1, Math.round(rows)));
+  const plinth = Math.min(0.14, h * 0.12);
+  const spacing = (h - plinth - 0.06) / n;
+  const zs = Array.from({ length: n }, (_, i) => plinth + (i + 1) * spacing);
+  const stand = [plinth, ...zs.slice(0, -1)];
+  const gapH = Math.min(0.14, Math.max(0.04, spacing * 0.3));
+  return { plinth, zs, stand, gapH };
+}
+
+/** Surface heights (m) a shelf's product facings stand on — one per row. */
+export function shelfBoardZs(el: MapElement): number[] {
+  return boardGeometry(shelfHeight(el), shelfLevels(el)).stand;
 }
 
 /** Inverse-rotate a world point into the shelf's local frame, relative to its top-left rect corner. */
@@ -91,7 +142,7 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
   const width = Math.max(r.w, 0.1);
   const depth = Math.max(r.h, 0.1);
   const bayCount = clampInt(meta.bays, 1, 40) ?? Math.max(1, Math.round(width / DEFAULT_BAY_WIDTH));
-  const levelCount = clampInt(meta.levels, 1, 12) ?? DEFAULT_LEVELS;
+  const levelCount = shelfLevels(shelf);
   const facing = clampNum(meta.facing, 0.05, 3) ?? DEFAULT_FACING;
 
   const inside: ShelfPin[] = [];

@@ -4,6 +4,7 @@ import type { AppEnv, Env } from '../config';
 import { saveImage } from '../storage';
 import { json, badRequest, rateLimit } from '../http';
 import { requireAuth } from '../session';
+import { ownedStore } from '../ownership';
 
 const app = new Hono<AppEnv>();
 
@@ -22,12 +23,30 @@ const limiter = rateLimit({ windowMs: 60_000, max: 20 });
 app.post('/', requireAuth, limiter, async (c) => {
   const env = c.env as Env;
   const cfg = c.get('config');
-  // Raw-body upload avoids multipart parsing: the client POSTs the file bytes directly.
-  const type = (c.req.header('content-type') || '').split(';')[0].trim();
+  // Uploads are store-scoped: pass the target store as ?store=<id>, or as a
+  // `store` field in a multipart body (the image rides along as another part).
+  let storeId = c.req.query('store');
+  let type = (c.req.header('content-type') || '').split(';')[0].trim();
+  let buf: Uint8Array | null = null;
+  if (type === 'multipart/form-data') {
+    const form = await c.req.parseBody();
+    for (const [field, value] of Object.entries(form)) {
+      if (field === 'store') storeId = String(value);
+      else if (value instanceof File) {
+        buf = new Uint8Array(await value.arrayBuffer());
+        type = value.type || '';
+      }
+    }
+  } else {
+    buf = new Uint8Array(await c.req.arrayBuffer());
+  }
+  if (!storeId) return badRequest(c, 'Missing field: store');
+  const store = await ownedStore(c, env, storeId); // needs role ≥ stock
+  if (store instanceof Response) return store;
+
   const spec = ALLOWED[type];
   if (!spec) return badRequest(c, 'Only PNG, JPEG or WebP images are accepted');
-  const buf = new Uint8Array(await c.req.arrayBuffer());
-  if (!buf.length) return badRequest(c, 'Empty upload');
+  if (!buf || !buf.length) return badRequest(c, 'Empty upload');
   if (buf.length > cfg.maxUploadBytes) return badRequest(c, 'Image exceeds 10 MB limit');
   if (!spec.magic(buf)) return badRequest(c, 'File content does not match its image type');
 

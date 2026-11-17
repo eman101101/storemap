@@ -38,7 +38,9 @@ export async function saveImage(buf, ext) {
  * names are unique UUIDs, so bytes never change under a given URL.
  */
 export async function sendImage(res, name) {
-  if (!/^[A-Za-z0-9._-]+$/.test(name)) return false; // no path tricks
+  // saveImage only ever writes <uuid>.png/.jpg/.webp — anything else (…, `.`,
+  // `..`, null bytes) is refused before it can resolve to a directory.
+  if (!/^[A-Za-z0-9_-]+\.(png|jpe?g|webp)$/.test(name)) return false; // no path tricks
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
   const contentType = CONTENT_TYPES[path.extname(name).toLowerCase()];
   if (contentType) res.set('Content-Type', contentType);
@@ -46,8 +48,20 @@ export async function sendImage(res, name) {
   const local = path.join(config.uploadsDir, name);
   if (fs.existsSync(local)) {
     const stat = await fsp.stat(local);
+    if (!stat.isFile()) return false; // e.g. a directory — nothing to serve
     res.writeHead(200, { 'Content-Length': stat.size });
-    fs.createReadStream(local).pipe(res);
+    const stream = fs.createReadStream(local);
+    // A failed open/read must answer, not crash the process (pipe forwards nothing).
+    stream.on('error', (err) => {
+      console.error('serve upload failed:', err);
+      if (!res.headersSent) {
+        res.removeHeader('Content-Length');
+        res.status(500).end();
+      } else {
+        res.destroy();
+      }
+    });
+    stream.pipe(res);
     return true;
   }
 

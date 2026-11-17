@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { handler, sendJson, badRequest } from '../lib/http.js';
 import { edgeCache } from '../lib/cdn.js';
 import { ftsExpression } from '../lib/search.js';
+import { locationJson } from './catalog.js';
 
 const router = Router();
 
@@ -64,12 +65,12 @@ function publicStorePayload(slug) {
     .all(store.id);
   const locations = db
     .prepare(
-      `SELECT l.id, l.product_id, l.floor_id, l.x, l.y
+      `SELECT l.id, l.product_id, l.floor_id, l.x, l.y, l.meta
        FROM product_locations l JOIN products p ON p.id = l.product_id
        WHERE p.store_id = ?`
     )
     .all(store.id);
-  return { store: pub, floors, elements, categories, products, locations };
+  return { store: pub, floors, elements, categories, products, locations: locations.map(locationJson) };
 }
 
 router.get('/stores/:slug', handler(async (req, res) => {

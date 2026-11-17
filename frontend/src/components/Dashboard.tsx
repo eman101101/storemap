@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api } from '../api';
 import { useAuth } from '../App';
-import { Modal, Field } from './ui';
+import { Modal, Field, copyToClipboard } from './ui';
 import { TeamModal } from './Team';
 import type { StoreSummary } from '../types';
 
@@ -118,21 +118,36 @@ function StoreCard({ store, onChanged, onQR, onTeam }: { store: StoreSummary; on
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [error, setError] = useState('');
   const publicUrl = `${window.location.origin}/s/${store.slug}`;
 
   const togglePublic = async () => {
-    await api.updateStore(store.id, { is_public: !store.is_public });
-    onChanged();
+    try {
+      await api.updateStore(store.id, { is_public: !store.is_public });
+      setError('');
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update the store');
+    }
   };
   const remove = async () => {
-    await api.deleteStore(store.id);
-    setConfirming(false);
-    onChanged();
+    try {
+      await api.deleteStore(store.id);
+      setError('');
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete the store');
+    } finally {
+      setConfirming(false);
+    }
   };
   const copy = async () => {
-    await navigator.clipboard.writeText(publicUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (await copyToClipboard(publicUrl)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } else {
+      setError('Could not copy the link — select it and copy manually.');
+    }
   };
 
   const accent = ACCENTS[[...store.id].reduce((a, c) => a + c.charCodeAt(0), 0) % ACCENTS.length];
@@ -149,6 +164,7 @@ function StoreCard({ store, onChanged, onQR, onTeam }: { store: StoreSummary; on
         </span>
       </div>
       <div className="store-card-body">
+        {error && <div className="error-note">{error}</div>}
         <div className="row-between">
           <h3>{store.name}</h3>
           <label className="toggle" title={store.is_public ? 'Visible to shoppers' : 'Hidden from shoppers'}>
@@ -183,7 +199,10 @@ function StoreCard({ store, onChanged, onQR, onTeam }: { store: StoreSummary; on
               setCopying(true);
               try {
                 await api.duplicateStore(store.id);
+                setError('');
                 onChanged();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Could not duplicate the store');
               } finally {
                 setCopying(false);
               }
@@ -261,9 +280,21 @@ function CreateStoreModal({
 /** D2: store health checklist — tells owners what "done" looks like. */
 function StoreChecklist({ store }: { store: StoreSummary }) {
   const prods = store.product_count ?? 0;
+  // the entrance marker lives in the element rows, not the summary — fetch
+  // the full payload once per card; null = unknown (fetch pending or failed)
+  const [hasEntrance, setHasEntrance] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.storeFull(store.id)
+      .then((r) => live && setHasEntrance(r.elements.some((e) => e.type === 'entrance')))
+      .catch(() => live && setHasEntrance(null));
+    return () => {
+      live = false;
+    };
+  }, [store.id]);
   const items: [string, boolean][] = [
     ['Map drawn', (store.floor_count ?? 0) >= 1],
-    ['Entrance placed', true],
+    ['Entrance placed', hasEntrance === true],
     ['Products pinned', prods >= 10],
     ['Published', store.is_public],
   ];

@@ -9,6 +9,8 @@
 import type { Floor, MapElement, RectGeom, PointGeom } from '../types';
 import { polyPoints, polyMidpoint, rectCorners, type WorldPt } from './geometry';
 import { TYPE_COLOR, TYPE_STROKE } from './mapColors';
+import { boardGeometry, shelfLevels, MIN_SHELF_HEIGHT, MAX_SHELF_HEIGHT } from './shelfLayout';
+import { placeGlyph } from './placeSymbols';
 
 export interface V3 {
   x: number;
@@ -36,6 +38,21 @@ const TYPE_HEIGHT: Record<string, number> = {
   aisle: 0.04,
 };
 
+/**
+ * Extrusion height of an element (m): a meta.height override clamped to a sane
+ * fixture range (works for walls too), else the type default. Shelves default
+ * to 1.5 m — a typical grocery gondola runs 1.2–1.8 m, wall units to ~2.4 m.
+ */
+export function elementHeight(el: MapElement): number {
+  try {
+    const v = Number(JSON.parse(el.meta || '{}')?.height);
+    if (Number.isFinite(v)) return Math.min(MAX_SHELF_HEIGHT, Math.max(MIN_SHELF_HEIGHT, v));
+  } catch {
+    /* fall through to the type default */
+  }
+  return TYPE_HEIGHT[el.type] ?? 0;
+}
+
 export interface Face {
   pts: V3[];
   fill?: string; // pre-shaded css color
@@ -47,6 +64,10 @@ export interface Face {
 }
 
 export const NEAR = 0.25; // near plane, meters
+
+/** Camera distance clamp (m) shared by wheel/pinch zoom and the camera pad. */
+export const DIST_MIN = 3;
+export const DIST_MAX = 160;
 
 export interface CamPt {
   x1: number;
@@ -191,7 +212,8 @@ export function pathSampler(points: WorldPt[]) {
 
 /* ---------------- colors ---------------- */
 
-export function shade(hex: string, mult: number): string {
+/** Scale a hex color's channels by `mult` (multiplicative darken/lighten). */
+export function scaleColor(hex: string, mult: number): string {
   const n = parseInt(hex.slice(1), 16);
   const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v * mult)));
   const r = ch((n >> 16) & 255);
@@ -248,7 +270,7 @@ function lit(normal: V3, base: string, theme: MapTheme = MODERN_THEME, extra = 1
   const l =
     Math.abs(normal.x * theme.light.x + normal.y * theme.light.y + normal.z * theme.light.z) /
     Math.hypot(normal.x, normal.y, normal.z);
-  return shade(base, (theme.ambient + theme.diffuse * l) * extra);
+  return scaleColor(base, (theme.ambient + theme.diffuse * l) * extra);
 }
 
 /** Flat-shaded box: side quads + top, from 4 base corners (world, y-down) and a height.
@@ -287,6 +309,69 @@ export function boxFaces(
     const j = (i + 1) % base.length;
     const n = { x: b[j].y - b[i].y, y: -(b[j].x - b[i].x), z: 0 }; // outward for CW bases in y-down coords
     faces.push({ pts: [wt[i], wt[j], b[j], b[i]], fill: lit(n, color, theme, 0.94), alpha });
+  }
+  return faces;
+}
+
+/** Painted strips stand this far off the side plane (m) so the BSP strictly
+ *  orders them after the face they sit on — same trick as the stocking
+ *  facings' 0.045 m stand-off and the 1 mm wall-shortening under the cap. */
+const STRIP_OFF_M = 0.003;
+
+/**
+ * Solid box + painted shelf rows: dark horizontal strips (the shadow gaps
+ * under each board, plus a plinth band) on the two long side faces make the
+ * extrusion read as an open gondola from any angle — a handful of extra
+ * near-coplanar faces instead of real board geometry. End caps stay solid,
+ * like a real shelf's side panels.
+ */
+export function shelfFaces(
+  base: WorldPt[],
+  height: number,
+  color: string,
+  rows: number,
+  theme: MapTheme = MODERN_THEME
+): Face[] {
+  const faces = boxFaces(base, height, color, 1, theme);
+  if (height < MIN_SHELF_HEIGHT || rows < 1) return faces;
+  const { plinth, zs, gapH } = boardGeometry(height, rows);
+  const strip = scaleColor(color, 0.48);
+  const plinthFill = scaleColor(color, 0.62);
+  const cx = base.reduce((a, p) => a + p.x / base.length, 0);
+  const cy = base.reduce((a, p) => a + p.y / base.length, 0);
+  let maxLen = 0;
+  for (let i = 0; i < base.length; i++) {
+    const a = base[i]!;
+    const b = base[(i + 1) % base.length]!;
+    maxLen = Math.max(maxLen, Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  for (let i = 0; i < base.length; i++) {
+    const a = base[i]!;
+    const b = base[(i + 1) % base.length]!;
+    if (Math.hypot(b.x - a.x, b.y - a.y) < maxLen * 0.9) continue; // end caps stay solid
+    let nx = b.y - a.y;
+    let ny = -(b.x - a.x);
+    const mx = (a.x + b.x) / 2 - cx;
+    const my = (a.y + b.y) / 2 - cy;
+    if (nx * mx + ny * my < 0) {
+      nx = -nx;
+      ny = -ny; // orient outward
+    }
+    const len = Math.hypot(nx, ny) || 1;
+    const ox = (nx / len) * STRIP_OFF_M;
+    const oy = (ny / len) * STRIP_OFF_M;
+    const band = (z0: number, z1: number, fill: string) =>
+      faces.push({
+        pts: [
+          { x: a.x + ox, y: a.y + oy, z: z1 },
+          { x: b.x + ox, y: b.y + oy, z: z1 },
+          { x: b.x + ox, y: b.y + oy, z: z0 },
+          { x: a.x + ox, y: a.y + oy, z: z0 },
+        ],
+        fill,
+      });
+    band(0, plinth, plinthFill); // base plinth
+    for (const z of zs) band(z - gapH, z, strip); // shadow gap under each board
   }
   return faces;
 }
@@ -341,7 +426,7 @@ export function routeFaces(route: WorldPt[], theme: MapTheme = MODERN_THEME): Fa
 }
 
 function polyPrism(el: MapElement, pts: WorldPt[], height: number, theme: MapTheme = MODERN_THEME): Face[] {
-  const base = shade(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
+  const base = scaleColor(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
   if (height <= 0.12) {
     // flat decal (zone tint) — above the floor tiles so tiling can't cover it
     return [{ pts: pts.map((p) => ({ x: p.x, y: p.y, z: height })), fill: base, alpha: 0.35, layer: 0.5 }];
@@ -414,8 +499,41 @@ export function subdivideFaces(faces: Face[]): Face[] {
   return out;
 }
 
+/** Half-width (m) of a polyline wall's footprint — shared by rendering and
+ *  picking so a wall is picked exactly where it is drawn. */
+export const WALL_HALF_WIDTH = 0.11;
+
 /** All drawable faces for a floor: slab + grid (layer 0), decals (layer 0.5) and extruded elements (layer 2). */
-export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: MapTheme = MODERN_THEME): Face[] {
+/**
+ * Shelf detail level: 'full' paints the board strips/plinth on shelf faces;
+ * 'solid' draws plain boxes (silhouette LOD — at far zoom the strips are
+ * sub-pixel noise and thousands of band faces cost fill rate for nothing).
+ */
+export type ShelfDetail = 'full' | 'solid';
+
+/**
+ * Camera-distance thresholds (m) for the shelf-detail LOD. The painted bands
+ * are ~0.04–0.06 m tall, so past solidBeyond they cover well under a pixel;
+ * the ~25% hysteresis band is far wider than one wheel-notch zoom (~8% of
+ * dist) or pinch jitter, so a camera resting near the boundary can't flap the
+ * scene geometry (each flip rebuilds the scene faces + BSP).
+ */
+export const SHELF_LOD = { solidBeyond: 45, fullBelow: 34 } as const;
+
+/** Hysteresis switch: go 'solid' past solidBeyond, back to 'full' only below
+ *  fullBelow; anywhere in between holds the current level. */
+export function shelfDetailForDist(dist: number, current: ShelfDetail): ShelfDetail {
+  if (current === 'full' && dist >= SHELF_LOD.solidBeyond) return 'solid';
+  if (current === 'solid' && dist <= SHELF_LOD.fullBelow) return 'full';
+  return current;
+}
+
+export function buildSceneFaces(
+  floor: Floor,
+  elements: MapElement[],
+  theme: MapTheme = MODERN_THEME,
+  opts: { shelfDetail?: ShelfDetail } = {}
+): Face[] {
   const faces: Face[] = [];
   const w = floor.width_m;
   const h = floor.height_m;
@@ -453,10 +571,10 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: Map
   }
 
   for (const el of elements) {
-    const color = shade(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
+    const color = scaleColor(el.color || TYPE_COLOR[el.type], theme.fixtureShade);
     if (el.shape === 'rect') {
       const r = el.geom as RectGeom;
-      const height = TYPE_HEIGHT[el.type] ?? 0;
+      const height = elementHeight(el);
       if (r.w <= 0 || r.h <= 0) continue;
       if (height <= 0.12) {
         faces.push({
@@ -465,12 +583,14 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: Map
           alpha: el.type === 'zone' ? 0.35 : 1,
           layer: 0.5,
         });
+      } else if (el.type === 'shelf' && opts.shelfDetail !== 'solid') {
+        faces.push(...shelfFaces(rectCorners(r), height, color, shelfLevels(el), theme));
       } else {
         faces.push(...boxFaces(rectCorners(r), height, color, 1, theme));
       }
     } else if (el.shape === 'polygon') {
       const pts = polyPoints(el);
-      if (pts.length >= 3) faces.push(...polyPrism(el, pts, TYPE_HEIGHT[el.type] ?? 0, theme));
+      if (pts.length >= 3) faces.push(...polyPrism(el, pts, elementHeight(el), theme));
     } else if (el.shape === 'polyline') {
       const pts = polyPoints(el);
       if (el.type === 'wall') {
@@ -481,15 +601,15 @@ export function buildSceneFaces(floor: Floor, elements: MapElement[], theme: Map
           const dy = b.y - a.y;
           const len = Math.hypot(dx, dy);
           if (len < 1e-6) continue;
-          const nx = (-dy / len) * 0.11;
-          const ny = (dx / len) * 0.11;
+          const nx = (-dy / len) * WALL_HALF_WIDTH;
+          const ny = (dx / len) * WALL_HALF_WIDTH;
           const base = [
             { x: a.x + nx, y: a.y + ny },
             { x: b.x + nx, y: b.y + ny },
             { x: b.x - nx, y: b.y - ny },
             { x: a.x - nx, y: a.y - ny },
           ];
-          faces.push(...boxFaces(base, TYPE_HEIGHT.wall, color, 1, theme));
+          faces.push(...boxFaces(base, elementHeight(el), color, 1, theme));
         }
       } else {
         // aisle / route-like marking: flat ribbon
@@ -571,7 +691,7 @@ function splitFaceByPlane(f: Face, axis: 0 | 1 | 2, value: number): [Face[], Fac
  * faces in arbitrary order — the bug where a stock block behind a shelf drew
  * over its cap came from exactly such an unordered leaf.
  */
-export const MAX_BSP_DEPTH = 40;
+export const MAX_BSP_DEPTH = 64;
 
 export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
   if (faces.length === 0) return null;
@@ -631,7 +751,13 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
       flo = Math.min(flo, v);
       fhi = Math.max(fhi, v);
     }
-    if (fhi <= split + 1e-9) below.push(f);
+    if (flo >= split - 1e-9 && fhi <= split + 1e-9) {
+      // coplanar with the splitter (e.g. a shelf's item squares all lying in
+      // the face plane): they can't occlude each other, so they join the node
+      // instead of chaining the recursion one face per level — deep chains
+      // blew past the depth cap and left camera-dependent misordering
+      onPlane.push(f);
+    } else if (fhi <= split + 1e-9) below.push(f);
     else if (flo >= split - 1e-9) above.push(f);
     else {
       const [loFaces, hiFaces] = splitFaceByPlane(f, axis, split);
@@ -701,7 +827,7 @@ export function buildSceneBSP(faces: Face[]): LayeredBSP[] {
 
 /** Footprint corners + extrusion height for outline drawing (null for points). */
 function elementFootprint(el: MapElement): { base: WorldPt[]; h: number } | null {
-  const h = TYPE_HEIGHT[el.type] ?? 0;
+  const h = elementHeight(el);
   if (el.shape === 'rect') {
     return { base: rectCorners(el.geom as RectGeom), h: Math.max(h, 0.12) };
   }
@@ -714,7 +840,6 @@ function elementFootprint(el: MapElement): { base: WorldPt[]; h: number } | null
 
 /** Convex base polygons the element's 3D body occupies (walls: one per segment). */
 function footprintSegments(el: MapElement): WorldPt[][] {
-  const h = Math.max(TYPE_HEIGHT[el.type] ?? 0, 0.12);
   if (el.shape === 'rect') return [rectCorners(el.geom as RectGeom)];
   if (el.shape === 'polygon') return [polyPoints(el)];
   if (el.shape === 'polyline') {
@@ -725,8 +850,8 @@ function footprintSegments(el: MapElement): WorldPt[][] {
       const b = pts[i];
       const len = Math.hypot(b.x - a.x, b.y - a.y);
       if (len < 1e-6) continue;
-      const nx = (-(b.y - a.y) / len) * 0.11;
-      const ny = ((b.x - a.x) / len) * 0.11;
+      const nx = (-(b.y - a.y) / len) * WALL_HALF_WIDTH;
+      const ny = ((b.x - a.x) / len) * WALL_HALF_WIDTH;
       out.push([
         { x: a.x + nx, y: a.y + ny },
         { x: b.x + nx, y: b.y + ny },
@@ -734,7 +859,6 @@ function footprintSegments(el: MapElement): WorldPt[][] {
         { x: a.x - nx, y: a.y - ny },
       ]);
     }
-    void h;
     return out;
   }
   return [];
@@ -803,6 +927,10 @@ export function pickFixture(
   elements: MapElement[]
 ): { elementId: string; t: number } | null {
   const ray = screenRay(cam, w, h, sx, sy);
+  // the ray direction is unnormalized (its length ≈ focal length in px), so
+  // prism hits come back as ray parameters, not meters — scale them to true
+  // distances before comparing against point markers' camera-space depths
+  const dirLen = Math.hypot(ray.dx, ray.dy, ray.dz) || 1;
   let best: { elementId: string; t: number } | null = null;
   for (const el of elements) {
     if (el.shape === 'point') {
@@ -813,10 +941,10 @@ export function pickFixture(
       }
       continue;
     }
-    const h2 = Math.max(TYPE_HEIGHT[el.type] ?? 0, 0.12);
+    const h2 = Math.max(elementHeight(el), 0.12);
     for (const base of footprintSegments(el)) {
       const t = rayPrismT(ray, base, h2);
-      if (t !== null && (!best || t < best.t)) best = { elementId: el.id, t };
+      if (t !== null && (!best || t * dirLen < best.t)) best = { elementId: el.id, t: t * dirLen };
     }
   }
   return best;
@@ -834,10 +962,16 @@ export interface Pin3D {
   /** When set, the item is stocked on a shelf: the dot sits on that wall face. */
   ax?: number;
   ay?: number;
+  /** Anchor height (m) for the floating label/hit position — the shelf's top board. */
+  az?: number;
+  /** location id — returned in PinHit for precise hover targeting */
+  locId?: string;
 }
 
 export interface PinHit {
   productId: string;
+  /** location id (when the caller supplied one) — precise hover targeting */
+  locId?: string;
   sx: number;
   sy: number;
 }
@@ -862,6 +996,15 @@ export interface StockItem {
   nx: number; // outward normal of the shelf face at this spot
   ny: number;
   color: string;
+  /** the searched/selected product — its stack glows and grows slightly */
+  focused?: boolean;
+  /** the product under the cursor — subtler lift than a search focus */
+  hovered?: boolean;
+  /** board-top heights (m) the facings stand on — defaults to a fixed 4-level ladder */
+  zs?: number[];
+  /** facing size (m): height, and length along the shelf */
+  h?: number;
+  w?: number;
 }
 
 /** Eye position of the orbit camera in world space. */
@@ -928,24 +1071,34 @@ export function screenRay(cam: Camera3D, w: number, h: number, sx: number, sy: n
  *  blocks end up covered by the shelf's own front faces. */
 export function stockFaces(items: StockItem[], theme: MapTheme = MODERN_THEME): Face[] {
   const faces: Face[] = [];
-  const halfW = 0.45; // half-width along the face
-  const z0 = 0.32;
-  const z1 = 1.18;
-  const off = 0.04; // stand slightly proud of the wall
+  const off = 0.045; // stand slightly proud of the wall
   for (const it of items) {
     const tx = -it.ny;
     const ty = it.nx;
     const ox = it.x + it.nx * off;
     const oy = it.y + it.ny * off;
-    faces.push({
-      pts: [
-        { x: ox + tx * halfW, y: oy + ty * halfW, z: z1 },
-        { x: ox - tx * halfW, y: oy - ty * halfW, z: z1 },
-        { x: ox - tx * halfW, y: oy - ty * halfW, z: z0 },
-        { x: ox + tx * halfW, y: oy + ty * halfW, z: z0 },
-      ],
-      fill: shade(it.color, 0.92),
-    });
+    // one facing per board level; height/length come from the shelf's item size
+    const zs = it.zs ?? [0.28, 0.58, 0.88, 1.18];
+    const itemH = it.h ?? 0.24;
+    const grow = it.focused ? 1.3 : it.hovered ? 1.12 : 1;
+    const halfW = (grow * (it.w ?? 0.2)) / 2; // the searched item reads a touch longer
+    for (const z of zs) {
+      faces.push({
+        pts: [
+          { x: ox + tx * halfW, y: oy + ty * halfW, z: z + itemH },
+          { x: ox - tx * halfW, y: oy + ty * halfW, z: z + itemH },
+          { x: ox - tx * halfW, y: oy + ty * halfW, z },
+          { x: ox + tx * halfW, y: oy + ty * halfW, z },
+        ],
+        // focused item: strong glow; hovered: a gentle lift — both so the
+        // search result / cursor target pops off the shelf
+        fill: it.focused
+          ? scaleColor(it.color, 0.35)
+          : it.hovered
+            ? scaleColor(it.color, 0.62)
+            : scaleColor(it.color, 0.92),
+      });
+    }
   }
   return faces;
 }
@@ -1001,6 +1154,19 @@ export function renderScene(
     if (cams.some((c) => c.depth < NEAR)) vis = clipPolygonNear(cams);
     if (!vis || vis.length < 2) return null;
     const spts = vis.map((c) => camToScreen(c, w, h, fov));
+    // screen-space cull: skip the path+fill entirely for faces fully outside
+    // the canvas (a zoomed-in big-box scene keeps most of its faces off-screen)
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of spts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (maxX < -80 || minX > w + 80 || maxY < -80 || minY > h + 80) return null;
     return { face, spts, depth: vis.reduce((a, c) => a + c.depth, 0) / vis.length };
   };
 
@@ -1073,7 +1239,10 @@ export function renderScene(
     const top = project(cam, w, h, { x: g.x, y: g.y, z: 2.0 });
     if (!base || !top) continue;
     const c = el.color || TYPE_COLOR[el.type];
-    const glyph = el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★';
+    // common places read as symbols, not words — a matched glyph replaces the
+    // name label entirely (see placeSymbols)
+    const sym = placeGlyph(el.type, el.label);
+    const glyph = sym ?? (el.type === 'entrance' ? '⬆' : el.type === 'exit' ? '⬇' : '★');
     // ground disc anchors the marker to its spot on the floor
     ctx.beginPath();
     ctx.ellipse(base.x, base.y, 11, Math.max(11 * pitchSin, 2), 0, 0, Math.PI * 2);
@@ -1100,14 +1269,19 @@ export function renderScene(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(glyph, top.x, top.y + 0.5);
-    if (el.label) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.dark);
+    if (el.label && !sym) drawLabel(ctx, top.x + 16, top.y, el.label, 12, true, theme.dark);
   }
 
   // aisle symbols: floating disc above the aisle's midpoint; hovering it (see
   // AisleHit) shows what's stocked along the aisle
   for (const el of elements) {
-    if (el.type !== 'aisle' || el.shape !== 'polyline') continue;
-    const mid = polyMidpoint(polyPoints(el));
+    if (el.type !== 'aisle') continue;
+    let mid: { x: number; y: number } | null = null;
+    if (el.shape === 'polyline') mid = polyMidpoint(polyPoints(el));
+    else if (el.shape === 'rect') {
+      const r = el.geom as RectGeom;
+      mid = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    }
     if (!mid) continue;
     const base = project(cam, w, h, { x: mid.x, y: mid.y, z: 0.1 });
     const top = project(cam, w, h, { x: mid.x, y: mid.y, z: 2.3 });
@@ -1134,7 +1308,8 @@ export function renderScene(
     if (el.label) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
   }
 
-  // numbered trip stop markers (A1) — drawn above the route discs
+  // numbered trip stop markers (A1) — drawn above the route discs, each with
+  // its item's name so a multi-stop trip reads entirely from the map
   for (const [i, stop] of (input.tripStops ?? []).entries()) {
     const pr = project(cam, w, h, { x: stop.point.x, y: stop.point.y, z: 0.1 });
     if (!pr) continue;
@@ -1146,10 +1321,12 @@ export function renderScene(
     ctx.lineWidth = 2.5;
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = `700 11px 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i + 1), pr.x, pr.y + 0.5);
+    const name = stop.name.length > 24 ? `${stop.name.slice(0, 23)}…` : stop.name;
+    drawLabel(ctx, pr.x + 17, pr.y, `${name}`, 11, false, theme.dark);
   }
 
   // route endpoint markers
@@ -1159,57 +1336,18 @@ export function renderScene(
     drawFloorDisc(ctx, cam, w, h, goal, 0.5, ROUTE.ribbon, pitchSin);
   }
 
-  // product pins — stocked items render as a dot on the shelf's wall face
+  // product pins carry no drawn markers in 3D — the item squares on the shelf
+  // faces ARE the pins. This pass only keeps taps working and collects the
+  // searched item's floating label — it draws AFTER the element labels below,
+  // so the one you searched for sits in front of every other label.
+  const focusLabels: { x: number; y: number; text: string }[] = [];
   for (const pin of input.pins ?? []) {
     const ax = pin.ax ?? pin.x;
     const ay = pin.ay ?? pin.y;
-    const onShelf = pin.ax !== undefined && pin.ay !== undefined;
-    const px = onShelf ? ax : pin.x;
-    const py = onShelf ? ay : pin.y;
-    if (onShelf) {
-      const dot = project(cam, w, h, { x: px, y: py, z: 1.05 });
-      if (!dot) continue;
-      hits.pins.push({ productId: pin.productId, sx: dot.x, sy: dot.y });
-      const r = pin.focused ? 9 : 6.5;
-      ctx.beginPath();
-      ctx.arc(dot.x, dot.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = pin.color;
-      ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      if (pin.focused) {
-        drawFloorDisc(ctx, cam, w, h, { x: px, y: py }, 0.55, pin.color, pitchSin, true);
-        if (pin.label) drawLabel(ctx, dot.x, dot.y - 14, pin.label, 13, true, theme.dark);
-      }
-      continue;
-    }
-    const base = project(cam, w, h, { x: pin.x, y: pin.y, z: 0 });
-    if (!base) continue;
-    hits.pins.push({ productId: pin.productId, sx: base.x, sy: base.y });
-    // free-standing pin: pole clears the 1.5 m shelves so the marker stays visible
-    const poleH = pin.focused ? 2.6 : 2.1;
-    const top = project(cam, w, h, { x: pin.x, y: pin.y, z: poleH });
-    if (top) {
-      ctx.strokeStyle = shade(pin.color, 0.75);
-      ctx.lineWidth = pin.focused ? 3 : 2;
-      ctx.beginPath();
-      ctx.moveTo(base.x, base.y);
-      ctx.lineTo(top.x, top.y);
-      ctx.stroke();
-      const r = pin.focused ? 8.5 : 6.5;
-      ctx.beginPath();
-      ctx.arc(top.x, top.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = pin.color;
-      ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    if (pin.focused) {
-      drawFloorDisc(ctx, cam, w, h, { x: pin.x, y: pin.y }, 0.55, pin.color, pitchSin, true);
-      if (pin.label) drawLabel(ctx, top?.x ?? base.x, (top?.y ?? base.y) - 14, pin.label, 13, true, theme.dark);
-    }
+    const at = project(cam, w, h, { x: ax, y: ay, z: pin.az ?? 1.5 });
+    if (!at) continue;
+    hits.pins.push({ productId: pin.productId, locId: pin.locId, sx: at.x, sy: at.y });
+    if (pin.focused && pin.label) focusLabels.push({ x: at.x, y: at.y - 10, text: pin.label });
   }
 
   // element labels (zones/shelves/markers) — readable wayfinding
@@ -1218,30 +1356,56 @@ export function renderScene(
     for (const el of elements) {
       if (!el.label) continue;
       if (el.shape === 'point') continue; // markers label themselves next to the pole — a second pass would double them
+      if (el.type === 'wall') continue; // walls carry no floating labels in the 3D preview
       let c: WorldPt | null = null;
       let topZ = 0;
+      let rot = 0;
+      // shelf labels lie ON the floor: painted along the shelf's long axis as
+      // seen from this camera (flipped so they never read upside-down), at
+      // ground level — aisle signage on the tile, not pinned to the cap
+      const onFloor = el.type === 'shelf';
       if (el.shape === 'rect') {
         const r = el.geom as RectGeom;
         c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
-        topZ = TYPE_HEIGHT[el.type] ?? 0;
+        topZ = elementHeight(el);
+        if (onFloor) {
+          const a = (r.rot * Math.PI) / 180;
+          const long = r.w >= r.h ? a : a + Math.PI / 2;
+          const half = Math.max(r.w, r.h) / 2;
+          const p1 = project(cam, w, h, { x: c.x - Math.cos(long) * half, y: c.y - Math.sin(long) * half, z: 0.05 });
+          const p2 = project(cam, w, h, { x: c.x + Math.cos(long) * half, y: c.y + Math.sin(long) * half, z: 0.05 });
+          if (p1 && p2) {
+            rot = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            rot = rot > Math.PI / 2 ? rot - Math.PI : rot < -Math.PI / 2 ? rot + Math.PI : rot;
+          }
+        }
       } else if (el.shape === 'polygon') {
         const pts = polyPoints(el) as WorldPt[];
         c = pts.reduce((a, p) => ({ x: a.x + p.x / pts.length, y: a.y + p.y / pts.length }), { x: 0, y: 0 });
-        topZ = TYPE_HEIGHT[el.type] ?? 0;
+        topZ = elementHeight(el);
       }
       if (!c) continue;
-      const pr = project(cam, w, h, { x: c.x, y: c.y, z: topZ + 0.05 });
-      if (!pr || pr.depth > 90) continue;
+      const pr = project(cam, w, h, { x: c.x, y: c.y, z: onFloor ? 0.05 : topZ + 0.05 });
+      // deep-cull only past 200 — big floors (72×50 m) lost whole sections of
+      // labels whenever the camera rotated to the far side
+      if (!pr || pr.depth > 200) continue;
       if (pr.x < -40 || pr.x > w + 40 || pr.y < -20 || pr.y > h + 20) continue;
       // same text projected nearby (e.g. "Aisle 1" on adjacent segments) → draw once
       const key = el.label.trim().toLowerCase();
       const prev = drawnAt.get(key);
       if (prev && Math.hypot(prev.x - pr.x, prev.y - pr.y) < 140) continue;
       drawnAt.set(key, { x: pr.x, y: pr.y });
-      const size = Math.max(8.5, Math.min(14, 260 / pr.depth));
-      drawLabel(ctx, pr.x, pr.y, el.label, size, false, theme.dark);
+      let size = Math.max(8.5, Math.min(14, 260 / pr.depth));
+      try {
+        const m = JSON.parse(el.meta || '{}');
+        if (typeof m.labelScale === 'number') size = Math.min(30, size * m.labelScale);
+      } catch { /* default size */ }
+      drawLabel(ctx, pr.x, pr.y, el.label, size, false, theme.dark, rot);
     }
   }
+
+  // the searched item's name draws after every other label — always on top
+  for (const l of focusLabels) drawLabel(ctx, l.x, l.y, l.text, 13, true, theme.dark);
 
   // 3D selection / hover preview: outline the element's cap so what is (or
   // would be) selected is readable from any angle
@@ -1294,8 +1458,7 @@ function drawFloorDisc(
   at: WorldPt,
   rM: number,
   color: string,
-  pitchSin: number,
-  ring = false
+  pitchSin: number
 ) {
   const c = project(cam, w, h, { x: at.x, y: at.y, z: 0 });
   const edge = project(cam, w, h, { x: at.x + rM, y: at.y, z: 0 });
@@ -1303,16 +1466,10 @@ function drawFloorDisc(
   const rx = Math.abs(edge.x - c.x);
   ctx.beginPath();
   ctx.ellipse(c.x, c.y, rx, Math.max(rx * pitchSin, 1), 0, 0, Math.PI * 2);
-  if (ring) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.9;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 function drawLabel(
@@ -1322,9 +1479,18 @@ function drawLabel(
   text: string,
   size: number,
   bold = false,
-  dark = false
+  dark = false,
+  /** Screen-space rotation (rad) — floor-plane labels turn with their shelf. */
+  rot = 0
 ) {
-  ctx.font = `${bold ? '700 ' : ''}${size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+  ctx.save();
+  if (rot) {
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    x = 0;
+    y = 0;
+  }
+  ctx.font = `${bold ? '700 ' : ''}${size}px 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = Math.max(2.5, size / 4);
@@ -1332,4 +1498,5 @@ function drawLabel(
   ctx.strokeText(text, x, y);
   ctx.fillStyle = dark ? '#e7ede4' : '#333a33';
   ctx.fillText(text, x, y);
+  ctx.restore();
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { signHs256, verifyHs256, decodeJwt } from '../src/crypto';
 import { toB64Url, fromB64Url, timingSafeEqual, randomToken } from '../src/util';
 import { validateElement } from '../src/validate';
-import { parseCsv, toCsv, rowsFromCsv } from '../src/csv';
+import { parseCsv, toCsv, rowsFromCsv, MAX_CSV_ROWS } from '../src/csv';
 import { slugify } from '../src/http';
 
 describe('base64url', () => {
@@ -100,6 +100,34 @@ describe('csv', () => {
   it('maps tolerant headers', () => {
     const rows = rowsFromCsv('Item Code,Product Name,Stock\nABC,Beans,10');
     expect(rows[0]).toMatchObject({ sku: 'ABC', name: 'Beans', quantity: 10 });
+  });
+
+  it('prefixes formula-looking cells on export (CSV injection)', () => {
+    const csv = toCsv([{ a: '=SUM(A1:A2)', b: '+1', c: '-2', d: '@cmd', e: 'plain', f: 3 }]);
+    expect(csv).toBe("a,b,c,d,e,f\r\n'=SUM(A1:A2),'+1,'-2,'@cmd,plain,3");
+  });
+
+  it('caps imports at MAX_CSV_ROWS with a clear error', () => {
+    const lines = ['name'];
+    for (let i = 0; i < MAX_CSV_ROWS; i++) lines.push(`p${i}`);
+    expect(() => parseCsv(lines.join('\n'))).toThrow(/capped at 5000 rows/);
+    // exactly at the cap (header + 4999 data rows) still parses
+    expect(parseCsv(['name', ...Array.from({ length: MAX_CSV_ROWS - 1 }, (_, i) => `p${i}`)].join('\n'))).toHaveLength(
+      MAX_CSV_ROWS - 1
+    );
+  });
+});
+
+describe('locationJson', () => {
+  it('exposes meta.shelfId as a top-level field', async () => {
+    const { locationJson } = await import('../src/routes/catalog');
+    expect(locationJson({ id: 'l1', meta: '{"shelfId":"s1"}' })).toEqual({
+      id: 'l1',
+      meta: '{"shelfId":"s1"}',
+      shelfId: 's1',
+    });
+    expect(locationJson({ id: 'l2', meta: '{}' }).shelfId).toBeNull();
+    expect(locationJson({ id: 'l3', meta: 'not json' }).shelfId).toBeNull();
   });
 });
 

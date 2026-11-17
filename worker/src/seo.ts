@@ -77,7 +77,12 @@ export async function serveSpa(c: Context): Promise<Response> {
     ...(store.logo_url ? { image: abs(store.logo_url) } : {}),
     ...(store.lat && store.lng ? { geo: { '@type': 'GeoCoordinates', latitude: store.lat, longitude: store.lng } } : {}),
     ...(store.hours ? { openingHours: store.hours } : {}),
-  });
+  })
+    // JSON.stringify doesn't escape / — a "</script>" inside a store name would
+    // break out of the inline <script> block, so neutralise HTML delimiters.
+    .replace(/&/g, '\\u0026')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
   const noscript = `<noscript><h1>${esc(store.name)}</h1><p>${esc(desc)}</p>${
     store.hours ? `<p>Hours: ${esc(store.hours)}</p>` : ''
   }${store.address ? `<p>Address: ${esc(store.address)}</p>` : ''}</noscript>`;

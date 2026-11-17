@@ -1,11 +1,12 @@
 /** Tests for the lightweight 3D renderer — projection, mesh building, colors. */
 import { describe, it, expect } from 'vitest';
 import type { Floor, MapElement } from '../types';
+import type { StockItem } from './render3d';
 import {
-  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, shade, ROUTE, pickFixture,
+  project, fitCamera, boxFaces, routeFaces, buildSceneFaces, scaleColor, ROUTE, pickFixture,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
   buildSceneBSP, traverseFaceBSP, MODERN_THEME, DARK_THEME, NEAR,
-  screenToWorldFloor,
+  screenToWorldFloor, elementHeight, shelfFaces, shelfDetailForDist, SHELF_LOD,
   type Face, type Camera3D,
 } from './render3d';
 
@@ -223,8 +224,8 @@ describe('scene construction', () => {
 
 describe('colors', () => {
   it('multiplies hex channels', () => {
-    expect(shade('#ff0000', 0.5)).toBe('#800000');
-    expect(shade('#3366cc', 1)).toBe('#3366cc');
+    expect(scaleColor('#ff0000', 0.5)).toBe('#800000');
+    expect(scaleColor('#3366cc', 1)).toBe('#3366cc');
   });
 });
 
@@ -403,21 +404,59 @@ describe('near-plane clipping', () => {  const cam = { yaw: 0, pitch: 0.5, dist:
     expect(clipPolygonNear(cams)).toHaveLength(0);
   });
 
-  it('stocking blocks stand on the outward face of a shelf', () => {
+  it('a pinned product is four item squares stacked up the shelf face', () => {
     const faces = stockFaces([{ x: 6, y: 6, nx: 0, ny: 1, color: '#3b6fd4' }]);
-    const f = faces[0];
-    // offset outward along +y, vertical extent 0.32..1.18
-    expect(f.pts.every((p) => p.y > 6)).toBe(true);
-    expect(Math.min(...f.pts.map((p) => p.z))).toBeCloseTo(0.32);
-    expect(Math.max(...f.pts.map((p) => p.z))).toBeCloseTo(1.18);
+    expect(faces).toHaveLength(4); // one per shelf level
+    for (const f of faces) {
+      expect(f.pts.every((p) => p.y > 6)).toBe(true); // offset outward along +y
+      expect(Math.max(...f.pts.map((p) => p.z)) - Math.min(...f.pts.map((p) => p.z))).toBeCloseTo(0.24); // item height
+    }
+    const bottoms = faces.map((f) => Math.min(...f.pts.map((p) => p.z))).sort((a, b) => a - b);
+    expect(bottoms[0]).toBeCloseTo(0.28); // lowest level
+    expect(bottoms[3]).toBeCloseTo(1.18); // highest level
   });
 
-  it('keeps blocks on both faces of a shelf — the BSP hides whichever is behind', () => {
+  it('stock-heavy scenes keep exact ordering — far shelf draws before near shelf from any side', () => {
+    // two facing gondola shelves, each with 30 pinned products (4 squares each)
+    const shelfA = { x: 10, y: 10, w: 20, h: 0.7, rot: 0 };
+    const shelfB = { x: 10, y: 14, w: 20, h: 0.7, rot: 0 };
+    const els = [
+      { ...el('shelf', 'rect', shelfA), id: 'a' },
+      { ...el('shelf', 'rect', shelfB), id: 'b' },
+    ];
+    const floor = { id: 'f', store_id: 's', name: '', level: 0, width_m: 40, height_m: 30, background_url: '' };
+    const scene = buildSceneFaces(floor, els);
+    const stock: StockItem[] = [];
+    for (let i = 0; i < 30; i++) {
+      stock.push({ x: 11 + i * 0.6, y: 10.7, nx: 0, ny: 1, color: '#3b6fd4' }); // A's south face
+      stock.push({ x: 11 + i * 0.6, y: 14, nx: 0, ny: -1, color: '#2f9e44' }); // B's north face
+    }
+    const bsp = buildSceneBSP([...scene, ...stockFaces(stock)]);
+    const ordered: Face[] = [];
+    for (const { node } of bsp) traverseFaceBSP(node, { x: 20, y: 5, z: 30 }, ordered); // eye south of both
+    // every face belonging to shelf B (farther) must be drawn before any face of shelf A,
+    // and no stock face may come after shelf A's south wall (it would bleed through)
+    // draw order is farthest-first: every shelf-B face (far) must precede
+    // every shelf-A face (near), or A's wall would fail to hide B's stock
+    // shelf geometry only — grid lines and floor tiles sit at z=0 and never occlude
+    const shelfFace = (f: Face) => f.pts.some((p) => p.z > 0.5);
+    const firstA = Math.min(
+      ...ordered.map((f, i) => (shelfFace(f) && f.pts.every((p) => p.y <= 10.75) ? i : Infinity))
+    );
+    const lastB = Math.max(
+      ...ordered.map((f, i) => (shelfFace(f) && f.pts.every((p) => p.y >= 13.95) ? i : -1))
+    );
+    expect(firstA).toBeGreaterThan(lastB);
+  });
+
+  it('items on both faces of a shelf coexist — the BSP hides whichever is behind', () => {
     const faces = stockFaces([
       { x: 6, y: 6, nx: 0, ny: 1, color: '#3b6fd4' },
       { x: 6, y: 6, nx: 0, ny: -1, color: '#2f9e44' },
     ]);
-    expect(faces).toHaveLength(2);
+    expect(faces).toHaveLength(8); // four squares per item, two items
+    expect(faces.slice(0, 4).every((f) => f.pts.every((p) => p.y > 6))).toBe(true);
+    expect(faces.slice(4).every((f) => f.pts.every((p) => p.y < 6))).toBe(true);
   });
 });
 
@@ -498,6 +537,22 @@ describe('pickFixture (ray picking — nearest hit wins)', () => {
     expect(clear!.elementId).toBe(elementsOf[0]!.id);
   });
 
+  it('a point marker between the camera and a fixture wins the pick (units: t vs depth)', () => {
+    // the marker's head (z=2) sits between the eye and the wall behind it:
+    // the wall's prism hit must be converted from ray parameter (unnormalized
+    // dir, length ≈ focal length in px) to meters before comparing depths —
+    // raw parameters (~0.03) always beat the marker's depth (~18 m).
+    // (yaw ≠ 0 keeps the ray from running parallel to the wall's end planes)
+    elementsOf = [
+      el('wall', 'polyline', [[4, 5], [16, 5]]),
+      el('entrance', 'point', { x: 10, y: 8 }),
+    ];
+    const cam: Camera3D = { yaw: 0.3, pitch: 0.6, dist: 20, tx: 10, ty: 7, tz: 0 };
+    const s = project(cam, W, H, { x: 10, y: 8, z: 2.0 })!;
+    const picked = pickFixture(cam, W, H, s.x, s.y, elementsOf);
+    expect(picked!.elementId).toBe(elementsOf[1]!.id);
+  });
+
   it('point elements pick around their marker head', () => {
     elementsOf = [el('entrance', 'point', { x: 20, y: 19 })];
     const cam = fitCamera(floor);
@@ -513,5 +568,111 @@ describe('pickFixture (ray picking — nearest hit wins)', () => {
     expect(far).toBeNull();
     const sky = pickFixture({ ...fitCamera(floor), pitch: 0.4 }, W, H, W / 2, 2, elementsOf);
     expect(sky).toBeNull();
+  });
+});
+
+describe('elementHeight (meta.height override)', () => {
+  it('defaults per type', () => {
+    expect(elementHeight(el('shelf', 'rect', { x: 0, y: 0, w: 2, h: 1, rot: 0 }))).toBeCloseTo(1.5);
+    expect(elementHeight(el('wall', 'rect', { x: 0, y: 0, w: 2, h: 0.2, rot: 0 }))).toBeCloseTo(3.2);
+    expect(elementHeight(el('zone', 'rect', { x: 0, y: 0, w: 2, h: 1, rot: 0 }))).toBeCloseTo(0.06);
+  });
+  it('meta.height overrides, clamped to 0.3–3 m', () => {
+    const base = el('shelf', 'rect', { x: 0, y: 0, w: 2, h: 1, rot: 0 });
+    expect(elementHeight({ ...base, meta: '{"height":2.4}' })).toBeCloseTo(2.4);
+    expect(elementHeight({ ...base, meta: '{"height":9}' })).toBeCloseTo(3);
+    expect(elementHeight({ ...base, meta: '{"height":0.05}' })).toBeCloseTo(0.3);
+  });
+});
+
+describe('shelfFaces — painted rows', () => {
+  const corners = [
+    { x: 0, y: 0 },
+    { x: 3, y: 0 },
+    { x: 3, y: 1 },
+    { x: 0, y: 1 },
+  ];
+  const thinBands = (faces: Face[]) =>
+    faces.filter((f) => {
+      if (f.pts.length !== 4) return false;
+      const zs = f.pts.map((p) => p.z);
+      const extent = Math.max(...zs) - Math.min(...zs);
+      return extent > 0 && extent <= 0.15;
+    });
+
+  it('adds a plinth band + one shadow strip per row on each long face', () => {
+    expect(shelfFaces(corners, 1.5, '#c8b89a', 4)).toHaveLength(5 + 2 * (1 + 4));
+    expect(shelfFaces(corners, 1.5, '#c8b89a', 1)).toHaveLength(5 + 2 * (1 + 1));
+    expect(shelfFaces(corners, 1.5, '#c8b89a', 8)).toHaveLength(5 + 2 * (1 + 8));
+    expect(thinBands(shelfFaces(corners, 1.5, '#c8b89a', 4))).toHaveLength(2 * (1 + 4));
+  });
+  it('below the minimum fixture height it stays a plain box', () => {
+    expect(shelfFaces(corners, 0.2, '#c8b89a', 4)).toHaveLength(5);
+  });
+  it('end caps stay solid — only the long faces get bands', () => {
+    const faces = shelfFaces(corners, 1.5, '#c8b89a', 2);
+    // bands hug the two 3 m edges (y≈0 and y≈1, ± the 3 mm outward offset);
+    // the 1 m end caps carry none
+    const bands = thinBands(faces);
+    expect(bands).toHaveLength(2 * (1 + 2));
+    expect(bands.every((f) => f.pts.every((p) => Math.abs(p.y) < 0.01 || Math.abs(p.y - 1) < 0.01))).toBe(true);
+  });
+  it('buildSceneFaces paints rows from shelf meta', () => {
+    const s = { ...el('shelf', 'rect', { x: 4, y: 4, w: 3, h: 1, rot: 0 }), meta: '{"levels":2,"height":2}' };
+    const faces = buildSceneFaces(floor, [s]);
+    expect(thinBands(faces)).toHaveLength(2 * (1 + 2));
+    expect(Math.max(...faces.flatMap((f) => f.pts.map((p) => p.z)))).toBeCloseTo(2);
+  });
+});
+
+describe('shelf-detail LOD (camera distance + hysteresis)', () => {
+  it('flips to solid past the far threshold and back below the near one', () => {
+    expect(shelfDetailForDist(SHELF_LOD.solidBeyond + 1, 'full')).toBe('solid');
+    expect(shelfDetailForDist(SHELF_LOD.fullBelow - 1, 'solid')).toBe('full');
+  });
+  it('holds the current level anywhere in the band — no flapping', () => {
+    const mid = (SHELF_LOD.solidBeyond + SHELF_LOD.fullBelow) / 2;
+    expect(shelfDetailForDist(mid, 'full')).toBe('full');
+    expect(shelfDetailForDist(mid, 'solid')).toBe('solid');
+    // drifting back up near the far threshold, an already-solid camera stays solid
+    expect(shelfDetailForDist(SHELF_LOD.solidBeyond - 1, 'solid')).toBe('solid');
+    // and a full camera near the near threshold stays full
+    expect(shelfDetailForDist(SHELF_LOD.fullBelow + 1, 'full')).toBe('full');
+  });
+  it('buildSceneFaces with shelfDetail "solid" drops the bands; non-shelves are unchanged', () => {
+    const shelf = el('shelf', 'rect', { x: 4, y: 4, w: 3, h: 1, rot: 0 });
+    const thinBands = (faces: Face[]) =>
+      faces.filter((f) => {
+        if (f.pts.length !== 4) return false;
+        const zs = f.pts.map((p) => p.z);
+        const extent = Math.max(...zs) - Math.min(...zs);
+        return extent > 0 && extent <= 0.15;
+      });
+    const full = buildSceneFaces(floor, [shelf]);
+    const solid = buildSceneFaces(floor, [shelf], MODERN_THEME, { shelfDetail: 'solid' });
+    expect(solid.length).toBeLessThan(full.length);
+    // default 4 rows: plinth + one shadow strip per row, on both long faces
+    expect(thinBands(full)).toHaveLength(2 * (1 + 4));
+    expect(thinBands(solid)).toHaveLength(0);
+    const wall = el('wall', 'polyline', [[2, 2], [6, 2]]);
+    expect(buildSceneFaces(floor, [wall], MODERN_THEME, { shelfDetail: 'solid' }))
+      .toEqual(buildSceneFaces(floor, [wall]));
+  });
+});
+
+describe('stockFaces — per-shelf boards and item size', () => {
+  it('stands one facing per board at the given size', () => {
+    const faces = stockFaces([{ x: 6, y: 6, nx: 0, ny: 1, color: '#3b6fd4', zs: [0.4, 0.9], h: 0.3, w: 0.4 }]);
+    expect(faces).toHaveLength(2);
+    const first = faces[0]!.pts.map((p) => p.z);
+    expect(Math.min(...first)).toBeCloseTo(0.4);
+    expect(Math.max(...first)).toBeCloseTo(0.7);
+    // length 0.4 m along the shelf: x spans 5.8..6.2 at nx=0, ny=1
+    const xs = faces[0]!.pts.map((p) => p.x);
+    expect(Math.min(...xs)).toBeCloseTo(5.8);
+    expect(Math.max(...xs)).toBeCloseTo(6.2);
+  });
+  it('without shelf data it falls back to the classic 4-level ladder', () => {
+    expect(stockFaces([{ x: 6, y: 6, nx: 0, ny: 1, color: '#3b6fd4' }])).toHaveLength(4);
   });
 });

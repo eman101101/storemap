@@ -24,11 +24,6 @@ export async function count(env: Env, sql: string, ...params: unknown[]): Promis
   return 0;
 }
 
-/** D1 batch = one implicit transaction (all-or-nothing). */
-export function tx(env: Env, stmts: D1PreparedStatement[]): D1PreparedStatement[] {
-  return stmts;
-}
-
 export function stmt(env: Env, sql: string, ...params: unknown[]): D1PreparedStatement {
   return env.DB.prepare(sql).bind(...params);
 }

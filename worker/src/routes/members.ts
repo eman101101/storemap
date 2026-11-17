@@ -30,6 +30,16 @@ app.post('/stores/:id/members/invite', requireAuth, async (c) => {
   if (role === 'manager' && m.role !== 'owner') {
     return json(c, 403, { error: 'Only the owner can invite managers' });
   }
+  // The owner cannot be invited as a member — their authority comes from
+  // stores.owner_id, and a members row would shadow it with a lesser role.
+  const ownerEmail = await first(
+    env,
+    'SELECT u.email AS email FROM stores s JOIN users u ON u.id = s.owner_id WHERE s.id = ?',
+    m.store.id
+  );
+  if (ownerEmail && String(ownerEmail.email).toLowerCase() === email) {
+    return json(c, 403, { error: 'The store owner already has full access' });
+  }
   const token = await createInvitation(env, String(m.store.id), email, role);
   const cfg = c.get('config');
   return json(c, 201, { inviteUrl: `${cfg.publicBaseUrl}/invite/${token}`, role, email });

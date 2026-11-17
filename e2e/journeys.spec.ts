@@ -66,7 +66,7 @@ test('shopper: search → route badge → 2D → 3D', async ({ page }) => {
   await expect(page.locator('.route-badge')).toContainText('m');
   // switch to 2D and back — the map renders both engines
   await page.getByRole('button', { name: '2D', exact: true }).click();
-  await expect(page.locator('.viewer-map svg')).toBeVisible();
+  await expect(page.locator('.viewer-map > svg')).toBeVisible();
   await page.getByRole('button', { name: '3D', exact: true }).click();
   await expect(page.locator('.viewer-map canvas')).toBeVisible();
 });
@@ -93,14 +93,25 @@ test('shopper: OG meta injected', async ({ page }) => {
 });
 
 test('editor: opens, outline lists elements, history snapshots', async ({ page }) => {
+  // /login pops the sign-in modal over the homepage now
   await page.goto('/login');
   await page.getByLabel('Email').fill('e2e@storemap.test');
-  await page.getByRole('button', { name: 'Sign in for testing' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.goto(`/dashboard/stores/${storeId}`);
+  // the side panel is a pull-out drawer (closed on a fresh device) and the
+  // outline groups collapse by default — rows render only under open groups.
+  // Re-expand after every remount: selecting an element swaps the outline
+  // for the element panel, and deselecting remounts it collapsed again.
+  const expandOutline = async () => {
+    const groupHeads = page.locator('.outline-group-head');
+    for (let i = 0; i < await groupHeads.count(); i++) await groupHeads.nth(i).click();
+  };
+  await page.getByRole('button', { name: 'Show the side panel' }).click();
+  await expandOutline();
   await expect(page.locator('.outline-row')).toHaveCount(4, { timeout: 10_000 });
   // draw one shelf with the Aisle pair tool → 2 new elements → autosave → snapshot
   await page.getByRole('button', { name: /Aisle pair/ }).click();
-  const svg = page.locator('.map-wrap svg');
+  const svg = page.locator('.map-wrap > svg');
   const box = await svg.boundingBox();
   if (box) {
     await page.mouse.move(box.x + 300, box.y + 260);
@@ -111,6 +122,7 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   // the aisle-pair tool auto-selects its row (Map tab shows the element panel) —
   // deselect to bring the outline back
   await page.keyboard.press('Escape');
+  await expandOutline();
   await expect(page.locator('.outline-row')).toHaveCount(6, { timeout: 10_000 });
   await expect(page.locator('.save-state')).toContainText('Saved', { timeout: 10_000 });
   await page.getByRole('button', { name: 'History' }).click();

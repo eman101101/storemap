@@ -2,6 +2,7 @@ import type { StoreMember, MemberRole,
   AuthInfo, Category, Floor, MapElementRow, Product, ProductLocation, PublicStorePayload,
   Store, StoreFull, StoreSummary, StockRow, StockMovement, ApiKeyRow,
 } from './types';
+import { compressImage } from './lib/image';
 
 export class ApiError extends Error {
   status: number;
@@ -56,8 +57,6 @@ export const api = {
   },
   removeProductImage: (productId: string) =>
     request<{ ok: true }>(`/api/products/${productId}/image`, { method: 'DELETE' }),
-  /** One-click session as the demo-map owner (server-gated, dev only). */
-  demoLogin: () => request<{ user: unknown }>('/api/auth/demo-login', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
   // Stores
@@ -140,7 +139,7 @@ export const api = {
     request<{ ok: true }>(`/api/products/${id}`, { method: 'DELETE' }),
 
   // Locations
-  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number }) =>
+  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string }) =>
     request<{ location: ProductLocation }>(`/api/products/${productId}/locations`, {
       method: 'POST',
       body: json(body),
@@ -158,17 +157,22 @@ export const api = {
       `/api/floors/${floorId}/snapshots/${snapId}`
     ),
 
-  // Uploads (raw image bytes) — downscaled client-side first (E4) so the
-  // store never stores a 10 MB phone photo: max 2048 px, WebP q0.85, with a
-  // PNG passthrough when the canvas can't re-encode.
-  uploadImage: async (file: File): Promise<{ url: string }> => {
+  // Uploads — downscaled client-side first (E4) so the store never stores a
+  // 10 MB phone photo: max 2048 px, WebP q0.85, with a PNG passthrough when
+  // the canvas can't re-encode. Store-scoped: the target store id is required
+  // and rides along as the `store` multipart field (server checks role ≥ stock).
+  // (`file` stays first so the sandbox's single-arg uploadImage keeps matching
+  // this signature via the derived EditorApi type.)
+  uploadImage: async (file: File, store: string): Promise<{ url: string }> => {
     const compressed = await compressImage(file);
     file = compressed ?? file;
+    const form = new FormData();
+    form.append('store', store);
+    form.append('file', file);
     const res = await fetch('/api/uploads', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': file.type || 'image/png' },
-      body: file,
+      body: form,
     });
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(res.status, body?.error || 'Upload failed');
@@ -176,8 +180,6 @@ export const api = {
   },
 
   // Public
-  publicStores: (q = '') =>
-    request<{ stores: StoreSummary[] }>(`/api/public/stores?q=${encodeURIComponent(q)}`),
   publicStore: (slug: string) => request<PublicStorePayload>(`/api/public/stores/${slug}`),
 
   // ---- Stock tracking & integrations ----
@@ -204,29 +206,3 @@ export const api = {
       body: json({ csv }),
     }),
 };
-
-
-/** E4: shrink an image to ≤2048 px WebP before upload; null = keep original. */
-async function compressImage(file: File): Promise<File | null> {
-  if (!file.type.startsWith('image/')) return null;
-  if (file.type === 'image/gif') return null;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const MAX = 2048;
-    const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
-    if (scale >= 1 && file.size <= 600 * 1024) return null; // already small enough
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/webp', 0.85)
-    );
-    if (!blob || blob.size >= file.size) return null;
-    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.webp', { type: 'image/webp' });
-  } catch {
-    return null;
-  }
-}

@@ -16,15 +16,19 @@ This repo is the Cloudflare-ready build. Use the **Deploy to Cloudflare** button
 
 The button reads [`wrangler.jsonc`](wrangler.jsonc) and provisions everything:
 
-- **D1 database** `storemap` — schema migrations + the two demo stores apply
-  automatically on first request (Freshmart Downtown, 150 pinned products;
-  Annex Market, the complex-shape demo). No manual migration step.
+- **D1 database** `storemap` — schema migrations + the four demo stores
+  apply automatically on first request (Freshmart Downtown, Annex Market,
+  Harbor Warehouse, Megamart Central). No manual migration step.
 - **R2 bucket** `storemap-media` — floor-plan images, logos, product photos.
 - **Worker + assets** — the SPA from `frontend/dist` is served from the edge;
   only `/api/*`, `/uploads/*`, `/s/*` and SEO paths invoke the worker.
 
 After the deploy you get a `https://storemap.<your-subdomain>.workers.dev`
-URL — open it and press **“Open the demo maps — no sign-in”**.
+URL — open it: the homepage hero cycles the demo maps (**View live** opens
+the shopper viewer, **Edit a copy — free** the no-account sandbox editor).
+To sign in and publish your own maps, use the sign-in modal (Google/Apple
+once configured, or the passwordless email form after setting
+`ENABLE_DEV_LOGIN="true"` — dev login ships disabled by default).
 
 ## Configuration
 
@@ -33,7 +37,7 @@ Everything has a working default; no setup is required to try it:
 | Setting | Default | Notes |
 |---|---|---|
 | `SELF_HOSTED` | `true` | local mode: product photos included, demo seeds on first boot |
-| `ENABLE_DEV_LOGIN` | `true` | passwordless demo login. **Turn off for public instances** (`npx wrangler deploy` after editing, or via the dashboard) and use Google/Apple or Access instead |
+| `ENABLE_DEV_LOGIN` | `false` | passwordless demo login — accepts any email, so enable deliberately (`npx wrangler deploy` after editing, or via the dashboard) and only on private URLs; use Google/Apple or Access for anything public |
 | `PUBLIC_BASE_URL` | *(unset → request origin)* | canonical origin for share links + printed QR codes; set it to your custom domain when you attach one |
 | `SESSION_SECRET` | *(unset → generated + stored in D1)* | auto-generated on first boot so sessions survive across isolates; override with `npx wrangler secret put SESSION_SECRET` for strict control |
 | `GOOGLE_*` / `APPLE_*` | *(unset)* | OAuth sign-in; redirect URIs are `{PUBLIC_BASE_URL}/api/auth/{google,apple}/callback` |
