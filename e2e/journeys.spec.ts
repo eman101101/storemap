@@ -63,7 +63,10 @@ test('shopper: search → route badge → 2D → 3D', async ({ page }) => {
   await search.fill('choc');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.route-badge')).toContainText('m');
+  await expect(page.locator('.route-badge')).toBeVisible();
+  // the visible badge no longer carries the distance — the route summary is
+  // announced in the aria-live region (screen-reader text, line 330 of ViewerPage)
+  await expect(page.locator('div[aria-live="polite"]')).toContainText('Route to Choc Bar');
   // switch to 2D and back — the map renders both engines
   await page.getByRole('button', { name: '2D', exact: true }).click();
   await expect(page.locator('.viewer-map > svg')).toBeVisible();
@@ -77,11 +80,11 @@ test('shopper: multi-stop trip', async ({ page }) => {
   await search.click();
   await search.fill('choc');
   await page.keyboard.press('Enter');
-  await page.locator('.product-sheet button', { hasText: 'Trip' }).click();
+  await page.locator('.product-sheet button', { hasText: 'Add to list' }).click();
   await search.click();
   await search.fill('popcorn');
   await page.keyboard.press('Enter');
-  await page.locator('.product-sheet button', { hasText: 'Trip' }).click();
+  await page.locator('.product-sheet button', { hasText: 'Add to list' }).click();
   await expect(page.locator('.trip-panel')).toContainText('2 stops');
   await expect(page.locator('.trip-steps li')).toHaveCount(2);
 });
@@ -96,7 +99,9 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   // /login pops the sign-in modal over the homepage now
   await page.goto('/login');
   await page.getByLabel('Email').fill('e2e@storemap.test');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  // scope to the modal — the navbar also has a "Sign in" button (strict mode
+  // would reject the ambiguous global locator)
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.goto(`/dashboard/stores/${storeId}`);
   // the side panel is a pull-out drawer (closed on a fresh device) and the
   // outline groups collapse by default — rows render only under open groups.
@@ -104,7 +109,13 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   // for the element panel, and deselecting remounts it collapsed again.
   const expandOutline = async () => {
     const groupHeads = page.locator('.outline-group-head');
-    for (let i = 0; i < await groupHeads.count(); i++) await groupHeads.nth(i).click();
+    await expect(groupHeads.first()).toBeVisible({ timeout: 10_000 });
+    // heads toggle — the outline keeps its open state across selection
+    // changes, so only click groups that are actually collapsed
+    for (let i = 0; i < await groupHeads.count(); i++) {
+      const head = groupHeads.nth(i);
+      if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
+    }
   };
   await page.getByRole('button', { name: 'Show the side panel' }).click();
   await expandOutline();
@@ -120,8 +131,9 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
     await page.mouse.up();
   }
   // the shelf tool auto-selects its row (Map tab shows the element panel) —
-  // deselect to bring the outline back
-  await page.keyboard.press('Escape');
+  // click empty canvas to deselect and bring the outline back (Escape only
+  // cancels product placement). Aim between the shelves, right of everything.
+  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.33);
   await expandOutline();
   await expect(page.locator('.outline-row')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.save-state')).toContainText('Saved', { timeout: 10_000 });

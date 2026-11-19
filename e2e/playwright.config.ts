@@ -7,6 +7,7 @@ const PORT = 8901;
 
 /** Boot the real server (built SPA + real SQLite in a temp dir) for the suite. */
 async function startServer() {
+  let stderr = '';
   const proc = spawn('node', ['src/index.js'], {
     cwd: path.join(ROOT, 'backend'),
     env: {
@@ -19,8 +20,11 @@ async function startServer() {
     },
     stdio: 'pipe',
   });
+  // Surface the actual crash instead of a generic timeout (e.g. missing deps).
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
   const base = `http://127.0.0.1:${PORT}`;
   for (let i = 0; i < 60; i++) {
+    if (proc.exitCode !== null) throw new Error(`server exited during startup (code ${proc.exitCode}):\n${stderr}`);
     try {
       await fetch(`${base}/api/health`);
       return { proc, base };
@@ -28,7 +32,7 @@ async function startServer() {
       await new Promise((r) => setTimeout(r, 250));
     }
   }
-  throw new Error('server did not start');
+  throw new Error(`server did not start within 15s:\n${stderr}`);
 }
 
 export default defineConfig({
