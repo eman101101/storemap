@@ -282,7 +282,15 @@ router.post('/products/:id/locations', requireAuth, handler(async (req, res) => 
   // "a persisted meta.shelfId wins" owner derivation survives reloads.
   const shelfId =
     typeof req.body?.shelfId === 'string' && req.body.shelfId.trim() ? req.body.shelfId.trim().slice(0, 64) : null;
-  const meta = JSON.stringify(shelfId ? { shelfId } : {});
+  // planogram placement: which row the facing sits on and how wide it is —
+  // stored in meta so the planogram editor can move items vertically / resize
+  const shelfLevel = num(req.body?.shelfLevel);
+  const facingW = num(req.body?.facingW);
+  const meta = JSON.stringify({
+    ...(shelfId ? { shelfId } : {}),
+    ...(shelfLevel !== undefined ? { shelf_level: shelfLevel } : {}),
+    ...(facingW !== undefined ? { w: facingW } : {}),
+  });
   // One pin per product per floor: moving it updates the existing pin.
   const existing = db
     .prepare('SELECT * FROM product_locations WHERE product_id = ? AND floor_id = ?')

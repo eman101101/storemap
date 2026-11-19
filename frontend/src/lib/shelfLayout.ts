@@ -14,6 +14,8 @@ export interface ShelfPin {
 
 export interface ShelfSlot {
   product: Product;
+  /** the pin this facing was placed from — planogram edits write to it */
+  locationId: string;
   /** facing position along the shelf, 0..1 from the left end */
   u: number;
   /** 1-based level from the bottom */
@@ -161,9 +163,12 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
         : 1);
     return {
       product,
+      locationId: location.id,
       u: Math.min(1, Math.max(0, local.x / width)),
       level,
-      facingWidth: facing,
+      // per-item width (meta.w, set in the planogram editor) wins over the
+      // shelf-wide default
+      facingWidth: clampNum((location.meta && safeParse(location.meta).w) as number, 0.05, 3) ?? facing,
       // which face of the shelf the pin sits on (aisle shelves stock both)
       side: local.y * 2 <= depth ? 'front' : 'back',
     };

@@ -139,7 +139,7 @@ export const api = {
     request<{ ok: true }>(`/api/products/${id}`, { method: 'DELETE' }),
 
   // Locations
-  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string }) =>
+  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string; shelfLevel?: number; facingW?: number }) =>
     request<{ location: ProductLocation }>(`/api/products/${productId}/locations`, {
       method: 'POST',
       body: json(body),

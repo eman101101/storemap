@@ -103,7 +103,7 @@ describe('grid wordmark', () => {
       pending.delete(id);
     }));
     // the five arrival spots in svg units: i-dot, m stem, period, l top, e bar
-    const SPOTS = new Set(['65,45', '235,75', '285,105', '375,45', '535,85']);
+    const SPOTS = new Set(['65,45', '225,75', '275,105', '365,45', '515,85']);
     const endPoint = (container: HTMLElement) => {
       const d = container.querySelector('.route-line')!.getAttribute('d')!;
       return d.slice(d.lastIndexOf('L') + 1).replace(' ', ',');

@@ -62,6 +62,8 @@ interface Props {
   /** Canvas touch-action: 'pan-y' lets vertical swipes scroll the page while
    *  horizontal drags orbit the camera (for embedded/hero maps on mobile). */
   touchAction?: 'none' | 'pan-y';
+  /** lock edit interactions: fixtures can't be selected or dragged */
+  locked?: boolean;
 }
 
 const PITCH_MIN = 0.18;
@@ -112,7 +114,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none' }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -217,14 +219,17 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
 
   // one BSP per draw layer over the whole scene: exact back-to-front order for
   // any camera angle. Rebuilt only when the data changes, never per frame.
-  const bspInput = useMemo(() => {
-    const faces = [...sceneFaces, ...buildStockFaces(stocking, theme)];
-    if (route && route.length > 1) faces.push(...routeFaces(route, theme));
-    return faces;
-  }, [sceneFaces, stocking, route, theme, elements]);
-  const bspFaceCount = bspInput.length;
-  const sceneBSP = useMemo(() => buildSceneBSP(bspInput), [bspInput]); // E2 note: >3K faces would move to an idle-callback build; current scenes peak ~2K
-  void bspFaceCount;
+  const bspInput = useMemo(
+    () => [...sceneFaces, ...buildStockFaces(stocking, theme)],
+    [sceneFaces, stocking, theme]
+  );
+  // the route is NOT in the BSP — shelves would occlude the very line the
+  // shopper is following. It renders as a translucent overlay pass on top.
+  const routeFacesMemo = useMemo(
+    () => (route && route.length > 1 ? routeFaces(route, theme) : []),
+    [route, theme]
+  );
+  const sceneBSP = useMemo(() => buildSceneBSP(bspInput), [bspInput]);
 
   // observe container size
   useEffect(() => {
@@ -483,7 +488,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     }
     hitsRef.current = renderScene(ctx, size.w, size.h, cam, floor, elements, {
       bsp: sceneBSP,
-      route,
+      overlayFaces: routeFacesMemo,
       pins: pins3d,
       routeStart: route && route.length > 1 ? route[0] : null,
       tripStops,
@@ -491,7 +496,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       selectedId: edit ? selectedId : null,
       hoverId: edit ? hoverPick : null,
     });
-  }, [cam, size, floor, elements, pins, stockPins, focusPinId, focusPinIds, route, sceneBSP, theme, edit, selectedId, hoverPick]);
+  }, [cam, size, floor, elements, pins, stockPins, focusPinId, focusPinIds, route, routeFacesMemo, sceneBSP, theme, edit, selectedId, hoverPick]);
 
   // middle-click autoscroll guard — pointerdown preventDefault can't stop it
   useEffect(() => {
@@ -561,7 +566,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       elDrag.current = null;
       return;
     }
-    if (edit && e.button === 0) {
+    if (edit && !locked && e.button === 0) {
       // edit mode: grabbing a fixture drags it on the floor plane; empty space orbits
       const px = screenPx(e);
       const hit = fixtureAt(px.x, px.y);
@@ -785,6 +790,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     <>
       <canvas
         ref={canvasRef}
+        onContextMenu={(e) => e.preventDefault()}
         style={{
           width: '100%', height: '100%', display: 'block', touchAction,
           cursor: drag.current || elDrag.current || midPan.current ? 'grabbing' : hoverPick && edit ? 'move' : (!edit && hoverPinLocId) || (hoverShelf && onElementClick) || hoverAisle ? 'pointer' : 'grab',

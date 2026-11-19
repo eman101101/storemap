@@ -241,18 +241,23 @@ export class LocalSession implements EditorApi {
     return { elements };
   }
 
-  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string }) {
-    const id = `loc-${productId}`;
+  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string; shelfLevel?: number; facingW?: number }) {
+    // merge into the existing pin's meta — planogram edits (shelf_level, w)
+    // must survive plain re-pins
+    const prev = this.locations.find((l) => l.product_id === productId);
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(prev?.meta || '{}') as Record<string, unknown>; } catch { /* fresh */ }
+    if (body.shelfId !== undefined) meta.shelfId = body.shelfId || undefined;
+    if (body.shelfLevel !== undefined) meta.shelf_level = body.shelfLevel || undefined;
+    if (body.facingW !== undefined) meta.w = body.facingW || undefined;
     const location: ProductLocation = {
-      id,
+      id: prev?.id ?? `loc-${productId}`,
       product_id: productId,
       floor_id: body.floor_id,
       x: body.x,
       y: body.y,
-      rot: 0,
-      // the shelf the user pinned this product to — sandboxes keep the
-      // association across sessions
-      meta: JSON.stringify(body.shelfId ? { shelfId: body.shelfId } : {}),
+      rot: prev?.rot ?? 0,
+      meta: JSON.stringify(meta),
     };
     this.locations = [...this.locations.filter((l) => l.product_id !== productId), location];
     this.persist();

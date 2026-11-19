@@ -48,6 +48,8 @@ export default function ViewerPage() {
   const [viewport, setViewport] = useState<Viewport>({ scale: 15, tx: 0, ty: 0 });
   const [elements, setElements] = useState<MapElement[]>([]);
   const [shelfPopupId, setShelfPopupId] = useState<string | null>(null);
+  // search-result photos: off by default — the 🖼 chip turns them on
+  const [showResultImages, setShowResultImages] = useState(false);
   const [view3d, setView3d] = useState(() => {
     try {
       return localStorage.getItem('storemap.view') !== '2d'; // default 3D
@@ -505,6 +507,15 @@ export default function ViewerPage() {
               }}
               aria-label="Search an item"
             />
+            <button
+              className={`search-img-toggle ${showResultImages ? 'active' : ''}`}
+              aria-pressed={showResultImages}
+              title={showResultImages ? 'Hide result photos' : 'Show result photos'}
+              aria-label="Toggle result photos"
+              onClick={() => setShowResultImages((v) => !v)}
+            >
+              🖼
+            </button>
             {q && (
               <button className="search-clear" onClick={() => { setQ(''); setSearchOpen(false); }} aria-label="Clear search">
                 ✕
@@ -530,8 +541,10 @@ export default function ViewerPage() {
                         onPointerEnter={() => setActiveIdx(idx)}
                         onClick={() => focusResult(p)}
                       >
-                        {p.image_url && (
+                        {p.image_url && showResultImages ? (
                           <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
+                        ) : (
+                          <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />
                         )}
                         <span className="rname">
                           <b>{name}</b>
@@ -545,7 +558,7 @@ export default function ViewerPage() {
                       </button>
                     ) : (
                       <div key={p.id} className={`result-item noloc ${active ? 'kbd-active' : ''}`}>
-                        {p.image_url && (
+                        {p.image_url && showResultImages && (
                           <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
                         )}
                         <span className="rname">
@@ -574,8 +587,6 @@ export default function ViewerPage() {
         {activeRoute && (
           <div className="route-badge">
             <span className="route-badge-dot" aria-hidden />
-            <b>{Math.round(activeRoute.distanceM)} m</b>
-            <span>· ≈{walkMin} min from the entrance</span>
             <button className="route-badge-x" onClick={clearRoute} aria-label="Clear route">
               ✕
             </button>

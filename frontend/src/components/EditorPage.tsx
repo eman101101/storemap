@@ -35,7 +35,7 @@ const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] =
   { id: 'aisle', label: 'Label', icon: '🏷', group: 'mark' },
   { id: 'entrance', label: 'Entrance', icon: '⬆', group: 'point' },
   { id: 'poi', label: 'Interest points', icon: '★', group: 'point' },
-  { id: 'product', label: 'Product pin', icon: '📍', group: 'point' },
+  { id: 'product', label: 'Add item', icon: '📍', group: 'point' },
 ];
 
 const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
@@ -47,7 +47,7 @@ const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
   zone: 'Drag to draw a zone rectangle',
   entrance: 'Click to place the entrance marker',
   poi: 'Click to place a point of interest',
-  product: 'Click a spot on the map to pin the selected product · Esc to cancel',
+  product: 'Click a spot on a shelf to add the selected item · Esc to cancel',
 };
 
 /** A starter skeleton sized to the floor: outer walls, an entrance and blank
@@ -148,6 +148,10 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // onboarding tour + glossary; the tour offers itself once per device
   const [exportOpen, setExportOpen] = useState(false);
   const [hideLabels, setHideLabels] = useState(false);
+  // lock toggle: items unselectable/unmovable so the map can be panned freely
+  const [locked, setLocked] = useState(false);
+  // map right-click menu
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(() => {
     try {
@@ -162,7 +166,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // shelves can't Hoover up their products
   const pinGestureBase = useRef<MapElement[] | null>(null);
   const pinSaveTimer = useRef<number | null>(null);
-  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string; shelfId?: string }[]>([]);
+  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number }[]>([]);
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
@@ -294,7 +298,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
 
   /** Queue pin-position saves (debounced, mirroring the elements autosave). */
   const schedulePinSaves = useCallback(
-    (saves: { productId: string; x: number; y: number; floorId: string; shelfId?: string }[]) => {
+    (saves: { productId: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number }[]) => {
       if (!saves.length) return;
       pendingPinSaves.current = [
         ...pendingPinSaves.current.filter((s) => !saves.some((n) => n.productId === s.productId)),
@@ -303,7 +307,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       if (pinSaveTimer.current) window.clearTimeout(pinSaveTimer.current);
       pinSaveTimer.current = window.setTimeout(() => {
         for (const s of pendingPinSaves.current) {
-          apix.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y, shelfId: s.shelfId })
+          apix.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y, shelfId: s.shelfId, shelfLevel: s.shelfLevel, facingW: s.facingW })
             .catch(() => { /* keep the optimistic position */ });
         }
         pendingPinSaves.current = [];
@@ -925,6 +929,67 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           </div>
         </Modal>
       )}
+      {ctxMenu && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+            onPointerDown={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          />
+          <div className="map-ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} role="menu">
+            <button
+              role="menuitem"
+              disabled={!selected}
+              onClick={() => {
+                if (selected) {
+                  changeElements(floorElements.filter((e) => e.id !== selected.id), 'push');
+                  setSelectedId(null);
+                }
+                setCtxMenu(null);
+              }}
+            >
+              🗑 Delete selected
+            </button>
+            <button
+              role="menuitem"
+              disabled={!selected}
+              onClick={() => {
+                if (selected) {
+                  const copy: MapElement = {
+                    ...selected,
+                    id: crypto.randomUUID(),
+                    geom: shiftGeom(selected.geom),
+                    z_index: Math.max(...floorElements.map((e) => e.z_index), 0) + 1,
+                  };
+                  changeElements([...floorElements, copy], 'push');
+                  setSelectedId(copy.id);
+                }
+                setCtxMenu(null);
+              }}
+            >
+              ⧉ Duplicate selected
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setLocked((v) => !v);
+                setCtxMenu(null);
+              }}
+            >
+              {locked ? '🔓 Unlock items' : '🔒 Lock items'}
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setFitSignal((n) => n + 1);
+                setCtxMenu(null);
+              }}
+            >
+              ⤢ Re center
+            </button>
+          </div>
+        </>
+      )}
       {tourOpen && <EditorTour steps={tourSteps} onClose={closeTour} />}
       {glossaryOpen && <GlossaryModal onClose={() => setGlossaryOpen(false)} />}
 
@@ -955,6 +1020,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               fitSignal={fitSignal}
               zoomCommand={zoomCmd}
               theme={sceneTheme}
+              locked={locked}
             />
           ) : (
             <MapCanvas
@@ -962,6 +1028,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={visibleFloorPins}
               showLabels={!hideLabels}
+              locked={locked}
+              onMapContextMenu={(client) => setCtxMenu({ x: client.x, y: client.y })}
               viewport={viewport}
               onViewport={setViewport}
               edit
@@ -1005,8 +1073,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 className={`tool-btn ${tool === t.id ? 'active' : ''}`}
                 onClick={() => { setTool(t.id); setSelectedId(t.id === 'select' ? selectedId : null); }}
                 disabled={t.id === 'product' && !placeProductId}
-                aria-label={t.id === 'product' ? 'Product pin — pick a product in the Products tab first' : t.label}
-                data-tip={t.id === 'product' ? 'Product pin (pick one in Products first)' : t.label}
+                aria-label={t.id === 'product' ? 'Add item — pick a product in the Products tab first' : t.label}
+                data-tip={t.id === 'product' ? 'Add item (pick one in Products first)' : t.label}
               >
                 <span aria-hidden>{t.icon}</span>
               </button>
@@ -1033,6 +1101,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onClick={() => setHideLabels((v) => !v)}
             >
               <span aria-hidden>🏷</span>
+            </button>
+            <button
+              className={`tool-btn ${locked ? 'active' : ''}`}
+              aria-pressed={locked}
+              aria-label={locked ? 'Unlock items' : 'Lock items'}
+              data-tip={locked ? 'Unlock items' : 'Lock items — pan only'}
+              onClick={() => setLocked((v) => !v)}
+            >
+              <span aria-hidden>{locked ? '🔒' : '🔓'}</span>
             </button>
             {tool === 'select' && (
               <>
@@ -1159,6 +1236,36 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               shelf={shelfPreview}
               pins={visibleFloorPins}
               onClose={() => setShelfPreviewId(null)}
+              onEditFacing={(locationId, patch) => {
+                const loc = locations.find((l) => l.id === locationId);
+                if (!loc) return;
+                const patchLevel = patch.shelfLevel;
+                const patchW = patch.w;
+                // optimistic local update, then persist through the pin queue
+                setLocations((prev) =>
+                  prev.map((l) => {
+                    if (l.id !== locationId) return l;
+                    let meta: Record<string, unknown> = {};
+                    try { meta = JSON.parse(l.meta || '{}') as Record<string, unknown>; } catch { /* fresh */ }
+                    if (patchLevel !== undefined) meta.shelf_level = patchLevel;
+                    if (patchW !== undefined) meta.w = patchW;
+                    return { ...l, meta: JSON.stringify(meta) };
+                  })
+                );
+                schedulePinSaves([
+                  {
+                    productId: loc.product_id,
+                    x: loc.x,
+                    y: loc.y,
+                    floorId: loc.floor_id,
+                    shelfId: ownerOf(loc) ?? undefined,
+                    ...(patchLevel !== undefined ? { shelfLevel: patchLevel } : {}),
+                    ...(patchW !== undefined ? { facingW: patchW } : {}),
+                  },
+                ]);
+                dirtyRef.current = true;
+                setSaveState('dirty');
+              }}
             />
           )}
         </div>

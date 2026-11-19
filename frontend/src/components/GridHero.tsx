@@ -19,11 +19,11 @@ export const WORD = 'item.place';
    which also need r, M and C. */
 export const GRID_GLYPHS: Record<string, string[]> = {
   i: ['..#..', '.....', '..#..', '..#..', '..#..', '..#..', '..#..'],
-  t: ['.#...', '.#...', '###..', '.#...', '.#...', '.#...', '..##.'],
+  t: ['.#...', '.#...', '###..', '.#...', '.#...', '.#...', '..#..'],
   e: ['.....', '.....', '.###.', '#...#', '#####', '#....', '.###.'],
   m: ['.....', '.....', '##.#.', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
-  p: ['.....', '.....', '####.', '#...#', '####.', '#....', '#....'],
+  p: ['.....', '.....', '####.', '#..#.', '####.', '#....', '#....'],
   l: ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
   a: ['.....', '.....', '.###.', '....#', '.####', '#...#', '.####'],
   c: ['.....', '.....', '.###.', '#....', '#....', '#....', '.###.'],
@@ -33,8 +33,8 @@ export const GRID_GLYPHS: Record<string, string[]> = {
 };
 
 /** Extra tracking after a letter — negative values tighten the pair: i→t,
- *  m/period→dot so "item" and "place" hug the dot, and extra-tight "pla". */
-const KERN_AFTER: Record<string, number> = { i: -1, m: -1, '.': -1, p: -2, l: -2 };
+ *  t→e, m/period→dot so "item" and "place" hug the dot, c→e, and "pla". */
+const KERN_AFTER: Record<string, number> = { i: -1, t: -1, m: -1, '.': -1, p: -2, l: -2, c: -1 };
 
 export const GLYPH_W = 5;
 export const GLYPH_H = 7;
@@ -256,15 +256,9 @@ export default function GridHero({ text = WORD }: { text?: string }) {
   // wrap so the destination moves without breaking the loop clock
   const routeRef = useRef({ pts, len: routeLen });
   const lastSpot = useRef(ti);
-  // 3D board: the wordmark starts flat and tilts into an extruded 3D-map
-  // view in step with the example map's 2D→3D flight next to it
-  const [iso, setIso] = useState(false);
-  useEffect(() => {
-    const reduced =
-      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const t = window.setTimeout(() => setIso(true), reduced ? 0 : 300);
-    return () => window.clearTimeout(t);
-  }, []);
+  // 3D board: the wordmark starts flat and settles into a slight X tilt so
+  // the extruded blocks read as 3D — always on, no toggle
+  const [iso] = useState(true);
 
   const reduced =
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -397,18 +391,6 @@ export default function GridHero({ text = WORD }: { text?: string }) {
       aria-label={`item.place wordmark: an animated route walks a grid and the destination block lights up on the name "${text}"`}
     >
       <div className="grid-hero-board" title="Replay" onClick={() => setWaveKey((k) => k + 1)}>
-        <button
-          type="button"
-          className="gh-mode"
-          aria-pressed={iso}
-          title={iso ? 'Back to the flat board' : 'Tilt the board into 3D'}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIso((v) => !v);
-          }}
-        >
-          {iso ? '2D' : '3D'}
-        </button>
         <svg
           key={waveKey}
           className={`grid-hero-svg ${iso ? 'gh-iso' : ''}`}

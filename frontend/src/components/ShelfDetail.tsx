@@ -145,12 +145,14 @@ function countSlots(layout: ShelfLayout | null, side: ShelfSide) {
 }
 
 export default function ShelfDetail({
-  shelf, pins, onClose, onPickProduct,
+  shelf, pins, onClose, onPickProduct, onEditFacing,
 }: {
   shelf: MapElement;
   pins: ShelfPin[];
   onClose: () => void;
   onPickProduct?: (p: Product) => void;
+  /** planogram editing: move a facing to another row / resize it */
+  onEditFacing?: (locationId: string, patch: { shelfLevel?: number; w?: number }) => void;
 }) {
   const layout = useMemo(() => computeShelfLayout(shelf, pins), [shelf, pins]);
   const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
@@ -244,6 +246,58 @@ export default function ShelfDetail({
           </div>
         ))}
       </div>
+
+      {onEditFacing && totalSlots > 0 && (
+        <div className="facing-editor">
+          <b className="facing-editor-title">Edit facings — move vertically / resize</b>
+          {/* the editor reads the REAL placement (original levels + widths), not
+              the compact display re-grid — edits write true meta values */}
+          {layout.bays
+            .flatMap((b) => b.slots)
+            .filter((s) => !bothSides || s.side === side)
+            .sort((a, b) => a.u - b.u)
+            .map((s) => (
+            <div key={s.locationId} className="facing-row">
+              <span className="facing-dot" style={{ background: s.product.category_color || '#4f7d3f' }} />
+              <b>{s.product.name}</b>
+              <span className="facing-controls">
+                <button
+                  type="button"
+                  aria-label={`Move ${s.product.name} up a row`}
+                  disabled={s.level >= layout.levels}
+                  onClick={() => onEditFacing(s.locationId, { shelfLevel: s.level + 1 })}
+                >
+                  ▲
+                </button>
+                <span className="facing-level">Row {s.level}</span>
+                <button
+                  type="button"
+                  aria-label={`Move ${s.product.name} down a row`}
+                  disabled={s.level <= 1}
+                  onClick={() => onEditFacing(s.locationId, { shelfLevel: s.level - 1 })}
+                >
+                  ▼
+                </button>
+                <label className="facing-width">
+                  W
+                  <input
+                    type="number"
+                    min={0.05}
+                    max={3}
+                    step={0.05}
+                    value={s.facingWidth}
+                    onChange={(e) => {
+                      const w = Number(e.target.value);
+                      if (!Number.isNaN(w) && w > 0) onEditFacing(s.locationId, { w });
+                    }}
+                  />
+                  m
+                </label>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {layout.outside.length > 0 && (
         <p className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>

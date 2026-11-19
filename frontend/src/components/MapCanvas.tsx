@@ -55,6 +55,10 @@ interface Props {
   onAddElement?: (el: MapElement) => void;
   /** hide every text label (2D) — the editor's labels toggle */
   showLabels?: boolean;
+  /** lock edit interactions: items can't be selected/moved, drag pans */
+  locked?: boolean;
+  /** right-click on the map (editor) — client px + world pt */
+  onMapContextMenu?: (pt: { x: number; y: number }, world: WorldPt) => void;
   onDraftAdd?: (p: WorldPt) => void;
   onDraftFinish?: () => void;
   onDraftCancel?: () => void;
@@ -104,7 +108,7 @@ function straightSnap(from: WorldPt, to: WorldPt): WorldPt {
 export default function MapCanvas(props: Props) {
   const {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
-    selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true,
+    selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true, locked = false, onMapContextMenu,
     onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, onPinClick, onElementClick,
     focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
     pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
@@ -367,8 +371,10 @@ export default function MapCanvas(props: Props) {
     }
     if (pointers.current.size > 1 || drawing.current) return;
 
-    // Viewer: one-finger / mouse drag pans.
-    if (!edit) {
+    // Viewer: one-finger / mouse drag pans. Locked edit: same — items are
+    // unselectable and unmovable while the lock is on.
+    if (!edit || locked) {
+      onSelect?.(null);
       interaction.current = { kind: 'pan', start: { x: e.clientX, y: e.clientY }, vp: viewport, moved: false };
       return;
     }
@@ -683,6 +689,13 @@ export default function MapCanvas(props: Props) {
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
         onDoubleClick={onDoubleClick}
+        onContextMenu={(e) => {
+          e.preventDefault(); // the browser menu breaks gesture state here
+          onMapContextMenu?.(
+            { x: e.clientX, y: e.clientY },
+            toWorld(e as unknown as React.PointerEvent<SVGSVGElement>)
+          );
+        }}
         style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
       >
       <defs>

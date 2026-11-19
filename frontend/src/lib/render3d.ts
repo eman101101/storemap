@@ -1139,7 +1139,7 @@ export function renderScene(
   cam: Camera3D,
   floor: Floor,
   elements: MapElement[],
-  input: SceneInput = {}
+  input: SceneInput & { overlayFaces?: Face[] } = {}
 ): SceneHits {
   const fov = cam.fov ?? DEFAULT_FOV;
   const theme = input.theme ?? MODERN_THEME;
@@ -1202,7 +1202,7 @@ export function renderScene(
   ctx.fillRect(0, 0, w, h);
 
   ctx.lineJoin = 'round';
-  for (const { face, spts } of draws) {
+  const drawFace = ({ face, spts }: { face: Face; spts: { x: number; y: number }[] }) => {
     ctx.beginPath();
     ctx.moveTo(spts[0].x, spts[0].y);
     for (let i = 1; i < spts.length; i++) ctx.lineTo(spts[i].x, spts[i].y);
@@ -1210,7 +1210,7 @@ export function renderScene(
       ctx.strokeStyle = face.stroke ?? '#ccc';
       ctx.lineWidth = face.lw ?? 1;
       ctx.stroke();
-      continue;
+      return;
     }
     ctx.closePath();
     if (face.fill) {
@@ -1223,6 +1223,17 @@ export function renderScene(
       ctx.strokeStyle = face.stroke;
       ctx.lineWidth = face.lw ?? 1;
       ctx.stroke();
+    }
+  };
+  for (const d of draws) drawFace(d);
+  // overlay pass (route): always visible, even across shelf blocks
+  if (input.overlayFaces?.length) {
+    for (const raw of input.overlayFaces) {
+      const d = projectFace(raw);
+      if (d) {
+        if (d.face.fill) d.face = { ...d.face, alpha: Math.min(d.face.alpha ?? 1, 0.9) };
+        drawFace(d);
+      }
     }
   }
 
@@ -1269,10 +1280,29 @@ export function renderScene(
     ctx.lineWidth = 2.2;
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = `700 ${big ? 15 : 11}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(glyph, top.x, top.y + 0.5);
+    // entrance/exit read as crisp drawn arrows; other places keep their glyph
+    if (el.type === 'entrance' || el.type === 'exit') {
+      const s = headR / 14; // scale the arrow with the head
+      ctx.save();
+      ctx.translate(top.x, top.y + 0.5);
+      if (el.type === 'exit') ctx.rotate(Math.PI);
+      ctx.beginPath();
+      ctx.moveTo(0, -6 * s);
+      ctx.lineTo(5 * s, 1 * s);
+      ctx.lineTo(2 * s, 1 * s);
+      ctx.lineTo(2 * s, 6 * s);
+      ctx.lineTo(-2 * s, 6 * s);
+      ctx.lineTo(-2 * s, 1 * s);
+      ctx.lineTo(-5 * s, 1 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.font = `700 ${big ? 15 : 11}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(glyph, top.x, top.y + 0.5);
+    }
     if (el.label && !sym) drawLabel(ctx, top.x + headR + 5, top.y, el.label, 12, true, theme.dark);
   }
 
