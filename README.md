@@ -182,7 +182,7 @@ CI runs all three suites on every push (`.github/workflows/ci.yml`).
 
 ## Self-hosting (free)
 
-Run your own instance at $0: on your own computer (Node 22.5+, a free tunnel for a
+Run your own instance at $0: on your own computer (Node 24+, a free tunnel for a
 public URL) or one-click on Cloudflare Workers (D1 database + R2 media, free
 tier, persistent). The current guide — rendered in-app at **/self-host** — lives
 on the [`storemaplocal` repo](https://github.com/eman101101/storemaplocal),

@@ -5,6 +5,19 @@ export const db = new DatabaseSync(config.dbPath);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
+// node:sqlite before Node 24 bundles SQLite without FTS5, and migration 006
+// (the product search index) would die with a cryptic "no such module: fts5".
+// Probe once and fail with a message that names the requirement instead.
+const fts5Probe = new DatabaseSync(':memory:');
+try {
+  fts5Probe.exec('CREATE VIRTUAL TABLE fts5_probe USING fts5(x)');
+} catch {
+  throw new Error(
+    `Node ${process.versions.node}'s built-in SQLite lacks FTS5 (product search needs it). Use Node 24 or newer.`
+  );
+}
+fts5Probe.close();
+
 const MIGRATIONS = [
   {
     name: '001_initial_schema',
