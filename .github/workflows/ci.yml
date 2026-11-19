@@ -22,7 +22,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: npm, cache-dependency-path: backend/package-lock.json }
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Build SPA (backend tests serve frontend/dist)
+        working-directory: frontend
+        run: npm ci && npm run build
       - run: npm ci
       - run: npm test
       - run: npm audit --audit-level=high --omit=dev || true
