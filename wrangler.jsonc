@@ -71,6 +71,8 @@
 		"APPLE_TEAM_ID": "",
 		"APPLE_KEY_ID": "",
 		"APPLE_PRIVATE_KEY": "",
+		"GOOGLE_CLIENT_ID": "",
+		"GOOGLE_CLIENT_SECRET": "",
 		// Optional Cloudflare Access (Zero Trust) sign-in — the built-in auth option.
 		// Protect the dashboard + owner API paths with an Access application (free
 		// for up to 50 users), then set:
