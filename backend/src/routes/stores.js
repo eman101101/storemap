@@ -291,9 +291,9 @@ router.post('/:id/duplicate', handler(async (req, res) => {
       const pid = newId();
       idMap.set(pr.id, pid);
       db.prepare(
-        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(pid, cloneId, remap(pr.category_id), pr.name, pr.brand, pr.sku, pr.barcode, pr.description, pr.price, pr.image_url);
+        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url, image_crop_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(pid, cloneId, remap(pr.category_id), pr.name, pr.brand, pr.sku, pr.barcode, pr.description, pr.price, pr.image_url, pr.image_crop_url);
       for (const l of db.prepare('SELECT * FROM product_locations WHERE product_id = ?').all(pr.id)) {
         db.prepare(
           `INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta)

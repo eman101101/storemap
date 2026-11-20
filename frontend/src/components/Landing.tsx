@@ -19,6 +19,8 @@ import { useTheme } from '../theme';
 const EXAMPLES = [
   { slug: 'freshmart-downtown', name: 'Freshmart Downtown', kind: 'Supermarket' },
   { slug: 'harbor-warehouse', name: 'Harbor Warehouse', kind: 'Warehouse' },
+  { slug: 'grand-mart', name: 'Grand Mart', kind: '400 groups · 3000 items' },
+  { slug: 'maple-corner', name: 'Maple Corner Store', kind: 'Convenience' },
 ];
 
 /** The hero's settle-in motion: a slow, decelerating swing (~29°) that glides
@@ -172,7 +174,7 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
         if (!layout) continue;
         const total = layout.bays.reduce((n, b) => n + b.slots.length, 0);
         const withImgs = layout.bays.reduce(
-          (n, b) => n + b.slots.filter((s) => s.product.image_url).length,
+          (n, b) => n + b.slots.filter((s) => s.product.image_crop_url || s.product.image_url).length,
           0
         );
         if (withImgs === 0 || total < 3) continue;
@@ -207,7 +209,7 @@ function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
   const slots = layout.bays.flatMap((b) => b.slots);
   const filled = useMemo(() => compactFilledLayout(layout, slots), [layout, slots]);
   const shown = filled.bays.reduce((n, b) => n + b.slots.length, 0);
-  const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_url));
+  const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_crop_url || s.product.image_url));
 
   return (
     <div className="planogram-card">
@@ -215,7 +217,7 @@ function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
         <b>{label} — shelf planogram</b>
       </div>
       <div className="planogram-scroll">
-        <PlanogramSvg layout={filled} mode={hasImages ? 'photos' : 'diagram'} />
+        <PlanogramSvg layout={filled} mode={hasImages ? 'images' : 'diagram'} />
       </div>
       <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
         {shown} product{shown === 1 ? '' : 's'} · {filled.levels} row{filled.levels === 1 ? '' : 's'} ·{' '}

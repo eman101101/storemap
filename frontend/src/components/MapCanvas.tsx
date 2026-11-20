@@ -8,6 +8,7 @@ import {
 import { TYPE_COLOR, TYPE_STROKE, shade } from '../lib/mapColors';
 import { placeGlyph } from '../lib/placeSymbols';
 import { aisleContents, shelfContents } from '../lib/aisleInfo';
+import { shelfDepartments } from '../lib/departments';
 import { AisleTooltip } from './Map3D';
 
 export type EditorTool =
@@ -63,6 +64,9 @@ interface Props {
   onDraftFinish?: () => void;
   onDraftCancel?: () => void;
   onPlaceProduct?: (p: WorldPt, targetShelfId?: string | null) => void;
+  /** Editor add-item mode: 'group' fills a shelf with a new item group,
+   *  'single' places one item — picks the ghost-preview shape. */
+  placeMode?: 'group' | 'single';
   /** Resolve a pin's owning shelf (editor-only) so hovering a pin during
    *  product placement targets the group it belongs to. */
   ownerOfPin?: (locationId: string) => string | null;
@@ -77,6 +81,13 @@ interface Props {
   onElementClick?: (el: MapElement) => void;
   /** Every pin on the floor (unfiltered) — drives the aisle hover contents. */
   stockPins?: MapPin[];
+  /** Items visibility: false = groups view — pins hide (focused/selected
+   *  stay) and department area labels can show instead. Heavy floors also
+   *  viewport-cull pins while items are shown. */
+  showItems?: boolean;
+  /** Department area labels on shelves (groups view) — general area names
+   *  from meta.department or the dominant pinned category. */
+  showDepartments?: boolean;
   focusPinId?: string | null;
   highlightElementIds?: Set<string>;
   fitSignal?: number;
@@ -112,9 +123,10 @@ export default function MapCanvas(props: Props) {
   const {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
     selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true, locked = false, onMapContextMenu,
-    onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, ownerOfPin, onPinClick, onElementClick,
+    onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, placeMode = 'group', ownerOfPin, onPinClick, onElementClick,
     focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
     pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
+    showItems = true, showDepartments = false,
   } = props;
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
@@ -689,6 +701,68 @@ export default function MapCanvas(props: Props) {
   const floorEls = elements;
   const floorPins = useMemo(() => pins.filter((p) => p.location.floor_id === floor.id), [pins, floor.id]);
 
+  // pins actually drawn: groups view keeps only the focused/selected pins;
+  // heavy floors viewport-cull the rest to the visible world rect (+2 m
+  // margin) so panning a 3000-pin floor doesn't drag 12k SVG nodes around
+  const alwaysPinIds = useMemo(() => {
+    const s = new Set<string>();
+    if (focusPinId) s.add(focusPinId);
+    if (edit && selectedPinId) s.add(selectedPinId);
+    return s;
+  }, [focusPinId, edit, selectedPinId]);
+  const shownPins = useMemo(() => {
+    if (floorPins.length <= 600) return floorPins;
+    const m = 2;
+    const x0 = -viewport.tx / viewport.scale - m;
+    const y0 = -viewport.ty / viewport.scale - m;
+    const x1 = (size.w - viewport.tx) / viewport.scale + m;
+    const y1 = (size.h - viewport.ty) / viewport.scale + m;
+    const out: typeof floorPins = [];
+    for (const p of floorPins) {
+      const { x, y } = p.location;
+      if ((x >= x0 && x <= x1 && y >= y0 && y <= y1) || alwaysPinIds.has(p.location.id)) out.push(p);
+    }
+    return out;
+  }, [floorPins, viewport.tx, viewport.ty, viewport.scale, size.w, size.h, alwaysPinIds]);
+  // groups view: focused pins only
+  const groupsPins = useMemo(
+    () => floorPins.filter((p) => alwaysPinIds.has(p.location.id)),
+    [floorPins, alwaysPinIds]
+  );
+  const renderedPins = showItems ? shownPins : groupsPins;
+
+  // department area labels: shelfId → department name. Callers decide when
+  // they show — the editor in groups view, the viewer whenever it isn't mid-
+  // search (its pins prop is already search-filtered). Double-sided pairs
+  // (same department, directly behind one another) label once — the badge
+  // sits in the gap between the pair and repeats would just double the text.
+  const departments = useMemo(
+    () => (showDepartments ? shelfDepartments(floorEls, stockPins.length ? stockPins : floorPins, ownerOfPin) : null),
+    [showDepartments, floorEls, stockPins, floorPins, ownerOfPin]
+  );
+  const shelfById = useMemo(() => new Map(floorEls.map((el) => [el.id, el])), [floorEls]);
+  const deptBadgeIds = useMemo(() => {
+    if (!departments) return null;
+    const skip = new Set<string>();
+    const rects = new Map<string, RectGeom>();
+    for (const [id] of departments) {
+      const el = shelfById.get(id);
+      if (el?.shape === 'rect') rects.set(id, el.geom as RectGeom);
+    }
+    for (const [id, r] of rects) {
+      const d = departments.get(id)!;
+      for (const [oid, or] of rects) {
+        if (oid === id || departments.get(oid) !== d) continue;
+        // o sits directly behind (above) s with the same department → s skips
+        if (Math.abs(or.x - r.x) < (r.w + or.w) / 2 && r.y - or.y > 0 && r.y - or.y < 4.5) {
+          skip.add(id);
+          break;
+        }
+      }
+    }
+    return { map: departments, skip };
+  }, [departments, shelfById]);
+
   const sel = selectedId ? floorEls.find((el) => el.id === selectedId) : null;
 
   // viewer-only: wide invisible hit paths over aisle ribbons → hover tooltip
@@ -868,7 +942,41 @@ export default function MapCanvas(props: Props) {
           </g>
         ))}
 
-        {floorPins.map(({ location, product }) => (
+        {/* department area labels — groups view marks the general area a
+            shelf belongs to so the floor reads without its item pins */}
+        {deptBadgeIds && (
+          <g pointerEvents="none">
+            {[...deptBadgeIds.map].map(([shelfId, dept]) => {
+              if (deptBadgeIds.skip.has(shelfId)) return null;
+              const el = shelfById.get(shelfId);
+              if (!el || el.shape !== 'rect') return null;
+              const r = el.geom as RectGeom;
+              const cx = r.x + r.w / 2;
+              const cy = r.y + r.h / 2 + r.h / 2 + 10 / scale;
+              return (
+                <text
+                  key={`dept-${shelfId}`}
+                  x={cx}
+                  y={cy}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={11 / scale}
+                  fontWeight={600}
+                  className="el-label"
+                  stroke="var(--map-floor)"
+                  strokeWidth={3 / scale}
+                  paintOrder="stroke"
+                  strokeLinejoin="round"
+                  transform={r.rot ? `rotate(${r.rot} ${r.x + r.w / 2} ${r.y + r.h / 2})` : undefined}
+                >
+                  {dept}
+                </text>
+              );
+            })}
+          </g>
+        )}
+
+        {renderedPins.map(({ location, product }) => (
           <ProductPin
             key={location.id}
             location={location}
@@ -885,19 +993,66 @@ export default function MapCanvas(props: Props) {
           <SelectionOverlay r={sel.geom as RectGeom} scale={scale} label={sel.label} />
         )}
 
-        {/* product-placement target: the group a click would join */}
-        {edit && tool === 'product' && placeHoverShelfId &&
+        {/* product-placement preview: ghost facings where the group or item
+            will land — NOT the whole shelf (that outline read as noise) */}
+        {edit && tool === 'product' && placeMode === 'group' && placeHoverShelfId &&
           (() => {
             const target = elements.find((el) => el.id === placeHoverShelfId && el.shape === 'rect');
             if (!target) return null;
-            const pts = rectCorners(target.geom as RectGeom).map((p) => `${p.x},${p.y}`).join(' ');
+            const r = target.geom as RectGeom;
+            const cx = r.x + r.w / 2;
+            const cy = r.y + r.h / 2;
+            const cos = Math.cos((r.rot * Math.PI) / 180);
+            const sin = Math.sin((r.rot * Math.PI) / 180);
+            // local (lx, ly) metres from the rect's top-left → world
+            const toWorld = (lx: number, ly: number) => ({
+              x: cx + (lx - r.w / 2) * cos - (ly - r.h / 2) * sin,
+              y: cy + (lx - r.w / 2) * sin + (ly - r.h / 2) * cos,
+            });
+            const horizontal = r.w >= r.h;
+            const runLen = horizontal ? r.w : r.h;
+            const n = Math.max(3, Math.min(10, Math.round(runLen / 0.9)));
+            const ghosts = [];
+            for (const off of [0.1, (horizontal ? r.h : r.w) - 0.1]) {
+              for (let i = 0; i < n; i++) {
+                const at = 0.35 + ((i + 0.5) * (runLen - 0.7)) / n;
+                const c = horizontal ? toWorld(at, off) : toWorld(off, at);
+                ghosts.push(
+                  <rect
+                    key={`${off}-${i}`}
+                    x={c.x - (horizontal ? 0.25 : 0.1)}
+                    y={c.y - (horizontal ? 0.1 : 0.25)}
+                    width={horizontal ? 0.5 : 0.2}
+                    height={horizontal ? 0.2 : 0.5}
+                    transform={r.rot ? `rotate(${r.rot} ${c.x} ${c.y})` : undefined}
+                    fill="rgba(47, 158, 66, 0.4)"
+                    stroke="#2f9e44"
+                    strokeWidth={1 / scale}
+                    pointerEvents="none"
+                  />
+                );
+              }
+            }
+            return <g>{ghosts}</g>;
+          })()}
+        {edit && tool === 'product' && placeMode === 'single' && cursorWorld &&
+          (() => {
+            // the hovered shelf tilts the ghost to its long axis
+            const target = placeHoverShelfId
+              ? elements.find((el) => el.id === placeHoverShelfId && el.shape === 'rect')
+              : null;
+            const r = target?.geom as RectGeom | undefined;
+            const horizontal = !r || r.w >= r.h;
             return (
-              <polygon
-                points={pts}
-                fill="rgba(47, 158, 66, 0.14)"
+              <rect
+                x={cursorWorld.x - (horizontal ? 0.25 : 0.1)}
+                y={cursorWorld.y - (horizontal ? 0.1 : 0.25)}
+                width={horizontal ? 0.5 : 0.2}
+                height={horizontal ? 0.2 : 0.5}
+                transform={r?.rot ? `rotate(${r.rot} ${cursorWorld.x} ${cursorWorld.y})` : undefined}
+                fill="rgba(47, 158, 66, 0.4)"
                 stroke="#2f9e44"
-                strokeWidth={2.5}
-                strokeDasharray={`${6 / scale} ${4 / scale}`}
+                strokeWidth={1 / scale}
                 pointerEvents="none"
               />
             );
@@ -956,9 +1111,11 @@ function ElementNode({
     el.color ? shade(el.color, -0.25) : el.type === 'wall' ? 'var(--el-wall-stroke)' : TYPE_STROKE[el.type];
   const label = el.label;
   let fs = 12.5 / scale;
+  let labelHidden = false;
   try {
     const m = JSON.parse(el.meta || '{}');
     if (typeof m.labelScale === 'number') fs *= m.labelScale;
+    labelHidden = m.labelHidden === true;
   } catch { /* default size */ }
 
   if (el.shape === 'rect') {
@@ -978,7 +1135,7 @@ function ElementNode({
           vectorEffect="non-scaling-stroke"
           rx={el.type === 'shelf' ? 0 : Math.min(0.15, r.w / 4)}
         />
-        {label && !dim && showLabels && (
+        {label && !dim && showLabels && !labelHidden && (
           <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
@@ -1000,7 +1157,7 @@ function ElementNode({
         <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={entrance ? 0.9 : 0.52} fill="#fff" pointerEvents="none">
           {glyph}
         </text>
-        {label && !sym && showLabels && (
+        {label && !sym && showLabels && !labelHidden && (
           <text x={p.x + (entrance ? 1.05 : 0.7)} y={p.y} dominantBaseline="central" fontSize={fs} className="el-label">
             {label}
           </text>
@@ -1035,7 +1192,7 @@ function ElementNode({
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
-      {label && showLabels && (
+      {label && showLabels && !labelHidden && (
         <text
           x={labelAt.x}
           y={labelAt.y}

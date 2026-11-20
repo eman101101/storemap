@@ -289,9 +289,9 @@ app.post('/:id/duplicate', async (c) => {
     statements.push(
       stmt(
         env,
-        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        pid, cloneId, pr.category_id ? remap(pr.category_id) : null, pr.name, pr.brand, pr.sku, pr.barcode, pr.description, pr.price, pr.image_url
+        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url, image_crop_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        pid, cloneId, pr.category_id ? remap(pr.category_id) : null, pr.name, pr.brand, pr.sku, pr.barcode, pr.description, pr.price, pr.image_url, pr.image_crop_url
       )
     );
     for (const l of await all(env, 'SELECT * FROM product_locations WHERE product_id = ?', pr.id)) {

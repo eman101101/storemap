@@ -83,7 +83,10 @@ export async function buildExportBundle(store, { withMedia = true } = {}) {
       media.push({ path: p, ext: file.ext, data: file.buf.toString('base64') });
     }
   };
-  for (const p of products) if (internalPath(p.image_url)) await embed(p.image_url);
+  for (const p of products) {
+    if (internalPath(p.image_url)) await embed(p.image_url);
+    if (internalPath(p.image_crop_url)) await embed(p.image_crop_url);
+  }
   for (const f of floors) if (internalPath(f.background_url)) await embed(f.background_url);
   if (internalPath(store.logo_url)) await embed(store.logo_url);
 
@@ -109,6 +112,7 @@ export async function buildExportBundle(store, { withMedia = true } = {}) {
     products: products.map((p) => ({
       name: p.name, brand: p.brand, sku: p.sku, barcode: p.barcode,
       description: p.description, price: p.price, image_url: p.image_url,
+      image_crop_url: p.image_crop_url || '',
       category: p.category_id != null ? catIndex.get(p.category_id) : null,
     })),
     elements: elements.map((e) => ({
@@ -226,8 +230,8 @@ export async function importBundle(bundle, userId, { uniqueSlug }) {
     }
 
     const insProd = db.prepare(
-      `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url, image_crop_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const p of bundle.products || []) {
       const id = newId();
@@ -240,7 +244,8 @@ export async function importBundle(bundle, userId, { uniqueSlug }) {
         String(p.sku || '').slice(0, 60), String(p.barcode || '').slice(0, 60),
         String(p.description || '').slice(0, 1000),
         Number.isFinite(p.price) && p.price >= 0 ? p.price : null,
-        rewrite(p.image_url) || ''
+        rewrite(p.image_url) || '',
+        rewrite(p.image_crop_url) || ''
       );
     }
 

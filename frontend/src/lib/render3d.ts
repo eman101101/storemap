@@ -53,6 +53,15 @@ export function elementHeight(el: MapElement): number {
   return TYPE_HEIGHT[el.type] ?? 0;
 }
 
+/** Per-element label hide (meta.labelHidden, the panel's Hide label toggle). */
+function labelHidden(el: MapElement): boolean {
+  try {
+    return JSON.parse(el.meta || '{}')?.labelHidden === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface Face {
   pts: V3[];
   fill?: string; // pre-shaded css color
@@ -1303,7 +1312,7 @@ export function renderScene(
       ctx.textBaseline = 'middle';
       ctx.fillText(glyph, top.x, top.y + 0.5);
     }
-    if (el.label && !sym) drawLabel(ctx, top.x + headR + 5, top.y, el.label, 12, true, theme.dark);
+    if (el.label && !sym && !labelHidden(el)) drawLabel(ctx, top.x + headR + 5, top.y, el.label, 12, true, theme.dark);
   }
 
   // aisle symbols: floating disc above the aisle's midpoint; hovering it (see
@@ -1339,7 +1348,7 @@ export function renderScene(
     ctx.textBaseline = 'middle';
     ctx.fillText('≡', top.x, top.y + 0.5);
     hits.aisles.push({ elementId: el.id, sx: top.x, sy: top.y });
-    if (el.label) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
+    if (el.label && !labelHidden(el)) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
   }
 
   // numbered trip stop markers (A1) — drawn above the route discs, each with
@@ -1388,7 +1397,7 @@ export function renderScene(
   if (input.labels !== false) {
     const drawnAt = new Map<string, { x: number; y: number }>();
     for (const el of elements) {
-      if (!el.label) continue;
+      if (!el.label || labelHidden(el)) continue;
       if (el.shape === 'point') continue; // markers label themselves next to the pole — a second pass would double them
       if (el.type === 'wall') continue; // walls carry no floating labels in the 3D preview
       let c: WorldPt | null = null;

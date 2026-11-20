@@ -55,7 +55,7 @@ async function publicStorePayload(env: Env, slug: string) {
   const categories = await all(env, 'SELECT id, name, color, icon FROM categories WHERE store_id = ? ORDER BY name', store.id);
   const products = await all(
     env,
-    `SELECT p.id, p.name, p.brand, p.sku, p.description, p.price, p.image_url,
+    `SELECT p.id, p.name, p.brand, p.sku, p.description, p.price, p.image_url, p.image_crop_url,
             c.name AS category_name, c.color AS category_color
      FROM products p LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.store_id = ? ORDER BY p.name COLLATE NOCASE`,

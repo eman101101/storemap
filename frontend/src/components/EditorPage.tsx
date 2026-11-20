@@ -6,6 +6,9 @@ import { LocalSession, type EditorApi } from '../localStore';
 import MapCanvas, { TOOL_DEF, TYPE_COLOR, type EditorTool } from './MapCanvas';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
+import ShelfItemPicker from './ShelfItemPicker';
+import CropModal from './CropModal';
+import GroupCreatorModal, { type GroupItemDraft } from './GroupCreatorModal';
 import type {
   Category, Floor, MapElement, Product, ProductLocation, RectGeom, Store,
 } from '../types';
@@ -18,7 +21,8 @@ import { removeBackground } from '../lib/imageBg';
 import { defaultWeek, parseStoreHours, serializeWeek, WEEK_DAYS, type DayHours, type WeekDay, type WeekHours } from '../lib/storeHours';
 import { useLoginModal } from '../App';
 import { EditorTour, GlossaryModal, type TourStep } from './EditorHelp';
-import { shelfLocalToWorld, worldToShelfLocal } from '../lib/shelfLayout';
+import { findFreeFacingU, shelfLocalToWorld, shelfLevels, worldToShelfLocal } from '../lib/shelfLayout';
+import { GROUP_FACING_W, groupPrice } from '../lib/itemGroups';
 
 /**
  * The editor's data source. On the dashboard it's the real api; in the
@@ -32,11 +36,10 @@ const TOOLS: { id: EditorTool; label: string; icon: string; group?: string }[] =
   { id: 'select', label: 'Select', icon: '⬚' },
   { id: 'shelf', label: 'Shelf', icon: '▬', group: 'draw' },
   { id: 'wall', label: 'Wall', icon: '▥', group: 'draw' },
-  { id: 'zone', label: 'Zone', icon: '▣', group: 'mark' },
-  { id: 'aisle', label: 'Label', icon: '🏷', group: 'mark' },
+  { id: 'aisle', label: 'Aisle / Zone', icon: '▣', group: 'mark' },
   { id: 'entrance', label: 'Entrance', icon: '⬆', group: 'point' },
   { id: 'poi', label: 'Interest points', icon: '★', group: 'point' },
-  { id: 'product', label: 'Add item', icon: '📍', group: 'point' },
+  { id: 'product', label: 'Add item group', icon: '🧺', group: 'point' },
 ];
 
 const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
@@ -44,11 +47,10 @@ const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
   shelf: 'Drag to draw a shelf rectangle (or click for a default size)',
   wall: 'Drag to draw a wall segment',
   'wall-line': 'Click to add wall vertices · hold Shift for straight runs · Enter to finish',
-  aisle: 'Click to place a labelled aisle zone · drag to size it · reshape with the handles or the panel',
-  zone: 'Drag to draw a zone rectangle',
+  aisle: 'Drag to draw an aisle / zone rectangle (click for a default size) · label it in the panel',
   entrance: 'Click to place the entrance marker',
   poi: 'Click to place a point of interest',
-  product: 'Click empty space to create an item area · hover a group to add to it · Esc cancels',
+  product: 'Click a shelf to add an item group to it · switch to Single for one item · Esc cancels',
 };
 
 /** A starter skeleton sized to the floor: outer walls, an entrance and blank
@@ -173,6 +175,14 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
+  /** shelf whose "＋ Add item" picker is open (renders in front of the planogram modal) */
+  const [itemPickerFor, setItemPickerFor] = useState<string | null>(null);
+  /** Add-item-group tool: fill a shelf with a named group, or place one item */
+  const [addMode, setAddMode] = useState<'group' | 'single'>('group');
+  /** shelf whose group creator is open (Add-item-group tool) */
+  const [groupCreatorFor, setGroupCreatorFor] = useState<string | null>(null);
+  /** transient map hint (e.g. "Pick a shelf — the group is added to it") */
+  const [hintFlash, setHintFlash] = useState<string | null>(null);
   // a product pin selected on the map — shows the pin card (size + planogram)
   // in the side panel's Map tab
   const [selectedPinProductId, setSelectedPinProductId] = useState<string | null>(null);
@@ -257,11 +267,10 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [pinQueue, setPinQueue] = useState<string[]>([]);
   // create-from-map flow: the spot (and its new/target area) the product form
   // should pin into once the item is saved
-  const [newItemAt, setNewItemAt] = useState<{ x: number; y: number; shelfId: string } | null>(null);
+  const [newItemAt, setNewItemAt] = useState<{ x: number; y: number; shelfId?: string } | null>(null);
   // group-move confirmations: a pin dropped on another group, or a shelf
   // (with its items) dropped onto another — cancel reverses the move
-  const [pendingPinMove, setPendingPinMove] = useState<{ locationId: string; productId: string; x: number; y: number; orig: { x: number; y: number }; fromShelfId: string | null; toShelfId: string | null } | null>(null);
-  const [pendingShelfMerge, setPendingShelfMerge] = useState<{ movedShelfId: string; targetShelfId: string; targetLabel: string; facingCount: number } | null>(null);
+
   const dirtyRef = useRef(false);
 
   // ---- load ----
@@ -304,6 +313,28 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     [pins, floor?.id, movingShelfIds, /* ownerOf is a stable ref reader */]
   );
 
+  // ---- items / groups visibility ----
+  // Groups view (items hidden) is the perf mode for heavy floors: the map
+  // shows fixtures + department area labels and only the focused/selected
+  // pins. null = no explicit choice yet — heavy floors default to groups.
+  const [itemsPref, setItemsPref] = useState<boolean | null>(() => {
+    try {
+      const v = localStorage.getItem('storemap.showItems');
+      return v == null ? null : v === '1';
+    } catch {
+      return null; // private mode — fall back to the pin-count heuristic
+    }
+  });
+  const ITEMS_HEAVY = 800;
+  const showItems = itemsPref ?? visibleFloorPins.length <= ITEMS_HEAVY;
+  const toggleShowItems = () => {
+    setItemsPref((cur) => {
+      const next = !(cur ?? visibleFloorPins.length <= ITEMS_HEAVY);
+      try { localStorage.setItem('storemap.showItems', next ? '1' : '0'); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
 
   /** Owner shelf id persisted on a location — top-level `shelfId` first, then
    *  `meta.shelfId` (falls back to the live map). */
@@ -335,6 +366,29 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       }, 700);
     },
     []
+  );
+
+  /** Build a pin save that MOVES the existing pin (locationId) and carries its
+   *  planogram placement forward — the server rebuilds meta from the fields we
+   *  send, so a save without them would erase shelf_level / facing width and
+   *  a save without locationId would INSERT a duplicate pin. */
+  const pinSaveFrom = useCallback(
+    (loc: ProductLocation, x: number, y: number, shelfId?: string) => {
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
+      return {
+        productId: loc.product_id,
+        locationId: loc.id,
+        x, y,
+        floorId: loc.floor_id,
+        shelfId: shelfId ?? ownerOf(loc) ?? metaOwnerOf(loc) ?? undefined,
+        ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+        ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+        ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
+        ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+      };
+    },
+    [ownerOf, metaOwnerOf]
   );
 
   // ---- element mutations + history ----
@@ -372,29 +426,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         // no gesture (delete/add/panel edit): "before" is the current state
         const baseEls = base ?? elements;
         const baseById = new Map(baseEls.map((e) => [e.id, e]));
-        // a shelf dropped so its centre lands on ANOTHER shelf asks to merge
-        // the groups — its items re-home to the target; cancel undoes the move
-        for (const el of nextFloorEls) {
-          const start = baseById.get(el.id);
-          if (!start || start.type !== 'shelf' || el.type !== 'shelf' || start.shape !== 'rect' || el.shape !== 'rect') continue;
-          const bg = start.geom as RectGeom;
-          const ng = el.geom as RectGeom;
-          if (bg.x === ng.x && bg.y === ng.y) continue;
-          const cx = ng.x + ng.w / 2;
-          const cy = ng.y + ng.h / 2;
-          const target = shelfIdAtPoint({ x: cx, y: cy }, nextFloorEls.filter((e) => e.id !== el.id));
-          if (target && target !== el.id && !pendingShelfMerge) {
-            const facings = locations.filter((l) => l.floor_id === floor.id && ownerOf(l) === el.id).length;
-            const targetEl = nextFloorEls.find((e) => e.id === target);
-            setPendingShelfMerge({
-              movedShelfId: el.id,
-              targetShelfId: target,
-              targetLabel: (targetEl && (targetEl as MapElement).label) || 'shelf',
-              facingCount: facings,
-            });
-            break;
-          }
-        }
+        // a shelf dropped onto another shelf does NOT merge groups — its pins
+        // keep their own group and just follow the shelf. Moving an item
+        // between groups is a deliberate per-item drag onto the other shelf.
         for (const el of nextFloorEls) {
           const start = baseById.get(el.id);
           if (!start || start.type !== 'shelf' || el.type !== 'shelf') continue;
@@ -447,19 +481,13 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         const posById = new Map(pinFollows.map((f) => [f.location.id, f]));
         setLocations((prev) => prev.map((l) => (movedIds.has(l.id) ? { ...l, x: posById.get(l.id)!.x, y: posById.get(l.id)!.y } : l)));
         schedulePinSaves(
-          pinFollows.map((f) => ({
-            productId: f.location.product_id,
-            x: f.x,
-            y: f.y,
-            floorId: floor.id,
-            shelfId: ownerOf(f.location) ?? undefined,
-          }))
+          pinFollows.map((f) => pinSaveFrom(f.location, f.x, f.y))
         );
       }
       dirtyRef.current = true;
       setSaveState('dirty');
     },
-    [elements, floor, locations, schedulePinSaves]
+    [elements, floor, locations, schedulePinSaves, pinSaveFrom]
   );
 
   // 3D drag: deltas are relative to the drag start, applied to the element as
@@ -607,12 +635,12 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           const cur = curById.get(pl.id);
           return !cur || Math.abs(cur.x - pl.x) > 0.001 || Math.abs(cur.y - pl.y) > 0.001;
         })
-        .map((pl) => ({ productId: pl.product_id, x: pl.x, y: pl.y, floorId: pl.floor_id, shelfId: metaOwnerOf(pl) ?? undefined }))
+        .map((pl) => pinSaveFrom(pl, pl.x, pl.y, metaOwnerOf(pl) ?? undefined))
     );
     dirtyRef.current = true;
     setSaveState('dirty');
     setSelectedId(null);
-  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf]);
+  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf, pinSaveFrom]);
 
   const redo = useCallback(() => {
     const h = history.current;
@@ -636,11 +664,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           const cur = curById.get(pl.id);
           return !cur || Math.abs(cur.x - pl.x) > 0.001 || Math.abs(cur.y - pl.y) > 0.001;
         })
-        .map((pl) => ({ productId: pl.product_id, x: pl.x, y: pl.y, floorId: pl.floor_id, shelfId: metaOwnerOf(pl) ?? undefined }))
+        .map((pl) => pinSaveFrom(pl, pl.x, pl.y, metaOwnerOf(pl) ?? undefined))
     );
     dirtyRef.current = true;
     setSaveState('dirty');
-  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf]);
+  }, [elements, floor, floorElements, locations, schedulePinSaves, deriveOwners, metaOwnerOf, pinSaveFrom]);
 
   // ---- autosave ----
   const saveNow = useCallback(async () => {
@@ -754,22 +782,19 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // otherwise the click point decides via geometric containment.
   const placeProduct = async (p: WorldPt, targetShelfId?: string | null) => {
     if (!floor) return;
-    // Add-item with nothing pre-selected: clicking empty space CREATES the
-    // item's own area (a small shelf — resize its length like any shelf to
-    // shape the planogram); hovering an existing group targets it instead.
+    // Add-item tool with nothing pre-selected: GROUP mode fills the hovered
+    // shelf with a named group of items; SINGLE mode creates one item. An
+    // item doesn't NEED a shelf — clicking empty space places a free pin and
+    // never auto-creates a shelf area.
     if (!placeProductId) {
-      let shelfId = targetShelfId ?? shelfIdAtPoint(p, floorElements) ?? undefined;
-      if (!shelfId) {
-        const area: MapElement = {
-          id: crypto.randomUUID(),
-          floor_id: floor.id,
-          type: 'shelf',
-          shape: 'rect',
-          geom: { x: p.x - 1, y: p.y - 0.275, w: 2, h: 0.55, rot: 0 },
-          label: '', color: '', meta: '{}', z_index: 1,
-        };
-        changeElements([...floorElements, area], 'push', 'create item area');
-        shelfId = area.id;
+      const shelfId = targetShelfId ?? shelfIdAtPoint(p, floorElements) ?? undefined;
+      if (addMode === 'group') {
+        if (!shelfId) {
+          flashHint('Pick a shelf — the group is added to it');
+          return;
+        }
+        setGroupCreatorFor(shelfId);
+        return;
       }
       setNewItemAt({ x: p.x, y: p.y, shelfId });
       setTool('select');
@@ -799,6 +824,112 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     }
     setPlaceProductId(null);
     setTool('select');
+  };
+
+  /** Show a transient hint over the map (Add-item-group guidance). */
+  const flashHint = (text: string) => {
+    setHintFlash(text);
+    window.setTimeout(() => setHintFlash((cur) => (cur === text ? null : cur)), 2600);
+  };
+
+  /** Create a group on a shelf: reuse store products picked from the
+   *  catalogue, create brand-new ones, then place ONE facing per item on the
+   *  bottom row (first free spot, flowing left to right). Facings are never
+   *  mass-stocked here — more copies are added one by one from the planogram
+   *  editor (＋ Add item / ＋ Add copy). The group's name becomes the shelf's
+   *  label. */
+  const createGroupOnShelf = async (shelf: MapElement, name: string, items: GroupItemDraft[]) => {
+    if (!floor || !store || shelf.shape !== 'rect' || !items.length) return;
+    const r = shelf.geom as RectGeom;
+    let smeta: Record<string, unknown> = {};
+    try { smeta = JSON.parse(shelf.meta || '{}'); } catch { /* keep {} */ }
+    const facingW = typeof smeta.facing === 'number' ? smeta.facing : GROUP_FACING_W;
+    if (tryMode) session?.logAction('add item group');
+    setGroupCreatorFor(null);
+    setTool('select');
+    // 1) catalogue picks join as-is; brand-new drafts become products
+    //    (chunked so a big group doesn't hammer the API)
+    const group: Product[] = [];
+    const fresh: GroupItemDraft[] = [];
+    for (const it of items) {
+      const existing = it.productId ? products.find((p) => p.id === it.productId) : null;
+      if (existing) group.push(existing);
+      else fresh.push(it);
+    }
+    const created: Product[] = [];
+    for (let i = 0; i < fresh.length; i += 6) {
+      const made = await Promise.all(fresh.slice(i, i + 6).map(async (it, k) => {
+        const price = it.price !== '' && Number.isFinite(Number(it.price)) ? Number(it.price) : groupPrice(it.name, i + k);
+        try {
+          const { product } = await apix.addProduct(store.id, {
+            name: it.name,
+            category_id: it.category_id,
+            price,
+            image_url: '',
+            image_crop_url: '',
+          });
+          return product;
+        } catch {
+          return null; // surface via save state; keep filling with the rest
+        }
+      }));
+      for (const p of made) if (p) created.push(p);
+    }
+    group.push(...created);
+    if (!group.length) return;
+    const catById = new Map(categories.map((c) => [c.id, c]));
+    const withCat: Product[] = group.map((p) => ({
+      ...p,
+      category_name: p.category_name ?? catById.get(p.category_id ?? '')?.name,
+      category_color: p.category_color ?? catById.get(p.category_id ?? '')?.color,
+    }));
+    setProducts((prev) => [...prev, ...created.filter((p) => !prev.some((q) => q.id === p.id))]);
+    // 2) one facing per item — bottom row, first free spot left to right
+    const placed: { u: number; w: number }[] = locations
+      .filter((l) => l.floor_id === floor.id && ownerOf(l) === shelf.id)
+      .map((l) => {
+        let m: Record<string, unknown> = {};
+        try { m = JSON.parse(l.meta || '{}'); } catch { /* keep {} */ }
+        return {
+          u: worldToShelfLocal(r, l).x / r.w,
+          w: (typeof m.w === 'number' ? m.w : facingW) / r.w,
+        };
+      });
+    const spots: number[] = [];
+    for (let k = 0; k < withCat.length; k++) {
+      const nearU = k === 0 ? 0 : Math.min(1, spots[k - 1] + facingW / r.w);
+      const u = findFreeFacingU(placed, nearU, facingW / r.w);
+      placed.push({ u, w: facingW / r.w });
+      spots.push(u);
+    }
+    // 3) place the facings
+    const facings: ProductLocation[] = [];
+    for (let i = 0; i < spots.length; i += 6) {
+      const made = await Promise.all(spots.slice(i, i + 6).map(async (u, k) => {
+        const product = withCat[i + k];
+        const pt = shelfLocalToWorld(r, u * r.w, r.h / 2);
+        try {
+          const { location } = await apix.setProductLocation(product.id, {
+            floor_id: floor.id, x: pt.x, y: pt.y, shelfId: shelf.id, shelfLevel: 1, facingW,
+          });
+          stampOwner(location.id, shelf.id);
+          return location;
+        } catch {
+          return null;
+        }
+      }));
+      for (const l of made) if (l) facings.push(l);
+    }
+    setLocations((prev) => [...prev, ...facings]);
+    // the group's name is the shelf's label (groups are named by their owner shelf)
+    if (name !== shelf.label) {
+      changeElements(
+        floorElements.map((el) => (el.id === shelf.id ? { ...el, label: name.slice(0, 80) } : el)),
+        'push',
+        'rename group'
+      );
+    }
+    flashHint(`Added ${facings.length} item${facings.length === 1 ? '' : 's'} to “${name}” — one facing each; stock more from the planogram`);
   };
 
   /** B3: align / distribute the multi-selection (one undo step). */
@@ -839,21 +970,14 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   };
 
   /** Drag a product pin: local during the gesture, one API upsert on release.
-   *  Dropping it on a DIFFERENT group asks before re-homing — cancel reverses
-   *  the move back to where the drag started. */
+   *  Dropping it on a DIFFERENT group re-homes it silently — moving items
+   *  between groups is this per-item drag, never a bulk shelf merge. */
   const movePin = (locationId: string, productId: string, x: number, y: number, commit: boolean, orig?: { x: number; y: number }) => {
     setLocations((prev) => prev.map((l) => (l.id === locationId ? { ...l, x, y } : l)));
     if (commit) {
       if (!floor) return;
       const cur = locations.find((l) => l.id === locationId);
-      const fromShelfId = cur ? ownerOf(cur) : null;
       const toShelfId = shelfIdAtPoint({ x, y }, floorElements);
-      if (toShelfId !== fromShelfId) {
-        // group change — ask before re-homing; the pin stays at the drop point
-        // until the answer (reverted on cancel)
-        setPendingPinMove({ locationId, productId, x, y, orig: orig ?? { x: cur?.x ?? x, y: cur?.y ?? y }, fromShelfId, toShelfId });
-        return;
-      }
       stampOwner(locationId, toShelfId);
       // the server rebuilds meta from the fields we send — carry the pin's
       // planogram placement + size forward so a drag doesn't erase them
@@ -871,58 +995,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     }
   };
 
-  /** Resolve a pending group-move ask: keep the drop (re-home) or revert. */
-  const resolvePendingPinMove = (accept: boolean) => {
-    const ask = pendingPinMove;
-    if (!ask || !floor) { setPendingPinMove(null); return; }
-    setPendingPinMove(null);
-    if (!accept) {
-      // move is reversed: pin back where the drag started, original owner kept
-      setLocations((prev) => prev.map((l) => (l.id === ask.locationId ? { ...l, x: ask.orig.x, y: ask.orig.y } : l)));
-      return;
-    }
-    const cur = locations.find((l) => l.id === ask.locationId);
-    stampOwner(ask.locationId, ask.toShelfId);
-    let m: Record<string, unknown> = {};
-    try { m = JSON.parse(cur?.meta || '{}'); } catch { /* keep {} */ }
-    apix.setProductLocation(ask.productId, {
-      floor_id: floor.id, locationId: ask.locationId, x: ask.x, y: ask.y, shelfId: ask.toShelfId ?? undefined,
-      ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
-      ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
-      ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
-      ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
-    })
-      .then(({ location }) => setLocations((prev) => prev.map((l) => (l.id === ask.locationId ? location : l))))
-      .catch(() => { /* keep the position */ });
-  };
-
-  /** Resolve a shelf-merge ask: re-home the moved shelf's items to the target
-   *  group, or undo the whole move (elements + pins). */
-  const resolvePendingShelfMerge = (accept: boolean) => {
-    const ask = pendingShelfMerge;
-    setPendingShelfMerge(null);
-    if (!ask) return;
-    if (!accept) {
-      undo();
-      return;
-    }
-    const movedPins = locations.filter((l) => l.floor_id === floor?.id && ownerOf(l) === ask.movedShelfId);
-    for (const loc of movedPins) {
-      stampOwner(loc.id, ask.targetShelfId);
-      let m: Record<string, unknown> = {};
-      try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
-      schedulePinSaves([{
-        productId: loc.product_id, locationId: loc.id, x: loc.x, y: loc.y, floorId: loc.floor_id,
-        shelfId: ask.targetShelfId,
-        ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
-        ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
-        ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
-        ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
-      }]);
-    }
-    setSelectedPinProductId(null);
-  };
-
   /** Rename a group (the owner shelf's label). */
   const renameGroup = (shelfId: string, label: string) => {
     changeElements(
@@ -932,15 +1004,46 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     );
   };
 
-  /** Add-another-item anchored at a specific facing of the planogram. */
-  const addAnotherItemAt = (locationId: string) => {
-    const loc = locations.find((l) => l.id === locationId);
-    if (!loc || !shelfPreview || shelfPreview.shape !== 'rect' || !floor) return;
-    const r = shelfPreview.geom as RectGeom;
-    const curU = Math.min(0.9, Math.max(0.05, worldToShelfLocal(r, loc).x / r.w));
-    const u = Math.min(0.95, curU + 0.12);
-    const pt = shelfLocalToWorld(r, u * r.w, r.h / 2);
-    setNewItemAt({ x: pt.x, y: pt.y, shelfId: shelfPreview.id });
+  /** Create-a-new-product flow anchored at the shelf's centre. */
+  const openNewItemFor = (shelf: MapElement) => {
+    if (shelf.shape !== 'rect' || !floor) return;
+    const r = shelf.geom as RectGeom;
+    const p = shelfLocalToWorld(r, r.w * 0.5, r.h / 2);
+    setNewItemAt({ x: p.x, y: p.y, shelfId: shelf.id });
+  };
+
+  /** Place an existing store product onto this shelf: first FREE spot on the
+   *  bottom row, shelf-default facing width. */
+  const addExistingToShelf = (productId: string, shelf: MapElement) => {
+    if (!floor || shelf.shape !== 'rect') return;
+    const r = shelf.geom as RectGeom;
+    let smeta: Record<string, unknown> = {};
+    try { smeta = JSON.parse(shelf.meta || '{}'); } catch { /* keep {} */ }
+    const facingW = typeof smeta.facing === 'number' ? smeta.facing : 0.32;
+    const placed = locations
+      .filter((l) => l.floor_id === floor.id && ownerOf(l) === shelf.id)
+      .map((l) => {
+        let sm: Record<string, unknown> = {};
+        try { sm = JSON.parse(l.meta || '{}'); } catch { /* keep {} */ }
+        return {
+          u: worldToShelfLocal(r, l).x / r.w,
+          w: (typeof sm.w === 'number' ? sm.w : facingW) / r.w,
+          level: typeof sm.shelf_level === 'number' ? sm.shelf_level : 1,
+        };
+      })
+      .filter((p) => p.level === 1);
+    const u = findFreeFacingU(placed, 0.5, facingW / r.w);
+    const p = shelfLocalToWorld(r, u * r.w, r.h / 2);
+    apix.setProductLocation(productId, {
+      floor_id: floor.id, x: p.x, y: p.y, shelfId: shelf.id, shelfLevel: 1, facingW,
+    })
+      .then(({ location }) => {
+        setLocations((prev) => [...prev, location]);
+        stampOwner(location.id, shelf.id);
+        selectPin(productId);
+        setSelectedId(null);
+      })
+      .catch(() => { /* surface via save state */ });
   };
 
   /** Resize a pin's on-map marker (metres) — optimistic + debounced save. */
@@ -996,7 +1099,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     persistPinUpdate(loc, { x: p.x, y: p.y, shelfLevel: level });
   };
 
-  /** Duplicate a facing: same product, own spot just right of the original. */
+  /** Duplicate a facing: same product, first FREE spot beside the original on
+   *  the same row — copies used to stack exactly on top of each other and
+   *  look like they vanished behind the facing they overlapped. */
   const addFacingCopy = (locationId: string) => {
     const loc = locations.find((l) => l.id === locationId);
     if (!loc || !shelfPreview || !floor || shelfPreview.shape !== 'rect') return;
@@ -1004,10 +1109,24 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     let m: Record<string, unknown> = {};
     try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
     const facingW = typeof m.w === 'number' ? m.w : 0.32;
-    const curU = worldToShelfLocal(r, loc).x / r.w;
-    const u = curU + Math.max(0.06, facingW / r.w) > 0.96 ? Math.max(0.04, curU - Math.max(0.06, facingW / r.w)) : curU + Math.max(0.06, facingW / r.w);
-    const p = shelfLocalToWorld(r, u * r.w, r.h / 2);
+    const level = typeof m.shelf_level === 'number' ? m.shelf_level : 1;
     const shelfId = ownerOf(loc) ?? shelfPreview.id;
+    const curU = worldToShelfLocal(r, loc).x / r.w;
+    // occupied spots on this row: every other facing owned by this shelf
+    const placed = locations
+      .filter((l) => l.id !== loc.id && l.floor_id === floor.id && ownerOf(l) === shelfId)
+      .map((l) => {
+        let sm: Record<string, unknown> = {};
+        try { sm = JSON.parse(l.meta || '{}'); } catch { /* keep {} */ }
+        return {
+          u: worldToShelfLocal(r, l).x / r.w,
+          w: (typeof sm.w === 'number' ? sm.w : 0.32) / r.w,
+          level: typeof sm.shelf_level === 'number' ? sm.shelf_level : 1,
+        };
+      })
+      .filter((p) => p.level === level);
+    const u = findFreeFacingU(placed, curU, facingW / r.w);
+    const p = shelfLocalToWorld(r, u * r.w, r.h / 2);
     apix.setProductLocation(loc.product_id, {
       floor_id: floor.id, x: p.x, y: p.y, shelfId,
       ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
@@ -1032,9 +1151,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     }
   };
 
-  /** Planogram-only length × depth — stored as planogram options on the
+  /** Planogram-only length (metres) — stored as a planogram option on the
    *  shelf's meta. The shelf's footprint on the map is never touched. */
-  const resizeShelfArea = (w: number, h: number) => {
+  const resizeShelfArea = (w: number) => {
     if (!shelfPreview) return;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     let meta: Record<string, unknown> = {};
@@ -1042,11 +1161,25 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     changeElements(
       floorElements.map((el) =>
         el.id === shelfPreview.id
-          ? { ...el, meta: JSON.stringify({ ...meta, planWidth: clamp(w, 0.3, 60), planDepth: clamp(h, 0.2, 6) }) }
+          ? { ...el, meta: JSON.stringify({ ...meta, planWidth: clamp(w, 0.3, 60) }) }
           : el
       ),
       'push',
-      'set planogram size'
+      'set planogram length'
+    );
+  };
+
+  /** Drawn planogram row height (px) — one band height shared by every view
+   *  mode, so toggling diagram/photos/image never resizes the drawing. */
+  const setShelfRowH = (rowH: number) => {
+    if (!shelfPreview) return;
+    const clamped = Math.min(200, Math.max(64, Math.round(rowH)));
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(shelfPreview.meta || '{}'); } catch { /* keep {} */ }
+    changeElements(
+      floorElements.map((el) => (el.id === shelfPreview.id ? { ...el, meta: JSON.stringify({ ...meta, rowH: clamped }) } : el)),
+      'push',
+      'set planogram row height'
     );
   };
 
@@ -1059,6 +1192,20 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       floorElements.map((el) => (el.id === shelfPreview.id ? { ...el, meta: JSON.stringify({ ...meta, levels: clamped }) } : el)),
       'push',
       'set shelf rows'
+    );
+  };
+
+  /** The shelf's default planogram view (diagram / photos / image tiles) —
+   *  stored in meta like the other planogram options; shoppers see it as
+   *  their starting view but can still toggle for their session. */
+  const setPlanogramView = (view: 'diagram' | 'photos' | 'images') => {
+    if (!shelfPreview) return;
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(shelfPreview.meta || '{}'); } catch { /* keep {} */ }
+    changeElements(
+      floorElements.map((el) => (el.id === shelfPreview.id ? { ...el, meta: JSON.stringify({ ...meta, planogramView: view }) } : el)),
+      'push',
+      'set planogram view'
     );
   };
 
@@ -1302,6 +1449,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={visibleFloorPins}
               stockPins={visibleFloorPins}
+              showItems={showItems}
               pickFilter={pickFilter}
               camera={cam3d}
               onCamera={setCam3d}
@@ -1331,6 +1479,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={visibleFloorPins}
               showLabels={!hideLabels}
+              showItems={showItems}
+              showDepartments={!hideLabels && !showItems}
               locked={locked}
               onMapContextMenu={(client) => setCtxMenu({ x: client.x, y: client.y })}
               viewport={viewport}
@@ -1350,6 +1500,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onDraftFinish={finishDraft}
               onDraftCancel={() => setDraftPts([])}
               onPlaceProduct={placeProduct}
+              placeMode={addMode}
               ownerOfPin={(locId) => {
                 const loc = locations.find((l) => l.id === locId);
                 return loc ? ownerOf(loc) : null;
@@ -1380,8 +1531,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 key={t.id}
                 className={`tool-btn ${tool === t.id ? 'active' : ''}`}
                 onClick={() => { setTool(t.id); setSelectedId(t.id === 'select' ? selectedId : null); }}
-                aria-label={t.id === 'product' ? 'Add item — click empty space to create an area, hover a group to join it' : t.label}
-                data-tip={t.id === 'product' ? 'Add item (creates its own area, or joins the hovered group)' : t.label}
+                aria-label={t.id === 'product' ? 'Add item group — click a shelf to add it, or switch to Single for one item' : t.label}
+                data-tip={t.id === 'product' ? 'Add item group (toggle Group/Single next to 2D/3D)' : t.label}
               >
                 <span aria-hidden>{t.icon}</span>
               </button>
@@ -1417,6 +1568,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onClick={() => setLocked((v) => !v)}
             >
               <span aria-hidden>{locked ? '🔒' : '🔓'}</span>
+            </button>
+            <button
+              className={`tool-btn ${!showItems ? 'active' : ''}`}
+              aria-pressed={!showItems}
+              aria-label={showItems ? 'Hide item pins — show department groups' : 'Show item pins'}
+              data-tip={showItems ? 'Hide items — groups + departments only' : 'Show items'}
+              onClick={toggleShowItems}
+            >
+              <span aria-hidden>{showItems ? '🧺' : '🗂'}</span>
             </button>
             {tool === 'select' && (
               <>
@@ -1514,6 +1674,32 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               3D
             </button>
           </div>
+          {/* Add-item-group tool: group-fill vs single-item toggle */}
+          {tool === 'product' && !placing && !view3d && (
+            <div className="view-toggle" style={{ position: 'absolute', top: 10, left: 180, zIndex: 5, boxShadow: 'var(--shadow)' }} role="group" aria-label="Add item mode">
+              <button
+                className={addMode === 'group' ? 'active' : ''}
+                aria-pressed={addMode === 'group'}
+                title="Click a shelf to fill it with a named group of items"
+                onClick={() => setAddMode('group')}
+              >
+                🧺 Group
+              </button>
+              <button
+                className={addMode === 'single' ? 'active' : ''}
+                aria-pressed={addMode === 'single'}
+                title="Click to place one item (works off-shelf too)"
+                onClick={() => setAddMode('single')}
+              >
+                📍 Single
+              </button>
+            </div>
+          )}
+          {hintFlash && tool === 'product' && !placing && (
+            <div className="map-hint warn-note" style={{ left: '50%', transform: 'translateX(-50%)' }} role="status">
+              {hintFlash}
+            </div>
+          )}
           {view3d && (
             <div className="map-hint" style={{ left: '50%', transform: 'translateX(-50%)' }}>
               Click to select · drag a fixture to move · drag empty space to orbit · middle-drag pans · R rotates · Del deletes
@@ -1540,72 +1726,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               </button>
             </div>
           )}
-          {newItemAt && floor && (
-            <ProductModal
-              storeId={store.id}
-              categories={categories}
-              product={null}
-              autoPlace={{ floorId: floor.id, x: newItemAt.x, y: newItemAt.y, shelfId: newItemAt.shelfId }}
-              onClose={() => setNewItemAt(null)}
-              onSaved={(p, placed) => {
-                setProducts((prev) => [...prev, p]);
-                if (placed) {
-                  setLocations((prev) => [...prev, placed]);
-                  stampOwner(placed.id, newItemAt.shelfId);
-                }
-                setNewItemAt(null);
-                // land on the new pin: panel shows the item + its group (the
-                // created area stays selectable from the outline)
-                selectPin(p.id);
-                setSelectedId(null);
-                setSideTab('map');
-              }}
-            />
-          )}
-          {pendingPinMove && floor && (() => {
-            const toShelf = floorElements.find((e) => e.id === pendingPinMove.toShelfId);
-            const prod = products.find((p) => p.id === pendingPinMove.productId);
-            return (
-              <Modal title="Add to this group?" onClose={() => resolvePendingPinMove(false)}>
-                <p style={{ margin: '0 0 6px' }}>
-                  Move <b>{prod?.name ?? 'this item'}</b> into the group{' '}
-                  <b>{toShelf?.label || 'shelf'}</b>?
-                </p>
-                <p className="muted" style={{ fontSize: 12.5, margin: '0 0 4px' }}>
-                  No — the move is reversed and the item stays in its current group.
-                </p>
-                <div className="modal-actions">
-                  <button className="btn ghost" onClick={() => resolvePendingPinMove(false)}>No, reverse it</button>
-                  <button className="btn primary" onClick={() => resolvePendingPinMove(true)}>Yes, add to group</button>
-                </div>
-              </Modal>
-            );
-          })()}
-          {pendingShelfMerge && (() => {
-            const moved = floorElements.find((e) => e.id === pendingShelfMerge.movedShelfId);
-            return (
-              <Modal title="Merge these groups?" onClose={() => resolvePendingShelfMerge(false)}>
-                <p style={{ margin: '0 0 6px' }}>
-                  This area was dropped on <b>{pendingShelfMerge.targetLabel}</b>. Make its{' '}
-                  {pendingShelfMerge.facingCount} item{pendingShelfMerge.facingCount === 1 ? '' : 's'} part of that group?
-                </p>
-                {moved && (
-                  <p className="muted" style={{ fontSize: 12.5, margin: '0 0 4px' }}>
-                    {moved.label ? `“${moved.label}”` : 'The area'} stays on the map — only the group membership changes.
-                  </p>
-                )}
-                <div className="modal-actions">
-                  <button className="btn ghost" onClick={() => resolvePendingShelfMerge(false)}>No, undo the move</button>
-                  <button className="btn primary" onClick={() => resolvePendingShelfMerge(true)}>Yes, merge</button>
-                </div>
-              </Modal>
-            );
-          })()}
           {shelfPreview && (
             <ShelfDetail
               shelf={shelfPreview}
               pins={visibleFloorPins}
               editing
+              highlightLocationId={
+                selectedPin && ownerOf(selectedPin) === shelfPreview.id ? selectedPin.id : null
+              }
+              onViewModeChange={setPlanogramView}
               onClose={() => setShelfPreviewId(null)}
               onEditFacing={(locationId, patch) => {
                 const loc = locations.find((l) => l.id === locationId);
@@ -1642,16 +1771,76 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onAddCopy={addFacingCopy}
               onRemoveFacing={removeFacing}
               onShelfResize={resizeShelfArea}
+              onRowHeightChange={setShelfRowH}
               onRowsChange={changeShelfRows}
-              onAddAnotherAt={addAnotherItemAt}
-              onAddAnotherItem={() => {
-                if (!shelfPreview || shelfPreview.shape !== 'rect' || !floor) return;
-                const r = shelfPreview.geom as RectGeom;
-                const p = shelfLocalToWorld(r, r.w * 0.5, r.h / 2);
-                setNewItemAt({ x: p.x, y: p.y, shelfId: shelfPreview.id });
+              onAddItem={() => setItemPickerFor(shelfPreview.id)}
+              onAddAnotherItem={() => openNewItemFor(shelfPreview)}
+            />
+          )}
+          {itemPickerFor && floor && (() => {
+            const pickShelf = floorElements.find((e) => e.id === itemPickerFor) ?? null;
+            if (!pickShelf) return null;
+            return (
+              <ShelfItemPicker
+                products={products}
+                onShelfProductIds={
+                  new Set(
+                    locations.filter((l) => l.floor_id === floor.id && ownerOf(l) === pickShelf.id).map((l) => l.product_id)
+                  )
+                }
+                onPick={(productId) => {
+                  addExistingToShelf(productId, pickShelf);
+                  setItemPickerFor(null);
+                }}
+                onCreateNew={() => {
+                  setItemPickerFor(null);
+                  openNewItemFor(pickShelf);
+                }}
+                onClose={() => setItemPickerFor(null)}
+              />
+            );
+          })()}
+          {newItemAt && floor && (
+            <ProductModal
+              onCategoryAdded={(c) => setCategories((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]))}
+              storeId={store.id}
+              categories={categories}
+              product={null}
+              autoPlace={{ floorId: floor.id, x: newItemAt.x, y: newItemAt.y, shelfId: newItemAt.shelfId }}
+              onClose={() => setNewItemAt(null)}
+              onSaved={(p, placed) => {
+                setProducts((prev) => [...prev, p]);
+                if (placed) {
+                  setLocations((prev) => [...prev, placed]);
+                  stampOwner(placed.id, newItemAt.shelfId ?? null);
+                }
+                setNewItemAt(null);
+                // land on the new pin: panel shows the item + its group (the
+                // created area stays selectable from the outline)
+                selectPin(p.id);
+                setSelectedId(null);
+                setSideTab('map');
               }}
             />
           )}
+          {groupCreatorFor && floor && (() => {
+            const shelf = floorElements.find((e) => e.id === groupCreatorFor) ?? null;
+            if (!shelf) return null;
+            return (
+              <GroupCreatorModal
+                shelfLabel={shelf.label}
+                categories={categories}
+                products={products}
+                shelfProductIds={
+                  new Set(
+                    locations.filter((l) => l.floor_id === floor.id && ownerOf(l) === shelf.id).map((l) => l.product_id)
+                  )
+                }
+                onCreate={(name, items) => createGroupOnShelf(shelf, name, items)}
+                onClose={() => setGroupCreatorFor(null)}
+              />
+            );
+          })()}
         </div>
 
         <aside className={`editor-side ${sideOpen ? "open" : ""}`}>
@@ -1679,7 +1868,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           )}
           <div className="side-tabs">
             <button className={`side-tab ${sideTab === 'map' ? 'active' : ''}`} onClick={() => setSideTab('map')}>Map</button>
-            <button className={`side-tab ${sideTab === 'products' ? 'active' : ''}`} onClick={() => setSideTab('products')}>Products</button>
+            <button className={`side-tab ${sideTab === 'products' ? 'active' : ''}`} onClick={() => setSideTab('products')}>Items</button>
             <button className={`side-tab ${sideTab === 'store' ? 'active' : ''}`} onClick={() => setSideTab('store')}>Store</button>
             <button className={`side-tab ${sideTab === 'history' ? 'active' : ''}`} onClick={() => setSideTab('history')}>History</button>
           </div>
@@ -1710,7 +1899,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                     changeElements([...floorElements, copy], 'push');
                     setSelectedId(copy.id);
                   }}
-                  onPreviewShelf={selected.type === 'shelf' && selected.shape === 'rect' ? () => setShelfPreviewId(selected.id) : undefined}
                 />
               ) : selectedPin ? (
                 <PinPanel
@@ -1906,8 +2094,19 @@ const TYPES_BY_SHAPE: Record<string, MapElement['type'][]> = {
   point: ['poi', 'entrance', 'exit'],
 };
 
+/** Capitalized labels for the panel's Type selector. */
+const TYPE_OPTIONS: Record<MapElement['type'], string> = {
+  shelf: 'Shelf',
+  wall: 'Wall',
+  zone: 'Zone',
+  aisle: 'Aisle',
+  entrance: 'Entrance',
+  exit: 'Exit',
+  poi: 'Point of interest',
+};
+
 function ElementPanel({
-  el, floor, elements, onChange, onDelete, onDuplicate, onPreviewShelf, items,
+  el, floor, elements, onChange, onDelete, onDuplicate, items,
 }: {
   el: MapElement;
   floor: Floor;
@@ -1915,7 +2114,6 @@ function ElementPanel({
   onChange: (els: MapElement[]) => void;
   onDelete: () => void;
   onDuplicate: () => void;
-  onPreviewShelf?: () => void;
   /** Items the user pinned to this shelf (owned association, not geometry). */
   items?: Product[];
 }) {
@@ -1942,32 +2140,45 @@ function ElementPanel({
     if (!shelfMeta) return;
     patch({ meta: JSON.stringify({ ...shelfMeta, ...fields }) });
   };
-  // label text scale: stored on the element meta, read by both renderers
+  // label text scale + per-element hide: stored on the element meta, read by
+  // both renderers
   const labelMeta = el.label ? parseMeta(el.meta) : null;
   const labelScale = Number(labelMeta?.labelScale) || 1;
+  const labelHidden = labelMeta?.labelHidden === true;
   const setLabelScale = (v: number) =>
     patch({ meta: JSON.stringify({ ...parseMeta(el.meta), labelScale: v }) });
   return (
     <div>
       <div className="panel-section">
-        <h4>Selected · {el.shape}</h4>
+        <h4>Selected Structure</h4>
         {labelMeta && (
           <div style={{ marginBottom: 12 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)', marginBottom: 5 }}>Label size</span>
-            <div className="theme-seg" role="radiogroup" aria-label="Label size" style={{ maxWidth: 160 }}>
-              {[['S', 1], ['M', 1.4], ['L', 1.9]].map(([lbl, v]) => (
-                <button
-                  key={lbl as string}
-                  type="button"
-                  role="radio"
-                  aria-checked={labelScale === v}
-                  className={labelScale === v ? 'active' : ''}
-                  style={{ fontSize: 11 * (v as number) }}
-                  onClick={() => setLabelScale(v as number)}
-                >
-                  {lbl}
-                </button>
-              ))}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="theme-seg" role="radiogroup" aria-label="Label size" style={{ maxWidth: 160 }}>
+                {[['S', 1], ['M', 1.4], ['L', 1.9]].map(([lbl, v]) => (
+                  <button
+                    key={lbl as string}
+                    type="button"
+                    role="radio"
+                    aria-checked={labelScale === v}
+                    className={labelScale === v ? 'active' : ''}
+                    style={{ fontSize: 11 * (v as number) }}
+                    onClick={() => setLabelScale(v as number)}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`btn sm ${labelHidden ? 'active' : ''}`}
+                aria-pressed={labelHidden}
+                title="Hide this element's label on the map (2D and 3D)"
+                onClick={() => patch({ meta: JSON.stringify({ ...parseMeta(el.meta), labelHidden: labelHidden ? undefined : true }) })}
+              >
+                Hide label
+              </button>
             </div>
           </div>
         )}
@@ -1990,7 +2201,7 @@ function ElementPanel({
         <Field label="Type">
           <select className="select" value={el.type} onChange={(e) => patch({ type: e.target.value as MapElement['type'] })}>
             {TYPES_BY_SHAPE[el.shape].map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t}>{TYPE_OPTIONS[t] ?? t}</option>
             ))}
           </select>
         </Field>
@@ -2057,9 +2268,6 @@ function ElementPanel({
                 </div>
               );
             })()}
-            <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>
-              Nudges move 0.25 m · arrow keys work on the map too (Shift = 1 m).
-            </p>
           </div>
         </div>
       </div>
@@ -2092,30 +2300,9 @@ function ElementPanel({
               />
             </Field>
           </div>
-          <div className="field-row">
-            <Field label="Item height (m)">
-              <input
-                className="input" type="number" step={0.01} min={0.05} max={1.2}
-                value={shelfMeta.itemH ?? ''}
-                placeholder="0.24"
-                onChange={(e) => patchMeta({ itemH: e.target.value === '' ? undefined : Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Item length (m)">
-              <input
-                className="input" type="number" step={0.01} min={0.05} max={1.2}
-                value={shelfMeta.itemW ?? ''}
-                placeholder="0.20"
-                onChange={(e) => patchMeta({ itemW: e.target.value === '' ? undefined : Number(e.target.value) })}
-              />
-            </Field>
-          </div>
-          <div className="stack">
-            <button className="btn" onClick={onPreviewShelf}>View shelf layout</button>
-          </div>
           <p className="muted" style={{ fontSize: 12.5 }}>
-            Shoppers can tap this shelf on the public map to see this front view. Leave bays empty to divide evenly.
-            Rows and height shape the 3D fixture; item size shapes the products on it.
+            Shoppers can tap this shelf on the public map to see its front view. Leave bays empty to divide evenly.
+            Rows and height shape the 3D fixture; the planogram's Row height slider sizes the shelf drawing.
           </p>
         </div>
       )}
@@ -2924,6 +3111,7 @@ function ProductsPanel({
 
       {editing && (
         <ProductModal
+          onCategoryAdded={(c) => onData({ categories: categories.some((x) => x.id === c.id) ? categories : [...categories, c] })}
           storeId={storeId}
           entitlements={entitlements}
           categories={categories}
@@ -2942,7 +3130,7 @@ function ProductsPanel({
 }
 
 function ProductModal({
-  storeId, categories, product, onClose, onSaved, entitlements, autoPlace,
+  storeId, categories, product, onClose, onSaved, entitlements, autoPlace, onCategoryAdded,
 }: {
   storeId: string;
   categories: Category[];
@@ -2952,6 +3140,8 @@ function ProductModal({
   entitlements?: { productImages: boolean };
   /** Create-from-map flow: pin the new product at this spot in the same save. */
   autoPlace?: { floorId: string; x: number; y: number; shelfId?: string };
+  /** a category created inside this modal — the parent adds it to its list */
+  onCategoryAdded?: (c: Category) => void;
 }) {
   const api = useEditorApi();
   const [name, setName] = useState(product?.name ?? '');
@@ -2959,11 +3149,16 @@ function ProductModal({
   const [sku, setSku] = useState(product?.sku ?? '');
   const [price, setPrice] = useState(product?.price != null ? String(product.price) : '');
   const [categoryId, setCategoryId] = useState(product?.category_id ?? '');
+  const [newCatOpen, setNewCatOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
   const [imageUrl, setImageUrl] = useState(product?.image_url ?? '');
   const [imgBusy, setImgBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
+  // the owner-cropped planogram variant — shown where the planogram shows it
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropUrl, setCropUrl] = useState(product?.image_crop_url ?? '');
 
   const pickImage = async (file: File | undefined) => {
     if (!file || !product) return; // images attach to saved products
@@ -3004,10 +3199,59 @@ function ProductModal({
     try {
       await api.removeProductImage(product.id);
       setImageUrl('');
+      setCropUrl('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
     } finally {
       setImgBusy(false);
+    }
+  };
+
+  /** Save the dragged crop region as the planogram-facing image (original kept). */
+  const applyCrop = async (file: File) => {
+    if (!product) return;
+    setImgBusy(true);
+    setError('');
+    try {
+      const { product: updated } = await api.productImageCrop(product.id, file);
+      setCropUrl(updated.image_crop_url);
+      setCropOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Crop failed');
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  /** Drop the cropped variant — planogram tiles fall back to the full photo. */
+  const clearCrop = async () => {
+    if (!product) return;
+    setImgBusy(true);
+    setError('');
+    try {
+      await api.removeProductImageCrop(product.id);
+      setCropUrl('');
+      setCropOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  /** Create a category right from the selector — no trip to the Store tab. */
+  const addCategoryInline = async () => {
+    const trimmed = newCatName.trim();
+    if (!trimmed) return;
+    setError('');
+    try {
+      const { category } = await api.addCategory(storeId, { name: trimmed });
+      onCategoryAdded?.(category);
+      setCategoryId(category.id);
+      setNewCatOpen(false);
+      setNewCatName('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the category');
     }
   };
 
@@ -3020,7 +3264,7 @@ function ProductModal({
       brand,
       sku,
       price: price === '' ? null : Number(price),
-      category_id: categoryId || null,
+      category_id: categoryId === '__new' ? null : categoryId || null,
     };
     try {
       const { product: saved } = product
@@ -3060,20 +3304,52 @@ function ProductModal({
             <input className="input" type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
           </Field>
           <Field label="Category">
-            <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <select
+              className="select"
+              value={categoryId}
+              onChange={(e) => {
+                if (e.target.value === '__new') {
+                  setNewCatOpen(true);
+                  return;
+                }
+                setNewCatOpen(false);
+                setCategoryId(e.target.value);
+              }}
+            >
               <option value="">— none —</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
+              <option value="__new">＋ New category…</option>
             </select>
           </Field>
         </div>
+        {newCatOpen && (
+          <div className="panel-section" style={{ padding: '10px 12px', border: '1px dashed var(--line)', borderRadius: 10 }}>
+            <Field label="New category name">
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="input"
+                  value={newCatName}
+                  autoFocus
+                  placeholder="e.g. Frozen foods"
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategoryInline(); } }}
+                />
+                <button type="button" className="btn primary sm" disabled={!newCatName.trim()} onClick={addCategoryInline}>
+                  Add
+                </button>
+                <button type="button" className="btn sm" onClick={() => setNewCatOpen(false)}>Cancel</button>
+              </div>
+            </Field>
+          </div>
+        )}
         <Field label="Photo">
           {entitlements?.productImages ? (
             product ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {imageUrl ? (
-                  <img src={imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)', background: 'var(--chip)' }} />
+                  <img src={cropUrl || imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)', background: 'var(--chip)' }} />
                 ) : (
                   <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
                 )}
@@ -3090,8 +3366,18 @@ function ProductModal({
                   <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
                 </label>
                 {imageUrl && (
+                  <button type="button" className="btn sm" disabled={imgBusy} onClick={() => setCropOpen(true)} title="Drag a box around the product — planogram tiles show the cropped photo">
+                    ⛶ Crop
+                  </button>
+                )}
+                {imageUrl && (
                   <button type="button" className="btn sm" disabled={imgBusy} onClick={removeBg} title="Cut the studio background out right in this browser">
                     ✂ Remove background
+                  </button>
+                )}
+                {cropUrl && (
+                  <button type="button" className="btn sm" disabled={imgBusy} onClick={clearCrop} title="Delete the cropped variant — planogram tiles fall back to the full photo">
+                    Remove crop
                   </button>
                 )}
                 {imageUrl && <button type="button" className="btn sm danger" disabled={imgBusy} onClick={clearImage}>Remove</button>}
@@ -3124,6 +3410,15 @@ function ProductModal({
           <CameraCaptureModal
             onCapture={(file) => pickImage(file)}
             onClose={() => setCameraOpen(false)}
+          />
+        )}
+        {cropOpen && product && imageUrl && (
+          <CropModal
+            src={imageUrl}
+            busy={imgBusy}
+            onApply={applyCrop}
+            onError={(msg) => setError(msg)}
+            onClose={() => setCropOpen(false)}
           />
         )}
       </form>

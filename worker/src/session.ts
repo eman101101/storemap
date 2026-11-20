@@ -36,7 +36,7 @@ export async function currentUser(c: Context, env: Env): Promise<UserRow | null>
       const cfg = c.get('config');
       const payload = await verifyHs256(token, cfg.sessionSecret);
       if (payload.sub && payload.exp * 1000 >= Date.now()) {
-        const user = await first(env, 'SELECT id, email, name, avatar_url, provider FROM users WHERE id = ?', payload.sub);
+        const user = await first(env, 'SELECT id, email, name, avatar_url, provider, photo_credits FROM users WHERE id = ?', payload.sub);
         if (user) return user as UserRow;
       }
     } catch {

@@ -10,10 +10,16 @@
  *   node scripts/seed-demo.mjs --reset    # wipe the demo store and rebuild
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 // db.js resolves DATA_DIR exactly like the server (via config) and migrate()
 // creates the schema — so the script is safe on a first boot with a brand-new
 // database file.
 import { db, migrate } from '../src/db.js';
+
+/** name → demo photo url, written by scripts/fetch-demo-photos.mjs (real
+ *  Open Food Facts downloads + generated packshot fallbacks) — every seeded
+ *  item resolves to a real image file. */
+const PHOTOS = JSON.parse(readFileSync(new URL('./demo-photos.json', import.meta.url), 'utf8'));
 
 migrate();
 
@@ -179,7 +185,7 @@ const PHOTO_URLS = {
   'Cold Brew Coffee 1L': '/demo-products/cold-brew-coffee-1l.jpg',
   'Almond Milk 1L': '/demo-products/almond-milk-1l.jpg',
   'Coconut Water 1L': '/demo-products/coconut-water-1l.jpg',
-  'Iced Tea Lemon 1.5L': '/demo-products/iced-tea-lemon-15l.jpg',
+  'Iced Tea Lemon 1.5L': '/demo-products/iced-tea-lemon-1-5l.jpg',
   'Lemon-Lime Soda 2L': '/demo-products/lemon-lime-soda-2l.jpg',
   'Tonic Water 6-pack': '/demo-products/tonic-water-6-pack.jpg',
   'Energy Drink 4-pack': '/demo-products/energy-drink-4-pack.jpg',
@@ -205,7 +211,7 @@ const PHOTO_URLS = {
   'Frozen Margherita Pizza': '/demo-products/frozen-margherita-pizza.jpg',
   'Vanilla Ice Cream 1L': '/demo-products/vanilla-ice-cream-1l.jpg',
   'Chocolate Ice Cream 1L': '/demo-products/chocolate-ice-cream-1l.jpg',
-  'French Fries 1.5kg': '/demo-products/french-fries-15kg.jpg',
+  'French Fries 1.5kg': '/demo-products/french-fries-1-5kg.jpg',
   'Garden Peas 1kg': '/demo-products/garden-peas-1kg.jpg',
   'Fish Fingers 20-pack': '/demo-products/fish-fingers-20-pack.jpg',
   'Chicken Nuggets 750g': '/demo-products/chicken-nuggets-750g.jpg',
@@ -738,7 +744,7 @@ function megamartSpec() {
       ['Small', 'Medium', 'Large', 'Gift-Wrapped'], ['Floral']],
     ['Dairy & Eggs', '#3b6fd4', '🥛', 150, 0.89, 6.49,
       ['Fresh Farm', 'GreenVale', 'Meadow', 'Alpine Dairy', 'Pure Pasture'],
-      ['Whole Milk 2L', 'Semi-Skimmed Milk 1L', 'Oat Drink 1L', 'Greek Yogurt 1kg', 'Fruit Yogurt 12-pack', 'Salted Butter 250g', 'Unsalted Butter 250g', 'Cream Cheese 300g', 'Double Cream 500ml', 'Free-Range Eggs 12', 'Cheddar Block 350g', 'Cottage Cheese 400g'],
+      ['Whole Milk 2L', 'Semi-Skimmed Milk 1L', 'Oat Drink 1L', 'Greek Yogurt 1kg', 'Fruit Yogurt 12-pack', 'Salted Butter 250g', 'Unsalted Butter 250g', 'Cream Cheese Tub 300g', 'Double Cream 500ml', 'Free-Range Eggs 12', 'Cheddar Block 350g', 'Cottage Cheese 400g'],
       ['Original', 'Light', 'Organic', 'Value'], null],
     ['Beverages', '#e4572e', '🧃', 150, 0.49, 13.99,
       ['Crystal Brook', 'Sun Grove', 'Fizz & Co', 'Cascade', 'Vivid'],
@@ -888,7 +894,7 @@ function seedExample(spec, ownerEmail, ownerName) {
   }
   db.prepare('UPDATE floors SET width_m = ?, height_m = ? WHERE id = ?').run(spec.w, spec.h, fl.id);
   const insE = db.prepare(
-    "INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index) VALUES (?, ?, ?, ?, ?, ?, '', '{}', ?)"
+    "INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)"
   );
   const insC = db.prepare('INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)');
   const insP = db.prepare(
@@ -898,7 +904,7 @@ function seedExample(spec, ownerEmail, ownerName) {
   // single transaction: the big-box spec writes 5,000+ rows in one commit
   db.exec('BEGIN');
   try {
-    spec.elements.forEach((e, z) => insE.run(randomUUID(), fl.id, e.type, e.shape, JSON.stringify(e.geometry), e.label, z + 1));
+    spec.elements.forEach((e, z) => insE.run(randomUUID(), fl.id, e.type, e.shape, JSON.stringify(e.geometry), e.label, e.meta ?? '{}', z + 1));
     const catId = {};
     for (const c of spec.categories) {
       catId[c.name] = randomUUID();
@@ -907,10 +913,16 @@ function seedExample(spec, ownerEmail, ownerName) {
     const pid = spec.products.map((p, i) => {
       const id = randomUUID();
       const price = p.price ?? Math.round((1.49 + ((i * 61) % 2400) / 100) * 100) / 100;
-      insP.run(id, st.id, catId[p.category], p.name, p.brand, `${spec.skuPrefix}-${String(i + 1).padStart(spec.skuPad ?? 3, '0')}`, '', '', price, '');
+      insP.run(id, st.id, catId[p.category], p.name, p.brand, `${spec.skuPrefix}-${String(i + 1).padStart(spec.skuPad ?? 3, '0')}`, '', '', price, p.image ?? '');
       return id;
     });
-    for (const l of spec.locations) insL.run(randomUUID(), pid[l.product], fl.id, l.x, l.y, JSON.stringify({ shelf_level: (l.product % 3) + 1, w: 0.3 }));
+    for (const l of spec.locations) {
+      insL.run(randomUUID(), pid[l.product], fl.id, l.x, l.y, JSON.stringify({
+        shelf_level: l.level ?? (l.product % 3) + 1,
+        w: l.w ?? 0.3,
+        ...(l.pinW != null ? { pinW: l.pinW } : {}),
+      }));
+    }
     // the example stores' planograms draw 2 m wide (planogram-only option)
     db.prepare("UPDATE map_elements SET meta = ? WHERE floor_id = ? AND type = 'shelf' AND meta = '{}'").run(JSON.stringify({ planWidth: 2 }), fl.id);
     db.exec('COMMIT');
@@ -922,4 +934,289 @@ function seedExample(spec, ownerEmail, ownerName) {
 }
 
 seedExample(warehouseSpec(), 'warehouse@storemap.demo', 'Warehouse Demo');
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Photo-complete examples: every item carries a photo (scripts/fetch-demo-
+   photos.mjs guarantees one) and every planogram is stocked like a real
+   grocery store — facings sit edge to edge and each product's facings are
+   grouped side by side into one contiguous run of ~AVG_PLANOGRAM_M metres.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Average length of a normal store planogram section — one gondola bay of
+ *  ~1.2–1.3 m (same figure as the frontend's DEFAULT_BAY_WIDTH). Product
+ *  facings are grouped into contiguous runs of about this length. */
+const AVG_PLANOGRAM_M = 1.25;
+/** Small gap between consecutive product groups so each group reads as one
+ *  block on the map instead of an even strip of dashes. */
+const GROUP_GAP_M = 0.2;
+
+/** Dense grocery stocking: every face is stocked group by group — facings
+ *  edge to edge, one facing per level (1..`levels`), each product's facings
+ *  grouped side by side into a contiguous run of ~AVG_PLANOGRAM_M metres
+ *  (a normal planogram section), with a small gap to the next group; groups
+ *  cycle through the pool along the face. Categories with preferred face
+ *  labels stock those faces only. Returns locations [{product, x, y, level, w}]. */
+function stockFaces(products, faces, { levels = 4, facingW = 0.3, prefer = {} } = {}) {
+  const catByLabel = {};
+  for (const [cat, labels] of Object.entries(prefer)) {
+    for (const l of labels) if (!catByLabel[l]) catByLabel[l] = cat;
+  }
+  const indicesOf = (cat) => products.map((p, j) => (p.category === cat ? j : -1)).filter((j) => j >= 0);
+  const general = products.map((_, j) => j).filter((j) => !(prefer[products[j].category] ?? []).length);
+  const locations = [];
+  let generalCursor = 0;
+  const catCursor = {};
+  for (const f of faces) {
+    const len = f.to - f.from;
+    // one group = one planogram section: `perBlock` facings side by side
+    const perBlock = Math.max(1, Math.round(AVG_PLANOGRAM_M / facingW));
+    const stride = perBlock * facingW + GROUP_GAP_M;
+    const blocks = Math.max(1, Math.floor((len + GROUP_GAP_M) / stride));
+    // center whatever margin is left so the strip sits symmetric on the face
+    const start = f.from + (len - (blocks * perBlock * facingW + (blocks - 1) * GROUP_GAP_M)) / 2;
+    const cat = catByLabel[f.label];
+    const pool = cat && indicesOf(cat).length ? indicesOf(cat) : general;
+    const cursorKey = cat && indicesOf(cat).length ? cat : '__general';
+    let cursor = (catCursor[cursorKey] ?? (cursorKey === '__general' ? generalCursor : 0));
+    for (let b = 0; b < blocks; b++) {
+      const pj = pool[cursor % pool.length];
+      const base = start + b * stride;
+      for (let k = 0; k < perBlock; k++) {
+        const at = base + (k + 0.5) * facingW;
+        for (let lv = 1; lv <= levels; lv++) {
+          locations.push({
+            product: pj,
+            x: f.axis === 'h' ? at : f.line,
+            y: f.axis === 'h' ? f.line : at,
+            level: lv,
+            w: facingW,
+            // draw the map marker at facing width, so the gap between groups
+            // stays visible instead of being covered by overlapping bars
+            pinW: facingW,
+          });
+        }
+      }
+      cursor = cursor + 1;
+    }
+    catCursor[cursorKey] = cursor;
+  }
+  return locations;
+}
+
+function cornerStoreSpec() {
+  const W = 24;
+  const H = 16;
+  const elements = [];
+  const faces = [];
+  const rect = (type, x, y, w, h, label = '', meta = '{}') => elements.push({ type, shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, meta });
+  const point = (type, x, y, label = '') => elements.push({ type, shape: 'point', geometry: { x, y }, label });
+
+  rect('wall', 0, 0, W, 0.4);
+  rect('wall', 0, H - 0.4, W, 0.4);
+  rect('wall', 0, 0, 0.4, H);
+  rect('wall', W - 0.4, 0, 0.4, H);
+  point('entrance', 4, H - 0.9, 'Entrance');
+  point('exit', 20, H - 0.9, 'Exit');
+
+  // coolers along the north wall — Dairy & Drinks live here (planWidth tuned
+  // so the stocked planogram draws readable tiles)
+  for (let i = 0; i < 4; i++) rect('shelf', 3.5 + i * 4.4, 1.2, 3.4, 1.5, 'Coolers', JSON.stringify({ planWidth: 1.5 }));
+  for (let i = 0; i < 4; i++) faces.push({ axis: 'h', line: 2.7, from: 3.7 + i * 4.4, to: 6.7 + i * 4.4, label: 'Coolers' });
+  rect('zone', 3, 0.8, 17.6, 2.4, 'Coolers');
+
+  // checkout corner
+  rect('zone', 14.5, 12.4, 6.6, 2.6, 'Checkout');
+  rect('shelf', 15, 13.2, 1.8, 0.9, 'Checkout 1');
+  rect('shelf', 17.6, 13.2, 1.8, 0.9, 'Checkout 2');
+
+  // two double-sided aisle pairs
+  for (let p = 0; p < 2; p++) {
+    const y0 = 6.6 + p * 4.6;
+    const label = `Aisle ${p + 1}`;
+    rect('shelf', 3, y0, 11, 0.7, label, JSON.stringify({ planWidth: 5 }));
+    rect('shelf', 3, y0 + 2.2, 11, 0.7, label, JSON.stringify({ planWidth: 5 }));
+    faces.push({ axis: 'h', line: y0, from: 3.3, to: 13.7, label });
+    faces.push({ axis: 'h', line: y0 + 0.7, from: 3.3, to: 13.7, label });
+    faces.push({ axis: 'h', line: y0 + 2.2, from: 3.3, to: 13.7, label });
+    faces.push({ axis: 'h', line: y0 + 2.9, from: 3.3, to: 13.7, label });
+  }
+
+  const categories = [
+    ['Dairy & Drinks', '#3b6fd4', '🥛', ['Fresh Milk 2L', 'Chocolate Milk 1L', 'Orange Juice No Pulp 1L', 'Apple Juice 1L', 'Cola 330ml', 'Lemon Soda 330ml', 'Sparkling Water 500ml', 'Iced Coffee 250ml', 'Energy Drink 250ml', 'Kefir Drink 500ml']],
+    ['Snacks', '#d9822b', '🍿', ['Salted Chips 150g', 'Tortilla Snack Chips 200g', 'Pretzel Sticks 100g', 'Peanut Bars 3-pack', 'Chocolate Cookies Pack', 'Gummy Candy 200g', 'Microwave Popcorn 3-pack', 'Trail Mix 150g']],
+    ['Pantry', '#c2453a', '🥫', ['Spaghetti 500g', 'Tomato Passata 700ml', 'Basmati Rice 1kg', 'Olive Oil 500ml', 'Baked Beans 400g', 'Instant Coffee 100g', 'Black Tea 80 Bags', 'Granulated Sugar 1kg']],
+    ['Household', '#7a4fd4', '🧴', ['Dish Soap 500ml', 'Laundry Liquid 1L', 'Paper Towels 2-roll', 'Trash Bags 20pc', 'Glass Cleaner 500ml', 'Cleaning Sponges 4-pack', 'Air Freshener Spray 300ml']],
+    ['Personal Care', '#2f9e44', '🧼', ['Toothpaste 100ml', 'Shampoo 400ml', 'Soap Bar 4-pack', 'Hand Cream 75ml', 'Roll-on Deodorant', 'Razor Blades 4pc', 'Cotton Pads 60pc']],
+  ];
+  const products = [];
+  for (const [name, , , items] of categories) {
+    for (const item of items) products.push({ name: item, category: name, brand: 'Corner', image: PHOTOS[item] ?? '' });
+  }
+  const locations = stockFaces(products, faces, {
+    levels: 4, facingW: 0.3,
+    prefer: { 'Dairy & Drinks': ['Coolers'] },
+  });
+  return {
+    slug: 'maple-corner', name: 'Maple Corner Store', address: '9 Maple Avenue',
+    description: 'Convenience example: drink coolers, two double-sided aisles and a checkout corner — every shelf stocked to the brim.',
+    hours: '6am–11pm daily', floorName: 'Shop floor', w: W, h: H,
+    elements, categories: categories.map(([name, color, icon]) => ({ name, color, icon })), products, locations,
+    skuPrefix: 'MCS',
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Grand Mart — the big-box example: exactly 400 item groups (each aisle
+   shelf is its own group, uniquely labelled) holding 3000 items in total —
+   15 departments × 200 items each (20 base products × 10 pack variants).
+   Every shelf is stamped with its department (meta.department) so the map
+   can label general areas without drawing every item. Every item is pinned
+   once — groups never auto-multiply facings.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const GM_CATEGORIES = [
+  ['Milk & Dairy', '#3b6fd4', '🥛', ['Organic Whole Milk 1L', 'Fresh Milk 2L', 'Lactose-Free Milk 1L', 'Oat Milk 1L', 'Almond Milk 1L', 'Chocolate Milk 1L', 'Kefir Drink 500ml', 'Kefir 1L', 'Green Smoothie 400ml', 'Oat Drink Barista 1L', 'Mild Cheddar Block 350g', 'Cheddar Mature 350g', 'Mozzarella Ball 125g', 'Feta Cheese 200g', 'Gouda Slices 200g', 'Cream Cheese Tub 300g', 'Cottage Cheese 250g', 'Parmesan Wedge 200g', 'Halloumi 225g', 'Brie Wheel 200g']],
+  ['Yogurt & Eggs', '#8a5fd4', '🍨', ['Greek Yogurt 500g', 'Vanilla Ice Cream 1L', 'Chocolate Ice Cream 1L', 'Hot Chocolate Mix 400g', 'Rice Pudding 400g', 'Jelly Cups 6-pack', 'Whipped Cream 250ml', 'Custard 500g', 'Sorbet 500ml', 'Yogurt Drinks 6-pack', 'Free-Range Eggs 10pc', 'Salted Butter 250g', 'Butter Block 250g', 'Egg Whites 500ml', 'Quiche Lorraine 400g', 'Egg Substitute 500ml', 'Duck Eggs 6pc', 'Unsalted Butter 250g', 'Scrambled Egg Mix 500ml', 'Boiled Eggs 6pc']],
+  ['Juice & Soft Drinks', '#2f7ca5', '🧃', ['Orange Juice 1L', 'Orange Juice No Pulp 1L', 'Apple Juice 1L', 'Cold-Pressed Orange Juice 750ml', 'Sparkling Water 500ml', 'Coconut Water 1L', 'Coconut Water 500ml', 'Iced Tea Lemon 1.5L', 'Green Smoothie 400ml', 'Sparkling Lemonade 750ml', 'Cola 2L', 'Cola 330ml', 'Lemon Soda 330ml', 'Lemon-Lime Soda 2L', 'Tonic Water 6-pack', 'Energy Drink 250ml', 'Energy Drink 4-pack', 'Iced Coffee 250ml', 'Cola Zero 2L', 'Orange Soda 2L']],
+  ['Coffee & Tea', '#7a4f2a', '☕', ['Ground Coffee 250g', 'Ground Coffee 500g', 'Espresso Beans 1kg', 'Instant Coffee 100g', 'Cold Brew Coffee 1L', 'Green Tea 40 Bags', 'Black Tea 80 Bags', 'English Breakfast Tea 80 Bags', 'Herbal Tea 20 Bags', 'Rooibos Tea 40 Bags', 'Chai Tea 20 Bags', 'Peppermint Tea 20 Bags', 'Coffee Pods 10-pack', 'French Roast 250g', 'Decaf Ground Coffee 250g', 'Hot Chocolate Sachets 10-pack', 'Earl Grey 80 Bags', 'Vanilla Coffee Syrup 750ml', 'Iced Tea Bags 40pc', 'Barista Oat Drink 1L']],
+  ['Bakery', '#c98a3d', '🥖', ['Sourdough Loaf', 'Wholegrain Bread 800g', 'Baguette', 'Bagels 6-pack', 'Brioche Buns 6-pack', 'Multiseed Rolls 6-pack', 'Croissants 4-pack', 'Tortillas 8-pack', 'Pita Pockets 6-pack', 'Rye Loaf 500g', 'Blueberry Muffins 4-pack', 'Cinnamon Rolls 2-pack', 'Donut Box 6-pack', 'Pain au Chocolat 4-pack', 'Cheesecake Slice 2-pack', 'Madeleines 6-pack', 'Marble Cake 400g', 'Lemon Tart 400g', 'Brownie Box 4-pack', 'Éclair Pack 4-pack']],
+  ['Fresh Produce', '#57a86c', '🥬', ['Bananas 1kg', 'Red Apples 1kg', 'Navel Oranges 6-pack', 'Avocados 2-pack', 'Strawberries 400g', 'Blueberries 200g', 'Green Grapes 500g', 'Pineapple Chunks 400g', 'Mango 2-pack', 'Lemons 6-pack', 'Vine Tomatoes 500g', 'Cucumber', 'Bell Peppers 3-pack', 'Carrots 1kg', 'Iceberg Lettuce', 'Broccoli Head', 'Baby Potatoes 1.5kg', 'Red Onions 1kg', 'Sweet Corn 2-pack', 'Mushrooms 250g']],
+  ['Meat & Deli', '#c2453a', '🥩', ['Bacon Rashers 300g', 'Chicken Breast Fillets 600g', 'Beef Mince 500g', 'Pork Chops 4-pack', 'Lamb Chops 4-pack', 'Meatballs 400g', 'Pork Sausages 8-pack', 'BBQ Ribs 800g', 'Chicken Thighs 800g', 'Steak Cuts 400g', 'Honey-Roast Ham 200g', 'Salami Slices 100g', 'Prosciutto 80g', 'Pepperoni 150g', 'Pastrami 120g', 'Chicken Slices 150g', 'Turkey Slices 150g', 'Pâté 125g', 'Chorizo Ring 250g', 'Mortadella 150g']],
+  ['Fish & Seafood', '#2f6fa5', '🐟', ['Salmon Fillets 2-pack', 'Smoked Salmon 180g', 'Tuna Steak 2-pack', 'Cod Fillets 400g', 'King Prawns 200g', 'Mackerel Fillets 2-pack', 'Haddock Fillets 300g', 'Sea Bass 2-pack', 'Calamari Rings 250g', 'Trout Fillets 2-pack', 'Cooked Prawns 200g', 'Seafood Mix 300g', 'Salmon Trimmings 300g', 'Kippers 2-pack', 'Tilapia Fillets 400g', 'Squid Rings 200g', 'Mussel Meat 200g', 'Fish Pie Mix 300g', 'Smoked Haddock 250g', 'Anchovy Fillets 50g']],
+  ['Pasta & Tins', '#8a7448', '🥫', ['Penne Rigate 500g', 'Spaghetti 500g', 'Basmati Rice 1kg', 'Green Lentils 500g', 'Chickpea Pasta 250g', 'Egg Noodles 250g', 'Arborio Rice 500g', 'Couscous 500g', 'Wholewheat Fusilli 500g', 'Long Grain Rice 1kg', 'Baked Beans 400g', 'Tomato Passata 700ml', 'Chickpeas 400g', 'Sweetcorn 340g', 'Tuna Chunks 145g', 'Sardines in Oil 125g', 'Coconut Milk 400ml', 'Chopped Tomatoes 400g', 'Red Kidney Beans 400g', 'Olives 200g']],
+  ['Sauces & Spreads', '#a5662f', '🫙', ['Olive Oil 500ml', 'Extra Virgin Olive Oil 750ml', 'Balsamic Vinegar 500ml', 'Peanut Butter Smooth 350g', 'Honey Squeeze Bottle 350g', 'Sea Salt Grinder 400g', 'Tomato Ketchup 550g', 'Mayonnaise 400ml', 'Soy Sauce 150ml', 'Curry Sauce 350g', 'BBQ Sauce 500ml', 'Hot Sauce 150ml', 'Salad Cream 400ml', 'Tartare Sauce 200ml', 'Apple Sauce 400g', 'Mint Sauce 165g', 'Gravy Granules 500g', 'Stock Cubes 10-pack', 'Tomato Purée 200g', 'Orange Marmalade 450g']],
+  ['Breakfast & Biscuits', '#c47f17', '🥣', ['Granola 500g', 'Chia Seeds 250g', 'Quinoa 500g', 'Rice Cakes 150g', 'Cereal Bar 6-pack', 'Protein Bars 6-pack', 'Porridge Oats 1kg', 'Corn Flakes 500g', 'Bran Flakes 500g', 'Honey Granola 450g', 'Choc Chip Cookies 300g', 'Jaffa Cakes 12-pack', 'Digestive Biscuits 400g', 'Chocolate Cookies Pack', 'Shortbread 200g', 'Wafer Bars 5-pack', 'Ginger Nuts 250g', 'Custard Creams 300g', 'Oat Cookies 200g', 'Cream Crackers 300g']],
+  ['Sweets & Snacks', '#6b3b2a', '🍫', ['Milk Chocolate Bar 100g', 'Dark Chocolate 70% 100g', 'Dark Chocolate 85% 100g', 'Gummy Bears 200g', 'Gummy Candy 200g', 'Peanut Bars 3-pack', 'Sweet Popcorn 100g', 'Mint Chocolates 150g', 'Caramel Wafer 4-pack', 'Liquorice Allsorts 200g', 'Salted Chips 150g', 'Tortilla Chips 300g', 'Tortilla Snack Chips 200g', 'Pretzel Sticks 100g', 'Salted Peanuts 200g', 'Mixed Nuts 300g', 'Roasted Cashews 200g', 'Trail Mix 150g', 'Salted Pretzels 250g', 'Microwave Popcorn 3-pack']],
+  ['Frozen', '#5fb0c9', '🧊', ['Frozen Pepperoni Pizza', 'Frozen Margherita Pizza', 'French Fries 1.5kg', 'Garden Peas 1kg', 'Fish Fingers 20-pack', 'Chicken Nuggets 750g', 'Ice Lollies 8-pack', 'Frozen Berries 300g', 'Garlic Bread 400g', 'Hash Browns 1kg', 'Potato Waffles 12-pack', 'Onion Rings 750g', 'Fish Cakes 6-pack', 'Ice Cream Sandwiches 6-pack', 'Frozen Mango 300g', 'Pea Pods 750g', 'Yorkshire Puddings 12-pack', 'Spring Rolls 8-pack', 'Frozen Pancakes 6-pack', 'Choc Ices 500g']],
+  ['Cleaning & Waste', '#7a4fd4', '🧴', ['Washing Up Liquid 500ml', 'Dish Soap 500ml', 'Eco Dish Soap 500ml', 'Laundry Liquid 1L', 'Laundry Sheets 30pc', 'Antibacterial Spray 750ml', 'All-Purpose Spray 750ml', 'Glass Cleaner 500ml', 'Toilet Cleaner 750ml', 'Glass Spray 500ml', 'Paper Towels 2-roll', 'Bamboo Towels 2-roll', 'Trash Bags 20pc', 'Bin Liners 30pc', 'Compost Bags 50pc', 'Recycled Foil 30m', 'Cling Film 30m', 'Baking Paper 25m', 'Napkins 100pc', 'Tissues 4-box']],
+  ['Personal Care', '#2f9e6b', '🧼', ['Toothpaste 100ml', 'Shampoo 400ml', 'Soap Bar 4-pack', 'Soap Bar Trio 3-pack', 'Hand Cream 75ml', 'Roll-on Deodorant', 'Razor Blades 4pc', 'Cotton Pads 60pc', 'Hand Soap 500ml', 'Air Freshener Spray 300ml', 'Conditioner 400ml', 'Shower Gel 500ml', 'Body Lotion 400ml', 'Dental Floss 50m', 'Mouthwash 500ml', 'Deodorant Spray 150ml', 'Face Wipes 25pc', 'Bath Salts 900g', 'Lip Balm 4-pack', 'Cotton Buds 200pc']],
+];
+/** 10 pack variants per base — 15 departments × 20 bases × 10 = exactly
+ *  3000 items, 200 per department. */
+const GM_VARIANTS = ['', ' Family Pack', ' Value Pack', ' Twin Pack', ' Jumbo', ' Party Size', ' Mini Pack', ' 2-pack', ' 3-pack', ' Multipack'];
+
+/** Remove a demo store wholesale (slug-based) — used to retire old examples
+ *  from databases that already seeded them. */
+function deleteDemoStore(slug) {
+  const st = db.prepare('SELECT id FROM stores WHERE slug = ?').get(slug);
+  if (!st) return;
+  const floorIds = db.prepare('SELECT id FROM floors WHERE store_id = ?').all(st.id).map((r) => r.id);
+  db.exec('BEGIN');
+  try {
+    for (const fid of floorIds) {
+      db.prepare('DELETE FROM product_locations WHERE floor_id = ?').run(fid);
+      db.prepare('DELETE FROM floor_snapshots WHERE floor_id = ?').run(fid);
+      db.prepare('DELETE FROM map_elements WHERE floor_id = ?').run(fid);
+    }
+    db.prepare('DELETE FROM products WHERE store_id = ?').run(st.id);
+    db.prepare('DELETE FROM categories WHERE store_id = ?').run(st.id);
+    db.prepare('DELETE FROM floors WHERE store_id = ?').run(st.id);
+    db.prepare('DELETE FROM store_members WHERE store_id = ?').run(st.id);
+    db.prepare('DELETE FROM stores WHERE id = ?').run(st.id);
+    db.exec('COMMIT');
+    console.log(`Retired demo store ${slug}.`);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+function grandmartSpec() {
+  const W = 170;
+  const H = 100;
+  const elements = [];
+  const faces = [];
+  const rect = (type, x, y, w, h, label = '', meta = '{}') => elements.push({ type, shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, meta });
+  const point = (type, x, y, label = '') => elements.push({ type, shape: 'point', geometry: { x, y }, label });
+
+  rect('wall', 0, 0, W, 0.4);
+  rect('wall', 0, H - 0.4, W, 0.4);
+  rect('wall', 0, 0, 0.4, H);
+  rect('wall', W - 0.4, 0, 0.4, H);
+  point('entrance', 20, H - 0.9, 'Entrance');
+  point('exit', 150, H - 0.9, 'Exit');
+  // front-of-house is zoned but shelf-free, so the group count stays at 400
+  rect('zone', 55, H - 3.6, 60, 2.6, 'Checkout');
+  rect('zone', 1.2, 3, 8, 20, 'Produce pick-up');
+
+  // 20 bands × 10 double-sided pairs × 2 shelves = exactly 400 groups —
+  // every shelf carries its own label, so each is one editor group
+  let aisle = 0;
+  for (let p = 0; p < 20; p++) {
+    const y0 = 6 + p * 4.7;
+    for (let q = 0; q < 10; q++) {
+      const x0 = 4 + q * 15.5;
+      for (const dy of [0, 2.2]) {
+        aisle++;
+        rect('shelf', x0, y0 + dy, 10, 0.7, `Aisle ${aisle}`, JSON.stringify({ planWidth: 5 }));
+        faces.push({ axis: 'h', line: y0 + dy, from: x0 + 0.3, to: x0 + 9.7, label: `Aisle ${aisle}` });
+      }
+    }
+  }
+
+  // 25 categories × 10 bases × 12 variants = 3000 items. Photos follow the
+  // base product (its fetched packshot); bases without a photo cycle the
+  // fetched set deterministically so planogram tiles stay lively.
+  const photoKeys = Object.keys(PHOTOS);
+  const products = [];
+  for (const [c, [name, , , bases]] of GM_CATEGORIES.entries()) {
+    for (const [b, base] of bases.entries()) {
+      const photo = PHOTOS[base] ?? PHOTOS[photoKeys[(c * 37 + b * 11) % photoKeys.length]] ?? '';
+      for (const v of GM_VARIANTS) {
+        products.push({ name: base + v, category: name, brand: 'Grand Mart', image: photo });
+      }
+    }
+  }
+
+  // 3000 items over 400 shelves: the first 200 shelves carry 8 items, the
+  // rest 7 — one facing each, evenly spaced along the ~9.4 m face (~1.2 m
+  // apart, one planogram section per item). Each shelf is stamped with the
+  // department of the items it carries (meta.department) so the map can
+  // label general areas in groups view.
+  const locations = [];
+  const shelfDept = new Map(); // aisle label → department name
+  let cursor = 0;
+  for (const f of faces) {
+    const n = Math.min(cursor < 200 * 8 ? 8 : 7, products.length - cursor);
+    if (n <= 0) break;
+    shelfDept.set(f.label, products[cursor].category);
+    const len = f.to - f.from;
+    for (let i = 0; i < n; i++) {
+      const at = f.from + ((i + 0.5) * len) / n;
+      locations.push({
+        product: cursor,
+        x: f.axis === 'h' ? at : f.line,
+        y: f.axis === 'h' ? f.line : at,
+        level: 1,
+        w: 0.3,
+        pinW: 0.3,
+      });
+      cursor++;
+    }
+  }
+  // patch the department onto each shelf element's meta
+  for (const el of elements) {
+    const dept = el.type === 'shelf' ? shelfDept.get(el.label) : null;
+    if (dept) {
+      const m = JSON.parse(el.meta || '{}');
+      el.meta = JSON.stringify({ ...m, department: dept });
+    }
+  }
+
+  return {
+    slug: 'grand-mart', name: 'Grand Mart', address: '1 Grand Plaza',
+    description: 'Big-box example: 400 item groups — one per labelled aisle shelf — holding 3000 items across 25 categories.',
+    hours: '8am–11pm daily', floorName: 'Shop floor', w: W, h: H,
+    elements, categories: GM_CATEGORIES.map(([name, color, icon]) => ({ name, color, icon })), products, locations,
+    skuPrefix: 'GM',
+  };
+}
+
+// Sunrise Grocers was replaced by Grand Mart, and Grand Mart's spec has
+// since changed (department stamps) — retire both from databases that
+// already seeded them, then seed the current example set.
+deleteDemoStore('sunrise-grocers');
+deleteDemoStore('grand-mart');
+seedExample(cornerStoreSpec(), 'corner@storemap.demo', 'Corner Store Demo');
+seedExample(grandmartSpec(), 'grandmart@storemap.demo', 'Grand Mart Demo');
 seedExample(megamartSpec(), 'megamart@storemap.demo', 'Megamart Demo');

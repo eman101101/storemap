@@ -10,8 +10,8 @@ const payload: PublicStorePayload = {
   floors: [{ id: 'f1', store_id: 'pub', name: 'Ground', level: 0, width_m: 20, height_m: 10, background_url: '' }],
   categories: [{ id: 'c1', store_id: 'pub', name: 'Dairy', color: '#3b6fd4', icon: '' }],
   products: [
-    { id: 'p1', store_id: 'pub', category_id: 'c1', name: 'Milk', brand: '', sku: '', barcode: '', description: '', price: 1.5, image_url: '' },
-    { id: 'p2', store_id: 'pub', category_id: null, name: 'Bread', brand: '', sku: '', barcode: '', description: '', price: null, image_url: '' },
+    { id: 'p1', store_id: 'pub', category_id: 'c1', name: 'Milk', brand: '', sku: '', barcode: '', description: '', price: 1.5, image_url: '', image_crop_url: '' },
+    { id: 'p2', store_id: 'pub', category_id: null, name: 'Bread', brand: '', sku: '', barcode: '', description: '', price: null, image_url: '', image_crop_url: '' },
   ],
   locations: [{ id: 'l1', product_id: 'p1', floor_id: 'f1', x: 2, y: 3, rot: 0, meta: '{}' }],
   elements: [
@@ -47,8 +47,13 @@ describe('LocalSession (no-account sandbox)', () => {
     const { location } = await s.setProductLocation('p2', { floor_id: 'f1', x: 5, y: 5 });
     expect(location.product_id).toBe('p2');
     expect((await s.storeFull()).locations).toHaveLength(2);
-    await s.setProductLocation('p2', { floor_id: 'f1', x: 6, y: 6 }); // re-pin replaces, never duplicates
-    expect((await s.storeFull()).locations).toHaveLength(2);
+    // a plain re-pin (no locationId) inserts a NEW facing — products can hold
+    // several pins per floor; moving an existing pin passes its locationId
+    await s.setProductLocation('p2', { floor_id: 'f1', x: 6, y: 6 });
+    expect((await s.storeFull()).locations).toHaveLength(3);
+    await s.setProductLocation('p2', { floor_id: 'f1', x: 7, y: 7, locationId: location.id });
+    expect((await s.storeFull()).locations).toHaveLength(3);
+    expect((await s.storeFull()).locations.find((l) => l.id === location.id)).toMatchObject({ x: 7, y: 7 });
 
     const { product } = await s.addProduct('x', { name: 'Eggs', category_id: 'c1' });
     expect((await s.storeFull()).products.map((p) => p.name)).toContain('Eggs');
@@ -122,5 +127,30 @@ describe('LocalSession device persistence', () => {
     const snap = LocalSession.fromPublic(payload).snapshot();
     localStorage.setItem('storemap.try.shape-bad', JSON.stringify({ ...snap, products: 'nope' }));
     expect(LocalSession.loadSaved('shape-bad')).toBeNull();
+  });
+
+  it('Add copy: a second setProductLocation (no locationId) yields a DISTINCT pin, not the original', async () => {
+    const s = LocalSession.fromPublic(payload);
+    const seedCount = (await s.storeFull()).locations.filter((l) => l.product_id === 'p1').length;
+    const first = await s.setProductLocation('p1', { floor_id: 'f1', x: 2, y: 3, shelfId: 'e1', shelfLevel: 1, facingW: 0.32 });
+    const second = await s.setProductLocation('p1', { floor_id: 'f1', x: 2.5, y: 3, shelfId: 'e1', shelfLevel: 1, facingW: 0.32 });
+    expect(second.location.id).not.toBe(first.location.id);
+    const locs = (await s.storeFull()).locations.filter((l) => l.product_id === 'p1');
+    expect(locs).toHaveLength(seedCount + 2); // seed pin + copy 1 + copy 2, all real rows
+    expect(new Set(locs.map((l) => l.id)).size).toBe(locs.length); // unique ids — no duplicate React keys
+    // the seeded original is untouched at its own spot
+    expect(locs.find((l) => l.id === 'l1')).toMatchObject({ x: 2, y: 3 });
+    expect(locs.find((l) => l.id === first.location.id)).toMatchObject({ x: 2, y: 3 });
+  });
+
+  it('productImageCrop stores a variant and leaves the original photo alone', async () => {
+    const s = LocalSession.fromPublic(payload);
+    const file = new File(['crop-bytes'], 'crop.webp', { type: 'image/webp' });
+    const { product } = await s.productImageCrop('p1', file);
+    expect(product.image_crop_url).toContain('data:');
+    expect(product.image_url).toBe(''); // original untouched
+    await s.removeProductImageCrop('p1');
+    const after = (await s.storeFull()).products.find((p) => p.id === 'p1');
+    expect(after?.image_crop_url).toBe('');
   });
 });

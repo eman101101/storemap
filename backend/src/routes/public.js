@@ -57,7 +57,7 @@ function publicStorePayload(slug) {
     .all(store.id);
   const products = db
     .prepare(
-      `SELECT p.id, p.name, p.brand, p.sku, p.description, p.price, p.image_url,
+      `SELECT p.id, p.name, p.brand, p.sku, p.description, p.price, p.image_url, p.image_crop_url,
               c.name AS category_name, c.color AS category_color
        FROM products p LEFT JOIN categories c ON c.id = p.category_id
        WHERE p.store_id = ? ORDER BY p.name COLLATE NOCASE`

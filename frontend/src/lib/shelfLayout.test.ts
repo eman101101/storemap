@@ -1,6 +1,6 @@
 /** Tests for the shelf planogram computation (tap-a-shelf → real layout). */
 import { describe, it, expect } from 'vitest';
-import { computeShelfLayout, pinInShelf, worldToShelfLocal, shelfHeight, shelfLevels, shelfItemSize, boardGeometry, shelfBoardZs } from './shelfLayout';
+import { computeShelfLayout, pinInShelf, worldToShelfLocal, shelfHeight, shelfLevels, shelfItemSize, shelfPlanogramView, findFreeFacingU, boardGeometry, shelfBoardZs } from './shelfLayout';
 import type { MapElement, Product, ProductLocation, RectGeom } from '../types';
 
 const shelf: MapElement = {
@@ -12,7 +12,7 @@ const shelf: MapElement = {
 function product(id: string, name: string): Product {
   return {
     id, store_id: 's', category_id: null, name, brand: '', sku: '', barcode: '',
-    description: '', price: null, image_url: '',
+    description: '', price: null, image_url: '', image_crop_url: '',
   };
 }
 
@@ -136,6 +136,67 @@ describe('shelf dimensions (height / rows / item size)', () => {
     const zs = shelfBoardZs(withMeta({ height: 2.1, levels: 7 }));
     expect(zs).toHaveLength(7);
     expect(zs[6]!).toBeLessThan(2.1);
+  });
+});
+
+describe('shelfPlanogramView (persisted default view mode)', () => {
+  const withMeta = (m: Record<string, unknown>): MapElement => ({ ...shelf, meta: JSON.stringify(m) });
+
+  it('returns null when meta has no view mode', () => {
+    expect(shelfPlanogramView(shelf)).toBeNull();
+    expect(shelfPlanogramView(withMeta({ bays: 2 }))).toBeNull();
+  });
+
+  it('reads a persisted planogramView override', () => {
+    expect(shelfPlanogramView(withMeta({ planogramView: 'images' }))).toBe('images');
+    expect(shelfPlanogramView(withMeta({ planogramView: 'photos' }))).toBe('photos');
+    expect(shelfPlanogramView(withMeta({ planogramView: 'diagram' }))).toBe('diagram');
+  });
+
+  it('survives corrupt or unknown values', () => {
+    expect(shelfPlanogramView(withMeta({ planogramView: 'wallpaper' }))).toBeNull();
+    expect(shelfPlanogramView(withMeta({ planogramView: 42 }))).toBeNull();
+    const bad: MapElement = { ...shelf, meta: 'not json' };
+    expect(shelfPlanogramView(bad)).toBeNull();
+  });
+});
+
+describe('findFreeFacingU (collision-aware copy placement)', () => {
+  it('keeps the near position when it is already free', () => {
+    expect(findFreeFacingU([], 0.5, 0.1)).toBeCloseTo(0.5);
+  });
+
+  it('scans right, then left, for the first gap that fits', () => {
+    expect(findFreeFacingU([{ u: 0.5, w: 0.1 }], 0.5, 0.1)).toBeCloseTo(0.6);
+    const crowded = [{ u: 0.5, w: 0.1 }, { u: 0.6, w: 0.1 }, { u: 0.7, w: 0.1 }];
+    expect(findFreeFacingU(crowded, 0.5, 0.1)).toBeCloseTo(0.4);
+  });
+
+  it('hugs the nearest edge when everything overlaps', () => {
+    const wall = [{ u: 0.1, w: 1 }, { u: 0.5, w: 1 }, { u: 0.9, w: 1 }];
+    expect(findFreeFacingU(wall, 0.5, 0.2)).toBeCloseTo(0.9);
+  });
+
+  it('never returns a position hanging off the shelf edge', () => {
+    const u = findFreeFacingU([{ u: 0.02, w: 0.2 }], 0.02, 0.2);
+    expect(u).toBeGreaterThanOrEqual(0.1);
+    expect(u).toBeLessThanOrEqual(0.9);
+  });
+});
+
+describe('planogram row height + pin dedupe', () => {
+  const withMeta = (m: Record<string, unknown>): MapElement => ({ ...shelf, meta: JSON.stringify(m) });
+
+  it('rowH: band height from meta, clamped to 64..200, default 112', () => {
+    expect(computeShelfLayout(shelf, [])!.meta.rowH).toBe(112);
+    expect(computeShelfLayout(withMeta({ rowH: 160 }), [])!.meta.rowH).toBe(160);
+    expect(computeShelfLayout(withMeta({ rowH: 999 }), [])!.meta.rowH).toBe(200);
+    expect(computeShelfLayout(withMeta({ rowH: 10 }), [])!.meta.rowH).toBe(64);
+  });
+
+  it('a repeated pin location renders ONE slot — no duplicate keys downstream', () => {
+    const layout = computeShelfLayout(shelf, [pin(1, 0.5, 'a'), pin(1, 0.5, 'a')])!;
+    expect(layout.bays.flatMap((b) => b.slots)).toHaveLength(1);
   });
 });
 

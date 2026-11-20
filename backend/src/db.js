@@ -285,6 +285,21 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email);
     `,
   },
+  {
+    name: '009-product-image-crop',
+    sql: `
+      ALTER TABLE products ADD COLUMN image_crop_url TEXT NOT NULL DEFAULT '';
+    `,
+  },
+  {
+    // photo credits: every account starts with the free plan's 1000-photo
+    // allotment on the account; pay-as-you-go packs top it up (1 credit = 1
+    // product photo upload)
+    name: '010-user-photo-credits',
+    sql: `
+      ALTER TABLE users ADD COLUMN photo_credits INTEGER NOT NULL DEFAULT 1000;
+    `,
+  },
 ];
 
 export function migrate() {

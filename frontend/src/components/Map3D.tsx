@@ -31,6 +31,10 @@ interface Props {
   pickFilter?: 'all' | 'products';
   /** All pins on the floor — drives the visual product blocks on the shelf faces. */
   stockPins?: Pin[];
+  /** Items visibility (groups view): false hides the shelf stocking and the
+   *  per-pin hit targets except the focused pins — the floor reads as clean
+   *  fixtures + area labels instead of thousands of product blocks. */
+  showItems?: boolean;
   /** Draw the per-product blocks on shelf faces (off for clean, pin-free maps). */
   stockFaces?: boolean;
   /** Multi-stop trip: numbered markers at each ordered stop (A1). */
@@ -117,7 +121,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false, pickFilter = 'all' }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], showItems = true, stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false, pickFilter = 'all' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -129,6 +133,9 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
   // the seq that already flew — the very first route shown must NOT auto-play
   const flownSeq = useRef<number | null>(null);
   const hitsRef = useRef<{ pins: PinHit[]; aisles: AisleHit[] }>({ pins: [], aisles: [] });
+  /** edit mode: the pin a press began on — its tap-select wins over the
+   *  fixture behind it (2D's pendingPin pattern) */
+  const pendingPin = useRef<string | null>(null);
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
   /** Hover pick preview (edit mode): the element id a click would select. Only
    *  the ID lives here — it feeds the draw effect, so it must change exactly
@@ -160,7 +167,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
   // and the "found it" moment keeps its glowing neighbourhood. Hover
   // highlighting stays off on those floors too: it changes the stocking
   // faces, which would rebuild the whole scene BSP on every hover crossing.
-  const heavy = stockPins.length > 500;
+  const heavy = !showItems || stockPins.length > 500;
   const hoverLoc = heavy ? null : hoverPinLocId;
   const stocking = useMemo<StockItem[]>(
     () => {
@@ -460,9 +467,12 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // every stocked product is tappable in 3D, not just the focused subset —
     // one hit target per facing level so the whole stack is clickable, not a
-    // single point at its top
+    // single point at its top. Groups view keeps hit targets for the focused
+    // pins only (the floor renders as clean fixtures).
     const focusSet = focusPinIds?.length ? new Set(focusPinIds) : null;
-    const hitPins = stockPins.length ? stockPins : pins;
+    const isFocusPin = (id: string) => id === focusPinId || (focusSet?.has(id) ?? false);
+    const allPins = stockPins.length ? stockPins : pins;
+    const hitPins = showItems ? allPins : allPins.filter((p) => isFocusPin(p.location.id));
     const pins3d: Pin3D[] = [];
     for (const p of hitPins) {
       const anchor = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
@@ -506,7 +516,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       selectedId: edit ? selectedId : null,
       hoverId: edit ? hoverPick : null,
     });
-  }, [cam, size, floor, elements, pins, stockPins, focusPinId, focusPinIds, route, routeFacesMemo, sceneBSP, theme, edit, selectedId, hoverPick]);
+  }, [cam, size, floor, elements, pins, stockPins, showItems, focusPinId, focusPinIds, route, routeFacesMemo, sceneBSP, theme, edit, selectedId, hoverPick]);
 
   // middle-click autoscroll guard — pointerdown preventDefault can't stop it
   useEffect(() => {
@@ -585,6 +595,19 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
         return;
       }
       const px = screenPx(e);
+      // a tap near a product pin selects its group — even though the shelf
+      // fixture behind the pin would win the raycast (the pin taps resolve on
+      // release, before the fixture's click-select)
+      let pinTap: string | null = null;
+      let pinTapD = 14;
+      for (const hit of hitsRef.current.pins) {
+        const dist = Math.hypot(hit.sx - px.x, hit.sy - px.y);
+        if (dist < pinTapD) {
+          pinTapD = dist;
+          pinTap = hit.productId;
+        }
+      }
+      pendingPin.current = pinTap;
       const hit = fixtureAt(px.x, px.y);
         if (hit) {
         const startFloor = screenToWorldFloor(camRef.current, size.w, size.h, px.x, px.y);
@@ -750,8 +773,15 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     if (ed) {
       elDrag.current = null;
       if (ed.moved) {
+        pendingPin.current = null; // a real drag — not a pin tap
         // final position already sent as the last 'live'; commit history entry
         onElementDrag?.(ed.id, ed.lastDx ?? 0, ed.lastDy ?? 0, 'push');
+      } else if (pendingPin.current) {
+        // the gesture began on a pin over this fixture and never moved — the
+        // group panel wins over the fixture's click-select
+        onPinClick?.(pendingPin.current);
+        pendingPin.current = null;
+        return;
       } else if (onSelectElement) {
         onSelectElement(ed.id); // a click selects (already selected above — keep for safety)
       }
@@ -766,15 +796,11 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     const py = e.clientY - rect.top;
     let best: PinHit | null = null;
     let bestD = 18;
-    // Select: Structures — taps select fixtures (already handled on
-    // pointerdown); don't steal them for pins
-    if (!(edit && pickFilter === 'all')) {
-      for (const hit of hitsRef.current.pins) {
-        const dist = Math.hypot(hit.sx - px, hit.sy - py);
-        if (dist < bestD) {
-          bestD = dist;
-          best = hit;
-        }
+    for (const hit of hitsRef.current.pins) {
+      const dist = Math.hypot(hit.sx - px, hit.sy - py);
+      if (dist < bestD) {
+        bestD = dist;
+        best = hit;
       }
     }
     if (best) {

@@ -30,6 +30,8 @@ export type EditorApi = Pick<
   | 'deleteProduct'
   | 'productImage'
   | 'removeProductImage'
+  | 'productImageCrop'
+  | 'removeProductImageCrop'
   | 'uploadImage'
   | 'floorSnapshots'
   | 'floorSnapshot'
@@ -246,20 +248,22 @@ export class LocalSession implements EditorApi {
   }
 
   async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; locationId?: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }) {
-    // merge into the existing pin's meta — planogram edits (shelf_level, w)
-    // must survive plain re-pins. A product can hold several pins (facings):
-    // `locationId` moves that pin; without one a new facing is inserted.
-    const prev = body.locationId
-      ? this.locations.find((l) => l.id === body.locationId)
-      : this.locations.find((l) => l.product_id === productId);
-    let meta: Record<string, unknown> = {};
-    try { meta = JSON.parse(prev?.meta || '{}') as Record<string, unknown>; } catch { /* fresh */ }
+    // `locationId` MOVES that pin in place (meta merges, so planogram edits
+    // survive plain re-pins). WITHOUT one a brand-new facing is inserted — a
+    // product can hold several pins per floor, matching the server contract.
+    // (Upshoting the product's first pin here used to make "Add copy"
+    // overwrite the original and corrupt the planogram with duplicate ids.)
+    const prev = body.locationId ? this.locations.find((l) => l.id === body.locationId) : undefined;
+    const meta: Record<string, unknown> = {};
+    if (prev) {
+      try { Object.assign(meta, JSON.parse(prev.meta || '{}') as Record<string, unknown>); } catch { /* fresh */ }
+    }
     if (body.shelfId !== undefined) meta.shelfId = body.shelfId || undefined;
     if (body.shelfLevel !== undefined) meta.shelf_level = body.shelfLevel || undefined;
     if (body.facingW !== undefined) meta.w = body.facingW || undefined;
     if (body.pinW !== undefined) meta.pinW = body.pinW || undefined;
     if (body.pinH !== undefined) meta.pinH = body.pinH || undefined;
-    const id = prev?.id ?? (body.locationId ?? `loc-${productId}-${Math.random().toString(36).slice(2, 8)}`);
+    const id = prev?.id ?? uid();
     const location: ProductLocation = {
       id,
       product_id: productId,
@@ -269,7 +273,6 @@ export class LocalSession implements EditorApi {
       rot: prev?.rot ?? 0,
       meta: JSON.stringify(meta),
     };
-    // a moved pin updates in place; a new facing (no locationId) joins the list
     this.locations = prev
       ? this.locations.map((l) => (l.id === location.id ? location : l))
       : [...this.locations, location];
@@ -340,6 +343,7 @@ export class LocalSession implements EditorApi {
       name: body.name || 'Untitled product',
       brand: body.brand ?? '', sku: body.sku ?? '', barcode: body.barcode ?? '',
       description: body.description ?? '', price: body.price ?? null, image_url: body.image_url ?? '',
+      image_crop_url: body.image_crop_url ?? '',
     };
     this.products = [...this.products, product];
     this.persist();
@@ -376,6 +380,19 @@ export class LocalSession implements EditorApi {
 
   async removeProductImage(productId: string) {
     await this.updateProduct(productId, { image_url: '' });
+    return { ok: true as const };
+  }
+
+  /** The owner-cropped planogram variant — a data URL in the sandbox, exactly
+   *  like the base photo; the original image_url is never touched. */
+  async productImageCrop(productId: string, file: File) {
+    const url = await fileToDataUrl((await compressImage(file)) ?? file);
+    const product = await this.updateProduct(productId, { image_crop_url: url });
+    return { url, product: product.product };
+  }
+
+  async removeProductImageCrop(productId: string) {
+    await this.updateProduct(productId, { image_crop_url: '' });
     return { ok: true as const };
   }
 
@@ -426,7 +443,7 @@ export class LocalSession implements EditorApi {
       categories: this.categories.map((c) => ({ name: c.name, color: c.color, icon: c.icon })),
       products: this.products.map((p) => ({
         name: p.name, brand: p.brand, sku: p.sku, barcode: p.barcode,
-        description: p.description, price: p.price, image_url: p.image_url,
+        description: p.description, price: p.price, image_url: p.image_url, image_crop_url: p.image_crop_url,
         category: p.category_id != null ? catIndex.get(String(p.category_id)) ?? null : null,
       })),
       elements: floors.flatMap((f) =>
@@ -450,7 +467,7 @@ export class LocalSession implements EditorApi {
     store?: { name?: string; address?: string; description?: string; phone?: string; website?: string; hours?: string; logo_url?: string };
     floors?: Array<{ name?: string; level?: number; width_m?: number; height_m?: number; background_url?: string }>;
     categories?: Array<{ name: string; color?: string; icon?: string }>;
-    products?: Array<{ name: string; brand?: string; sku?: string; barcode?: string; description?: string; price?: number | null; image_url?: string; category?: number | null }>;
+    products?: Array<{ name: string; brand?: string; sku?: string; barcode?: string; description?: string; price?: number | null; image_url?: string; image_crop_url?: string; category?: number | null }>;
     elements?: Array<{ floor?: number; type: string; shape: string; geometry: string; label?: string; color?: string; meta?: string; z_index?: number }>;
     locations?: Array<{ product?: number; floor?: number; x: number; y: number; rot?: number }>;
   }) {
@@ -468,6 +485,7 @@ export class LocalSession implements EditorApi {
       id: uid(), store_id: 'sandbox',
       name: p.name || `Product ${i + 1}`, brand: p.brand ?? '', sku: p.sku ?? '', barcode: p.barcode ?? '',
       description: p.description ?? '', price: p.price ?? null, image_url: p.image_url ?? '',
+      image_crop_url: p.image_crop_url ?? '',
       category_id: p.category != null ? catById.get(p.category)?.id ?? null : null,
     }));
     const prodById = new Map(products.map((p, i) => [i, p]));

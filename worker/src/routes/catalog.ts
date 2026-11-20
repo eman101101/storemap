@@ -163,6 +163,22 @@ const IMAGE_TYPES: Record<string, { ext: string; magic: (b: Uint8Array) => boole
 
 const imageLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 
+/** Pay-as-you-go photo accounting: each product photo upload spends one
+ *  credit from the uploader's account (1 credit = 1 photo). Self-hosted
+ *  (local mode) instances include photos and skip the meter entirely. */
+async function photoCreditsLeft(env: Env, userId: string): Promise<number> {
+  const row = await first(env, 'SELECT photo_credits FROM users WHERE id = ?', userId) as { photo_credits?: number } | null;
+  return row?.photo_credits ?? 0;
+}
+async function spendPhotoCredit(env: Env, userId: string, selfHosted: boolean): Promise<void> {
+  if (selfHosted) return;
+  await run(env, 'UPDATE users SET photo_credits = photo_credits - 1 WHERE id = ? AND photo_credits > 0', userId);
+}
+const OUT_OF_CREDITS = {
+  error: 'Out of photo credits — your free plan includes 1000. Add more any time from Plan & credits.',
+  upgrade: true,
+};
+
 app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
   const env = c.env as Env;
   const cfg = c.get('config');
@@ -175,6 +191,7 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
       upgrade: true,
     });
   }
+  if (!cfg.selfHosted && (await photoCreditsLeft(env, c.get('user').id)) <= 0) return json(c, 402, OUT_OF_CREDITS);
   const type = (c.req.header('content-type') || '').split(';')[0].trim();
   const spec = IMAGE_TYPES[type];
   if (!spec) return badRequest(c, 'Only PNG, JPEG or WebP images are accepted');
@@ -191,6 +208,7 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
       return json(c, 503, { error: 'Daily media budget reached — uploads pause until tomorrow.', retry: true });
     throw err;
   }
+  await spendPhotoCredit(env, c.get('user').id, cfg.selfHosted);
   await run(env, 'UPDATE products SET image_url = ? WHERE id = ?', url, product.id);
   await touchStore(c, env, product.store_id as string);
   await deleteImage(env, product.image_url); // the replaced image, if any
@@ -208,6 +226,62 @@ app.delete('/products/:id/image', requireAuth, async (c) => {
   await run(env, 'UPDATE products SET image_url = "" WHERE id = ?', product.id);
   await touchStore(c, env, product.store_id as string);
   await deleteImage(env, product.image_url);
+  return json(c, 200, { ok: true });
+});
+
+/**
+ * POST /api/products/:id/image-crop — raw image bytes; sets the owner-cropped
+ * variant (products.image_crop_url) that planogram tiles show by default.
+ * The original image_url is kept so search thumbs and the product sheet fall
+ * back to it.
+ */
+app.post('/products/:id/image-crop', requireAuth, imageLimiter, async (c) => {
+  const env = c.env as Env;
+  const cfg = c.get('config');
+  const product = await ownedProduct(c, env, c.req.param('id'));
+  if (product instanceof Response) return product;
+  const store = await first(env, 'SELECT * FROM stores WHERE id = ?', product.store_id);
+  if (!productImagesEnabled(cfg, store as { plan?: string })) {
+    return json(c, 402, {
+      error: 'Product photos are part of the paid plan. Self-hosted (local mode) instances have them included.',
+      upgrade: true,
+    });
+  }
+  if (!cfg.selfHosted && (await photoCreditsLeft(env, c.get('user').id)) <= 0) return json(c, 402, OUT_OF_CREDITS);
+  const type = (c.req.header('content-type') || '').split(';')[0].trim();
+  const spec = IMAGE_TYPES[type];
+  if (!spec) return badRequest(c, 'Only PNG, JPEG or WebP images are accepted');
+  const buf = new Uint8Array(await c.req.arrayBuffer());
+  if (!buf.length) return badRequest(c, 'Empty upload');
+  if (buf.length > cfg.maxUploadBytes) return badRequest(c, 'Image exceeds 10 MB limit');
+  if (!spec.magic(buf)) return badRequest(c, 'File content does not match its image type');
+
+  let url: string;
+  try {
+    ({ url } = await saveImage(env, buf, spec.ext));
+  } catch (err) {
+    if ((err as Error).message === 'R2_DAILY_BUDGET_REACHED')
+      return json(c, 503, { error: 'Daily media budget reached — uploads pause until tomorrow.', retry: true });
+    throw err;
+  }
+  await spendPhotoCredit(env, c.get('user').id, cfg.selfHosted);
+  await run(env, 'UPDATE products SET image_crop_url = ? WHERE id = ?', url, product.id);
+  await touchStore(c, env, product.store_id as string);
+  await deleteImage(env, product.image_crop_url); // the replaced crop, if any
+  return json(c, 200, { url, product: productJson((await first(env, PRODUCT_JOIN, product.id))!) });
+});
+
+app.delete('/products/:id/image-crop', requireAuth, async (c) => {
+  const env = c.env as Env;
+  const cfg = c.get('config');
+  const product = await ownedProduct(c, env, c.req.param('id'));
+  if (product instanceof Response) return product;
+  const store = await first(env, 'SELECT * FROM stores WHERE id = ?', product.store_id);
+  if (!productImagesEnabled(cfg, store as { plan?: string }))
+    return json(c, 402, { error: 'Product photos are a paid feature', upgrade: true });
+  await run(env, 'UPDATE products SET image_crop_url = "" WHERE id = ?', product.id);
+  await touchStore(c, env, product.store_id as string);
+  await deleteImage(env, product.image_crop_url);
   return json(c, 200, { ok: true });
 });
 

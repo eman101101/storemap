@@ -6,6 +6,9 @@ export interface User {
   name: string;
   avatar_url: string;
   provider: string;
+  /** Pay-as-you-go photo credits (1 credit = 1 photo upload). Every account
+   *  starts with the free plan's 1000. */
+  photo_credits?: number;
 }
 
 export interface AuthInfo {
@@ -120,6 +123,8 @@ export interface Product {
   description: string;
   price: number | null;
   image_url: string;
+  /** owner-cropped variant — the planogram tiles show this by default */
+  image_crop_url: string;
   category_name?: string;
   category_color?: string;
 }

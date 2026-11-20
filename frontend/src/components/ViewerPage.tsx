@@ -453,6 +453,7 @@ export default function ViewerPage() {
             elements={elements.filter((e) => e.floor_id === floor.id)}
             pins={pins}
             stockPins={floorPins}
+            showDepartments={!hasSearch}
             viewport={viewport}
             onViewport={setViewport}
             focusPinId={focusPinLocationId}
@@ -773,7 +774,9 @@ export default function ViewerPage() {
           <ShelfDetail
             shelf={selectedShelf}
             pins={floorPins}
+            highlightLocationId={focusPinLocationId}
             onClose={() => setShelfPopupId(null)}
+            onAddToList={addToTrip}
             onPickProduct={(p) => {
               setShelfPopupId(null);
               focusResult(p);

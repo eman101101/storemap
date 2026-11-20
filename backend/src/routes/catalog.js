@@ -15,6 +15,23 @@ const router = Router();
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
+/** Pay-as-you-go photo accounting: each product photo upload spends one
+ *  credit from the uploader's account (1 credit = 1 photo). Self-hosted
+ *  (local mode) instances include photos and skip the meter entirely. */
+function photoCreditsLeft(req) {
+  const row = db.prepare('SELECT photo_credits FROM users WHERE id = ?').get(req.user.id);
+  return row?.photo_credits ?? 0;
+}
+function spendPhotoCredit(req) {
+  if (config.selfHosted) return;
+  db.prepare('UPDATE users SET photo_credits = photo_credits - 1 WHERE id = ? AND photo_credits > 0')
+    .run(req.user.id);
+}
+const OUT_OF_CREDITS = {
+  error: 'Out of photo credits — your free plan includes 1000. Add more any time from Plan & credits.',
+  upgrade: true,
+};
+
 function productJson(row) {
   return { ...row, price: row.price ?? null };
 }
@@ -191,6 +208,7 @@ router.post(
         upgrade: true,
       });
     }
+    if (!config.selfHosted && photoCreditsLeft(req) <= 0) return sendJson(res, 402, OUT_OF_CREDITS);
     const type = String(req.headers['content-type'] || '').split(';')[0].trim();
     const spec = IMAGE_TYPES[type];
     if (!spec) return badRequest(res, 'Only PNG, JPEG or WebP images are accepted');
@@ -200,6 +218,7 @@ router.post(
     if (!spec.magic(buf)) return badRequest(res, 'File content does not match its image type');
 
     const { url } = await saveImage(buf, spec.ext);
+    spendPhotoCredit(req);
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(url, product.id);
     touchStore(product.store_id);
     sendJson(res, 200, { url, product: productJson(db.prepare(PRODUCT_JOIN).get(product.id)) });
@@ -212,6 +231,54 @@ router.delete('/products/:id/image', requireAuth, handler(async (req, res) => {
   const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(product.store_id);
   if (!productImagesEnabled(store)) return sendJson(res, 402, { error: 'Product photos are a paid feature', upgrade: true });
   db.prepare('UPDATE products SET image_url = "" WHERE id = ?').run(product.id);
+  touchStore(product.store_id);
+  sendJson(res, 200, { ok: true });
+}));
+
+/**
+ * POST /api/products/:id/image-crop — raw image bytes; sets the owner-cropped
+ * variant (products.image_crop_url) that planogram tiles show by default.
+ * The original image_url is kept so search thumbs and the product sheet fall
+ * back to it.
+ */
+router.post(
+  '/products/:id/image-crop',
+  requireAuth,
+  rateLimit({ windowMs: 60_000, max: 30 }),
+  express.raw({ type: () => true, limit: '10mb' }),
+  handler(async (req, res) => {
+    const product = ownedProduct(req, res, req.params.id);
+    if (!product) return;
+    const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(product.store_id);
+    if (!productImagesEnabled(store)) {
+      return sendJson(res, 402, {
+        error: 'Product photos are part of the paid plan. Self-hosted (local mode) instances have them included.',
+        upgrade: true,
+      });
+    }
+    if (!config.selfHosted && photoCreditsLeft(req) <= 0) return sendJson(res, 402, OUT_OF_CREDITS);
+    const type = String(req.headers['content-type'] || '').split(';')[0].trim();
+    const spec = IMAGE_TYPES[type];
+    if (!spec) return badRequest(res, 'Only PNG, JPEG or WebP images are accepted');
+    const buf = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!buf || !buf.length) return badRequest(res, 'Empty upload');
+    if (buf.length > config.maxUploadBytes) return badRequest(res, 'Image exceeds 10 MB limit');
+    if (!spec.magic(buf)) return badRequest(res, 'File content does not match its image type');
+
+    const { url } = await saveImage(buf, spec.ext);
+    spendPhotoCredit(req);
+    db.prepare('UPDATE products SET image_crop_url = ? WHERE id = ?').run(url, product.id);
+    touchStore(product.store_id);
+    sendJson(res, 200, { url, product: productJson(db.prepare(PRODUCT_JOIN).get(product.id)) });
+  })
+);
+
+router.delete('/products/:id/image-crop', requireAuth, handler(async (req, res) => {
+  const product = ownedProduct(req, res, req.params.id);
+  if (!product) return;
+  const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(product.store_id);
+  if (!productImagesEnabled(store)) return sendJson(res, 402, { error: 'Product photos are a paid feature', upgrade: true });
+  db.prepare('UPDATE products SET image_crop_url = "" WHERE id = ?').run(product.id);
   touchStore(product.store_id);
   sendJson(res, 200, { ok: true });
 }));

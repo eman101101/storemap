@@ -43,11 +43,16 @@ export interface ShelfLayout {
   /** pins belonging to this shelf's floor but geometrically outside the shelf */
   outside: ShelfPin[];
   /** meta the layout was built from */
-  meta: { bays: number; levels: number; planWidth: number; planDepth: number };
+  meta: { bays: number; levels: number; planWidth: number; planDepth: number; rowH: number };
 }
+
+/** How a shelf's planogram is drawn: schematic tiles, photos with a label
+ *  strip, or full-bleed image tiles (details live in the selection panel). */
+export type PlanogramView = 'diagram' | 'photos' | 'images';
 
 const DEFAULT_BAY_WIDTH = 1.25; // metres of shelf per bay
 export const DEFAULT_LEVELS = 4;
+export const DEFAULT_ROW_H = 112; // drawn height of one planogram row band (px)
 export const DEFAULT_SHELF_HEIGHT = 1.5; // m — typical grocery gondola (1.2–1.8 m range)
 export const MIN_SHELF_HEIGHT = 0.3;
 export const MAX_SHELF_HEIGHT = 3;
@@ -58,7 +63,7 @@ export const DEFAULT_ITEM_W = 0.2;
 const MIN_ITEM = 0.05;
 const MAX_ITEM = 1.2;
 
-function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number; height?: number; itemH?: number; itemW?: number; planWidth?: number; planDepth?: number } {
+function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number; height?: number; itemH?: number; itemW?: number; planWidth?: number; planDepth?: number; rowH?: number; planogramView?: unknown } {
   try {
     const m = JSON.parse(el.meta || '{}');
     return typeof m === 'object' && m !== null ? m : {};
@@ -84,6 +89,13 @@ export function shelfItemSize(el: MapElement): { h: number; w: number } {
     h: clampNum(m.itemH, MIN_ITEM, MAX_ITEM) ?? DEFAULT_ITEM_H,
     w: clampNum(m.itemW, MIN_ITEM, MAX_ITEM) ?? DEFAULT_ITEM_W,
   };
+}
+
+/** The shelf's persisted planogram view mode — meta override, else null so
+ *  callers fall back to their auto-detection. */
+export function shelfPlanogramView(el: MapElement): PlanogramView | null {
+  const v = shelfMeta(el).planogramView;
+  return v === 'diagram' || v === 'photos' || v === 'images' ? v : null;
 }
 
 /**
@@ -166,7 +178,14 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
 
   const inside: ShelfPin[] = [];
   const outside: ShelfPin[] = [];
-  for (const pin of pins) (pinInShelf(shelf, pin) ? inside : outside).push(pin);
+  // a duplicated pin (same location twice) must not double-draw — it would
+  // also break React reconciliation in the planogram (duplicate keys)
+  const seenLocs = new Set<string>();
+  for (const pin of pins) {
+    if (seenLocs.has(pin.location.id)) continue;
+    seenLocs.add(pin.location.id);
+    (pinInShelf(shelf, pin) ? inside : outside).push(pin);
+  }
 
   const slots: ShelfSlot[] = inside.map(({ location, product }) => {
     const local = worldToShelfLocal(r, location);
@@ -205,7 +224,7 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
     levels: levelCount,
     bays,
     outside,
-    meta: { bays: bayCount, levels: levelCount, planWidth: width, planDepth: depth },
+    meta: { bays: bayCount, levels: levelCount, planWidth: width, planDepth: depth, rowH: clampNum(meta.rowH, 64, 200) ?? DEFAULT_ROW_H },
   };
 }
 
@@ -261,6 +280,30 @@ export function compactFilledLayout(src: ShelfLayout, slots: ShelfSlot[]): Shelf
   }
   for (const b of out.bays) b.slots.sort((a, b) => a.u - b.u);
   return out;
+}
+
+/**
+ * Find a free along-shelf position (0..1) for a facing of `facingWidth` (in
+ * u-fraction units) near `nearU`, avoiding the occupied [u - w/2, u + w/2]
+ * intervals of already-placed facings. Scans outward from `nearU`; always
+ * returns a clamped position, even when everything overlaps.
+ */
+export function findFreeFacingU(
+  placed: { u: number; w: number }[],
+  nearU: number,
+  facingWidth: number,
+): number {
+  const fw = Math.min(0.5, Math.max(0.02, facingWidth));
+  const overlaps = (u: number) => placed.some((p) => Math.abs(p.u - u) < (p.w + fw) / 2 - 1e-6);
+  if (!overlaps(nearU)) return Math.min(1 - fw / 2, Math.max(fw / 2, nearU));
+  for (let d = fw; d <= 1; d += fw) {
+    const right = nearU + d;
+    if (right <= 1 - fw / 2 && !overlaps(right)) return right;
+    const left = nearU - d;
+    if (left >= fw / 2 && !overlaps(left)) return left;
+  }
+  // everything overlaps — hug the nearest edge
+  return nearU >= 0.5 ? 1 - fw / 2 : fw / 2;
 }
 
 /** Bounding box of any element, for click-targets and layout fallbacks. */

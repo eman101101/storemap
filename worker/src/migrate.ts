@@ -289,6 +289,21 @@ const MIGRATIONS: { name: string; sql: string; batch?: boolean }[] = [
       CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email);
     `,
   },
+  {
+    name: '012-product-image-crop',
+    sql: `
+      ALTER TABLE products ADD COLUMN image_crop_url TEXT NOT NULL DEFAULT '';
+    `,
+  },
+  {
+    // photo credits: every account starts with the free plan's 1000-photo
+    // allotment on the account; pay-as-you-go packs top it up (1 credit = 1
+    // product photo upload)
+    name: '013-user-photo-credits',
+    sql: `
+      ALTER TABLE users ADD COLUMN photo_credits INTEGER NOT NULL DEFAULT 1000;
+    `,
+  },
 ];
 
 /**
@@ -384,7 +399,11 @@ export async function bootstrap(env: Env, selfHosted: boolean): Promise<string> 
   const attempt = (async () => {
     await migrate(env);
     const secret = await resolveSessionSecret(env);
-    if (selfHosted && (await count(env, 'SELECT COUNT(*) AS n FROM stores')) === 0) {
+    // Seed on every cold start in local mode — per-store idempotency in
+    // seedExample skips present stores, so this is a handful of cheap
+    // SELECTs, and it also lets the seeder retire replaced examples
+    // (seedDemoMaps deletes stores whose slugs are no longer in the set).
+    if (selfHosted) {
       try {
         await seedDemoMaps(env);
       } catch (err) {

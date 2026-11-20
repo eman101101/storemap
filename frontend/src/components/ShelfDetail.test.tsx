@@ -13,7 +13,7 @@ const row: MapElementRow = {
 
 const product = (id: string, name: string): Product => ({
   id, store_id: 's', category_id: null, name, brand: '', sku: '', barcode: '',
-  description: '', price: 1.5, image_url: '',
+  description: '', price: 1.5, image_url: '', image_crop_url: '',
 });
 
 const pin = (id: string, productId: string, x: number, y: number) =>
@@ -62,19 +62,105 @@ describe('ShelfDetail', () => {
     expect(closed).toBe(true);
   });
 
-  it('clicking a facing invokes onPickProduct', () => {
+  it('clicking a facing selects it and the bottom panel shows its details; onPickProduct fires from "Show on map"', () => {
     const shelf = parseElement(row);
     let picked: string | null = null;
+    let listed: string | null = null;
     const { container } = render(
       <ShelfDetail
         shelf={shelf}
         pins={[{ location: pin('l1', 'p1', 1, 0.5), product: product('p1', 'Choc Bar') }]}
         onClose={() => {}}
         onPickProduct={(p) => (picked = p.id)}
+        onAddToList={(p) => (listed = p.id)}
       />
     );
+    // the click selects — it no longer jumps straight out to the map
     fireEvent.click(container.querySelector('g[style*="cursor"]')!);
+    expect(picked).toBeNull();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Choc Bar');
+    expect(dialog.textContent).toContain('$1.50');
+    expect(dialog.textContent).toContain('Bay 1 · Row 1');
+    // panel actions keep their old semantics
+    fireEvent.click(screen.getByRole('button', { name: /Add to list/ }));
+    expect(listed).toBe('p1');
+    fireEvent.click(screen.getByRole('button', { name: /Show on map/ }));
     expect(picked).toBe('p1');
+  });
+
+  it('persists the image view: full-bleed cover images, no label strip', () => {
+    const imageShelf = parseElement({ ...row, meta: JSON.stringify({ bays: 2, levels: 2, planogramView: 'images' }) });
+    const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
+    const { container } = render(
+      <ShelfDetail
+        shelf={imageShelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: withPhoto }]}
+        onClose={() => {}}
+      />
+    );
+    const images = container.querySelectorAll('image');
+    expect(images).toHaveLength(1);
+    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMid slice');
+    // image tiles carry no <text> — details moved to the bottom panel
+    expect(container.querySelectorAll('text')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Image' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('degrades a stored image/photos default to the diagram when nothing has a photo', () => {
+    const imageShelf = parseElement({ ...row, meta: JSON.stringify({ bays: 2, levels: 2, planogramView: 'images' }) });
+    const { container } = render(
+      <ShelfDetail
+        shelf={imageShelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: product('p1', 'Choc Bar') }]}
+        onClose={() => {}}
+      />
+    );
+    expect(container.querySelectorAll('image')).toHaveLength(0);
+    expect(container.querySelector('rect[fill-opacity="0.16"]')).toBeTruthy();
+    // no photos → the view toggle isn't offered at all on this shelf
+    expect(screen.queryByRole('button', { name: 'Image' })).toBeNull();
+  });
+
+  it('draws the pulsing highlight border around the searched facing', () => {
+    const shelf = parseElement(row);
+    const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
+    const { container } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: withPhoto }]}
+        onClose={() => {}}
+        highlightLocationId="l1"
+      />
+    );
+    expect(container.querySelector('.facing-highlight')).toBeTruthy();
+    // and nothing is highlighted when the focused pin is on another shelf
+    const { container: plain } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: withPhoto }]}
+        onClose={() => {}}
+      />
+    );
+    expect(plain.querySelector('.facing-highlight')).toBeNull();
+  });
+
+  it('editor: switching the view toggle persists the choice via onViewModeChange', () => {
+    const shelf = parseElement(row);
+    let stored: string | null = null;
+    render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[]}
+        onClose={() => {}}
+        editing
+        onViewModeChange={(m) => (stored = m)}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Image' }));
+    expect(stored).toBe('images');
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    expect(stored).toBe('diagram');
   });
 
   it('defaults to the photo planogram when products carry images', () => {
@@ -120,5 +206,63 @@ describe('ShelfDetail', () => {
     expect(screen.queryByLabelText('Shelf side')).toBeNull();
     expect(container.textContent).toContain('Front Item');
     expect(container.textContent).toContain('Back Item');
+  });
+
+  it('diagram and image modes render the SAME-size planogram', () => {
+    const shelf = parseElement(row);
+    const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
+    const pins = [{ location: pin('l1', 'p1', 1, 0.5), product: withPhoto }];
+    const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
+    const heightAt = () => container.querySelector('svg')!.getAttribute('height');
+    const photosH = heightAt();
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    expect(heightAt()).toBe(photosH);
+    fireEvent.click(screen.getByRole('button', { name: 'Image' }));
+    expect(heightAt()).toBe(photosH);
+  });
+
+  it('planogram tiles default to the CROPPED photo when one exists', () => {
+    const shelf = parseElement(row);
+    const cropped = {
+      ...product('p1', 'Oat Milk'),
+      image_url: 'data:image/png;base64,full',
+      image_crop_url: 'data:image/png;base64,crop',
+    };
+    const { container } = render(
+      <ShelfDetail shelf={shelf} pins={[{ location: pin('l1', 'p1', 1, 0.5), product: cropped }]} onClose={() => {}} />
+    );
+    expect(container.querySelector('image')!.getAttribute('href')).toBe('data:image/png;base64,crop');
+  });
+
+  it('editor: the Row height slider persists via onRowHeightChange', () => {
+    const shelf = parseElement(row);
+    let rowH: number | null = null;
+    const { container } = render(
+      <ShelfDetail shelf={shelf} pins={[]} onClose={() => {}} editing onRowHeightChange={(v) => (rowH = v)} />
+    );
+    const slider = container.querySelector('input[type="range"][min="64"]') as HTMLInputElement;
+    expect(slider).toBeTruthy();
+    fireEvent.change(slider, { target: { value: '160' } });
+    expect(rowH).toBe(160);
+  });
+
+  it('editor: the toolbar offers ＋ Add item and the facing panel has no add-another button', () => {
+    const shelf = parseElement(row);
+    let picked = false;
+    const { container } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: product('p1', 'Choc Bar') }]}
+        onClose={() => {}}
+        editing
+        onAddItem={() => (picked = true)}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '＋ Add item' }));
+    expect(picked).toBe(true);
+    // open the facing editor — the per-facing "＋ Add another item" is gone
+    fireEvent.click(container.querySelector('g[style*="cursor"]')!);
+    expect(screen.queryByRole('button', { name: '＋ Add another item' })).toBeNull();
+    expect(screen.getByRole('button', { name: '＋ Add copy' })).toBeTruthy();
   });
 });

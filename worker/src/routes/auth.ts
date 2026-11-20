@@ -358,10 +358,31 @@ app.post('/demo-login', loginLimiter, async (c) => {
 app.get('/me', async (c) => {
   const u = await currentUser(c, c.env);
   return json(c, 200, {
-    user: u ? { id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider } : null,
+    user: u ? {
+      id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider,
+      photo_credits: (u as Record<string, unknown>).photo_credits ?? 1000,
+    } : null,
     providers: providersConfigured(c.get('config')),
     selfHosted: c.get('config').selfHosted,
   });
+});
+
+/** Credit packs for the pay-as-you-go photo plan — 1 credit = 1 photo
+ *  upload. Prices track the underlying Cloudflare R2 cost (storage
+ *  $0.015/GB·mo, Class A $4.50/M, Class B $0.36/M — a ~200 KB photo costs
+ *  well under a cent a YEAR), rounded to friendly amounts. Billing itself is
+ *  not wired (self-host reality); hosted installs hook their PSP here. */
+const CREDIT_PACKS: Record<string, number> = { small: 1000, medium: 5000, large: 20000 };
+
+app.post('/credits', rateLimit({ windowMs: 60_000, max: 20 }), async (c) => {
+  const u = await currentUser(c, c.env);
+  if (!u) return json(c, 401, { error: 'Authentication required' });
+  const body = await c.req.json<{ pack?: string }>().catch(() => ({}) as { pack?: string });
+  const amount = CREDIT_PACKS[String(body?.pack ?? '')];
+  if (!amount) return json(c, 400, { error: 'Unknown credit pack' });
+  await c.env.DB.prepare('UPDATE users SET photo_credits = photo_credits + ? WHERE id = ?').bind(amount, u.id).run();
+  const row = await first(c.env, 'SELECT photo_credits FROM users WHERE id = ?', u.id) as { photo_credits?: number } | null;
+  return json(c, 200, { photo_credits: row?.photo_credits ?? 0, added: amount });
 });
 
 app.post('/logout', (c) => {

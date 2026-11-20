@@ -13,14 +13,19 @@ const server = app.listen(config.port, () => {
   console.log(`  dev login: ${config.devLogin ? 'enabled' : 'disabled'}`);
 });
 
-// Local mode: seed the demo maps on first boot so a fresh one-click deploy
-// is immediately explorable (SEED_DEMO=false to skip).
-if (config.selfHosted && config.seedDemo && db.prepare('SELECT COUNT(*) n FROM stores').get().n === 0) {
-  console.log('[boot] empty database — seeding demo maps (SEED_DEMO=false to disable)');
-  const seedPath = fileURLToPath(new URL('../scripts/seed-demo.mjs', import.meta.url));
-  spawn(process.execPath, [seedPath], { stdio: 'inherit', env: process.env }).on('exit', (code) =>
-    console.log(`[boot] demo seed ${code === 0 ? 'complete' : 'failed'} (${code})`)
-  );
+// Local mode: seed the demo maps on boot so a fresh one-click deploy is
+// immediately explorable AND existing databases pick up newly added examples
+// (the seed script is idempotent per store — present stores are skipped).
+// SEED_DEMO=false to skip.
+if (config.selfHosted && config.seedDemo) {
+  const n = db.prepare('SELECT COUNT(*) n FROM stores').get().n;
+  if (n < 6) {
+    console.log(`[boot] ${n === 0 ? 'empty database' : `${n} stores present, demo set grew`} — seeding demo maps (SEED_DEMO=false to disable)`);
+    const seedPath = fileURLToPath(new URL('../scripts/seed-demo.mjs', import.meta.url));
+    spawn(process.execPath, [seedPath], { stdio: 'inherit', env: process.env }).on('exit', (code) =>
+      console.log(`[boot] demo seed ${code === 0 ? 'complete' : 'failed'} (${code})`)
+    );
+  }
 }
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

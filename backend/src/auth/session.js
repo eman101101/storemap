@@ -24,7 +24,7 @@ export function currentUser(req) {
   try {
     const payload = verifyHs256(token, config.sessionSecret || 'dev-secret');
     if (!payload.sub || payload.exp * 1000 < Date.now()) return null;
-    const user = db.prepare('SELECT id, email, name, avatar_url, provider FROM users WHERE id = ?').get(payload.sub);
+    const user = db.prepare('SELECT id, email, name, avatar_url, provider, photo_credits FROM users WHERE id = ?').get(payload.sub);
     return user || null;
   } catch {
     return null;

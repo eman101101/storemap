@@ -82,7 +82,10 @@ export async function buildExportBundle(env: Env, store: Record<string, unknown>
       /* unreadable media exports as a dangling path */
     }
   };
-  for (const p of products) if (internalPath(p.image_url)) await embed(p.image_url as string);
+  for (const p of products) {
+    if (internalPath(p.image_url as string)) await embed(p.image_url as string);
+    if (internalPath(p.image_crop_url as string)) await embed(p.image_crop_url as string);
+  }
   for (const f of floors) if (internalPath(f.background_url)) await embed(f.background_url as string);
   if (internalPath(store.logo_url)) await embed(store.logo_url as string);
 
@@ -108,6 +111,7 @@ export async function buildExportBundle(env: Env, store: Record<string, unknown>
     products: products.map((p) => ({
       name: p.name, brand: p.brand, sku: p.sku, barcode: p.barcode,
       description: p.description, price: p.price, image_url: p.image_url,
+      image_crop_url: p.image_crop_url || '',
       category: p.category_id != null ? catIndex.get(String(p.category_id)) ?? null : null,
     })),
     elements: elements.map((e) => ({
@@ -211,15 +215,16 @@ export async function importBundle(
     const catIdx = Number.isInteger(p.category) ? p.category : null;
     statements.push(
       stmt(env,
-        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url, image_crop_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, storeId,
         catIdx != null && catIdx >= 0 && catIdx < catIds.length ? catIds[catIdx] : null,
         String(p.name || 'Product').slice(0, 200), String(p.brand || '').slice(0, 100),
         String(p.sku || '').slice(0, 60), String(p.barcode || '').slice(0, 60),
         String(p.description || '').slice(0, 1000),
         Number.isFinite(p.price) && p.price >= 0 ? p.price : null,
-        rewrite(p.image_url))
+        rewrite(p.image_url),
+        rewrite(p.image_crop_url) || '')
     );
   }
 

@@ -1,8 +1,9 @@
 import { Router, urlencoded } from 'express';
 import { config, providersConfigured } from '../config.js';
-import { handler, sendJson, setCookie, clearCookie, parseCookies, rateLimit } from '../lib/http.js';
+import { db } from '../db.js';
+import { handler, sendJson, badRequest, setCookie, clearCookie, parseCookies, rateLimit } from '../lib/http.js';
 import { randomToken } from '../lib/jwt.js';
-import { issueSession, clearSession, upsertUser, currentUser, devLoginAllowed } from '../auth/session.js';
+import { issueSession, clearSession, upsertUser, currentUser, requireAuth, devLoginAllowed } from '../auth/session.js';
 import * as google from '../auth/google.js';
 import * as apple from '../auth/apple.js';
 import * as facebook from '../auth/facebook.js';
@@ -194,10 +195,29 @@ router.post('/demo-login', loginLimiter, handler(async (_req, res) => {
 router.get('/me', (req, res) => {
   const u = currentUser(req);
   sendJson(res, 200, {
-    user: u ? { id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider } : null,
+    user: u ? {
+      id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider,
+      photo_credits: u.photo_credits ?? 1000,
+    } : null,
     providers: providersConfigured(),
   });
 });
+
+/** Credit packs for the pay-as-you-go photo plan — 1 credit = 1 photo
+ *  upload. Prices track the underlying Cloudflare R2 cost (storage
+ *  $0.015/GB·mo, Class A $4.50/M, Class B $0.36/M — a ~200 KB photo costs
+ *  well under a cent a YEAR), rounded to friendly amounts. Billing itself is
+ *  not wired (self-host reality); hosted installs hook their PSP here. */
+const CREDIT_PACKS = { small: 1000, medium: 5000, large: 20000 };
+
+router.post('/credits', requireAuth, handler(async (req, res) => {
+  const pack = String(req.body?.pack ?? '');
+  const amount = CREDIT_PACKS[pack];
+  if (!amount) return badRequest(res, 'Unknown credit pack');
+  db.prepare('UPDATE users SET photo_credits = photo_credits + ? WHERE id = ?').run(amount, req.user.id);
+  const row = db.prepare('SELECT photo_credits FROM users WHERE id = ?').get(req.user.id);
+  sendJson(res, 200, { photo_credits: row.photo_credits, added: amount });
+}));
 
 router.post('/logout', (_req, res) => {
   clearSession(res);

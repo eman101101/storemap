@@ -38,6 +38,12 @@ const json = (body: unknown) => JSON.stringify(body);
 
 export const api = {
   me: () => request<AuthInfo>('/api/auth/me'),
+  /** Pay-as-you-go photo credits — add a pack to the signed-in account. */
+  addCredits: (pack: 'small' | 'medium' | 'large') =>
+    request<{ photo_credits: number; added: number }>('/api/auth/credits', {
+      method: 'POST',
+      body: json({ pack }),
+    }),
   devLogin: (email: string, name?: string) =>
     request<{ user: unknown }>('/api/auth/dev-login', {
       method: 'POST',
@@ -69,6 +75,19 @@ export const api = {
   },
   removeProductImage: (productId: string) =>
     request<{ ok: true }>(`/api/products/${productId}/image`, { method: 'DELETE' }),
+  /** Upload the owner-cropped variant of a product photo (raw bytes). The
+   *  planogram tiles show this by default; the original image_url is kept. */
+  productImageCrop: async (productId: string, file: File) => {
+    const compressed = await compressImage(file);
+    const f = compressed ?? file;
+    return request<{ url: string; product: Product }>(`/api/products/${productId}/image-crop`, {
+      method: 'POST',
+      headers: { 'Content-Type': f.type || 'application/octet-stream' },
+      body: f,
+    });
+  },
+  removeProductImageCrop: (productId: string) =>
+    request<{ ok: true }>(`/api/products/${productId}/image-crop`, { method: 'DELETE' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
   // Stores

@@ -14,6 +14,7 @@ import TryEditor from './components/TryEditor';
 import StockPage from './components/StockPage';
 import ViewerPage from './components/ViewerPage';
 import ThemeSettings from './components/ThemeSettings';
+import PricingModal from './components/PricingModal';
 
 interface AuthCtx extends AuthInfo {
   loading: boolean;
@@ -115,6 +116,7 @@ function TopNav() {
   const { openLogin } = useLoginModal();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const logout = async () => {
     await api.logout();
@@ -164,6 +166,15 @@ function TopNav() {
                 role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
+                  setPricingOpen(true);
+                }}
+              >
+                Plan & credits{user.photo_credits != null ? ` · ${(user.photo_credits ?? 0).toLocaleString()} 📷` : ''}
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
                   void logout();
                 }}
               >
@@ -174,11 +185,19 @@ function TopNav() {
         </div>
       ) : (
         <div className="nav-user">
+          <button
+            className="btn sm"
+            title="Free plan: maps with up to 1000 product photos per account · pay-as-you-go photo credits beyond that"
+            onClick={() => setPricingOpen(true)}
+          >
+            Free w/ 1000 Photos
+          </button>
           <button className="btn sm" onClick={() => openLogin()}>
             Sign in
           </button>
         </div>
       )}
+      {pricingOpen && <PricingModal onClose={() => setPricingOpen(false)} />}
     </nav>
   );
 }
