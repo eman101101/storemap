@@ -134,9 +134,13 @@ export class LocalSession implements EditorApi {
           category_id: pr.category_id ?? catIdByName.get(pr.category_name ?? '') ?? null,
         })),
         locations: p.locations.map((l) => {
-        // stamp the owning shelf from where the live map has the pin
+        // stamp the owning shelf from where the live map has the pin — keep
+        // the pin's own meta (planogram row, facing + marker size) intact
         const owner = shelfOwnerOf(l, shelfRects);
-        return { ...l, meta: JSON.stringify(owner ? { shelfId: owner } : {}) };
+        let prev: Record<string, unknown> = {};
+        try { prev = JSON.parse(l.meta || '{}') as Record<string, unknown>; } catch { /* fresh */ }
+        const stamped = owner ? { ...prev, shelfId: owner } : prev;
+        return { ...l, meta: JSON.stringify(stamped) };
       }),
         elements: p.elements.map((e) => ({ ...e, id: e.id })),
       },
@@ -241,17 +245,23 @@ export class LocalSession implements EditorApi {
     return { elements };
   }
 
-  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string; shelfLevel?: number; facingW?: number }) {
+  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; locationId?: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }) {
     // merge into the existing pin's meta — planogram edits (shelf_level, w)
-    // must survive plain re-pins
-    const prev = this.locations.find((l) => l.product_id === productId);
+    // must survive plain re-pins. A product can hold several pins (facings):
+    // `locationId` moves that pin; without one a new facing is inserted.
+    const prev = body.locationId
+      ? this.locations.find((l) => l.id === body.locationId)
+      : this.locations.find((l) => l.product_id === productId);
     let meta: Record<string, unknown> = {};
     try { meta = JSON.parse(prev?.meta || '{}') as Record<string, unknown>; } catch { /* fresh */ }
     if (body.shelfId !== undefined) meta.shelfId = body.shelfId || undefined;
     if (body.shelfLevel !== undefined) meta.shelf_level = body.shelfLevel || undefined;
     if (body.facingW !== undefined) meta.w = body.facingW || undefined;
+    if (body.pinW !== undefined) meta.pinW = body.pinW || undefined;
+    if (body.pinH !== undefined) meta.pinH = body.pinH || undefined;
+    const id = prev?.id ?? (body.locationId ?? `loc-${productId}-${Math.random().toString(36).slice(2, 8)}`);
     const location: ProductLocation = {
-      id: prev?.id ?? `loc-${productId}`,
+      id,
       product_id: productId,
       floor_id: body.floor_id,
       x: body.x,
@@ -259,7 +269,10 @@ export class LocalSession implements EditorApi {
       rot: prev?.rot ?? 0,
       meta: JSON.stringify(meta),
     };
-    this.locations = [...this.locations.filter((l) => l.product_id !== productId), location];
+    // a moved pin updates in place; a new facing (no locationId) joins the list
+    this.locations = prev
+      ? this.locations.map((l) => (l.id === location.id ? location : l))
+      : [...this.locations, location];
     this.persist();
     return { location };
   }

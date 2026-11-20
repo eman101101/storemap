@@ -46,7 +46,7 @@ async function publicStorePayload(env: Env, slug: string) {
   const elements = floorIds.length
     ? await all(
         env,
-        `SELECT id, floor_id, type, shape, geometry, label, color, z_index
+        `SELECT id, floor_id, type, shape, geometry, label, color, meta, z_index
          FROM map_elements WHERE floor_id IN (${floorIds.map(() => '?').join(',')})
          ORDER BY z_index ASC, rowid ASC`,
         ...floorIds

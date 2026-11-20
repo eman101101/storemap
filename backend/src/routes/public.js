@@ -47,7 +47,7 @@ function publicStorePayload(slug) {
   const floorIds = floors.map((f) => f.id);
   const elements = floorIds.length
     ? db.prepare(
-        `SELECT id, floor_id, type, shape, geometry, label, color, z_index
+        `SELECT id, floor_id, type, shape, geometry, label, color, meta, z_index
          FROM map_elements WHERE floor_id IN (${floorIds.map(() => '?').join(',')})
          ORDER BY z_index ASC, rowid ASC`
       ).all(...floorIds)

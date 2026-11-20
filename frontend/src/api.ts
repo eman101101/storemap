@@ -43,6 +43,18 @@ export const api = {
       method: 'POST',
       body: json({ email, name }),
     }),
+  /** Request a 6-digit email sign-in code. devCode is set when no mail
+   *  provider is configured (local mode surfaces the code in the UI). */
+  emailRequest: (email: string) =>
+    request<{ ok: true; devCode?: string }>('/api/auth/email/request', {
+      method: 'POST',
+      body: json({ email }),
+    }),
+  emailVerify: (email: string, code: string) =>
+    request<{ user: { id: string; email: string; name: string } }>('/api/auth/email/verify', {
+      method: 'POST',
+      body: json({ email, code }),
+    }),
   /** Upload a product photo (raw bytes); paid plan or local mode required. */
   productImage: async (productId: string, file: File) => {
     // same client-side shrink as uploadImage — product photos are the
@@ -139,7 +151,7 @@ export const api = {
     request<{ ok: true }>(`/api/products/${id}`, { method: 'DELETE' }),
 
   // Locations
-  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number; shelfId?: string; shelfLevel?: number; facingW?: number }) =>
+  setProductLocation: (productId: string, body: { floor_id: string; x: number; y: number; locationId?: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }) =>
     request<{ location: ProductLocation }>(`/api/products/${productId}/locations`, {
       method: 'POST',
       body: json(body),

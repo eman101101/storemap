@@ -109,24 +109,16 @@ describe('ShelfDetail', () => {
     expect(container.textContent).toContain('Oat Milk');
   });
 
-  it('splits two-sided shelves into Side A / Side B planograms', () => {
-    // a 5 m × 1 m shelf: a pin near y=0.2 is the near face, y=0.8 the far face
+  it('shows one shelf face — every pin renders, no side selector', () => {
+    // planograms no longer split front/back: both items are on the one face
     const shelf = parseElement(row);
     const pins = [
       { location: pin('l1', 'p1', 1, 0.2), product: product('p1', 'Front Item') },
       { location: pin('l2', 'p2', 3, 0.8), product: product('p2', 'Back Item') },
     ];
     const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
-    // both faces stocked → the side selector appears, defaulting to Side A
-    const sideSelect = screen.getByLabelText('Shelf side') as HTMLSelectElement;
-    expect(sideSelect.value).toBe('front');
-    // defaults to the side with more pins (tie → Side A): only Front Item shows
+    expect(screen.queryByLabelText('Shelf side')).toBeNull();
     expect(container.textContent).toContain('Front Item');
-    expect(container.textContent).not.toContain('Back Item');
-    fireEvent.change(sideSelect, { target: { value: 'back' } });
     expect(container.textContent).toContain('Back Item');
-    expect(container.textContent).not.toContain('Front Item');
-    // the summary names the side
-    expect(screen.getByRole('dialog')).toHaveTextContent('Side B');
   });
 });

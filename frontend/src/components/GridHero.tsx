@@ -14,16 +14,17 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 export const WORD = 'item.place';
 
 /* 5×7 grid font ('#' = cell on). Lowercase sits on rows 2–6 like a real
-   bitmap font; the l is a plain straight stem and the c is a clean open
-   curve. Covers the wordmark plus the block-text labels ("Create a Map"),
-   which also need r, M and C. */
+   bitmap font; the p keeps that baseline but its stem rises a row above the
+   bowl — longer at the top, not shifted up. The l is a plain straight stem
+   and the c is a clean open curve. Covers the wordmark plus the block-text
+   labels ("Create a Map"), which also need r, M and C. */
 export const GRID_GLYPHS: Record<string, string[]> = {
   i: ['..#..', '.....', '..#..', '..#..', '..#..', '..#..', '..#..'],
   t: ['.#...', '.#...', '###..', '.#...', '.#...', '.#...', '..#..'],
   e: ['.....', '.....', '.###.', '#...#', '#####', '#....', '.###.'],
   m: ['.....', '.....', '##.#.', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
-  p: ['.....', '.....', '####.', '#..#.', '####.', '#....', '#....'],
+  p: ['.....', '#....', '#....', '####.', '#..#.', '####.', '#....'],
   l: ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
   a: ['.....', '.....', '.###.', '....#', '.####', '#...#', '.####'],
   c: ['.....', '.....', '.###.', '#....', '#....', '#....', '.###.'],

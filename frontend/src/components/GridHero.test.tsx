@@ -7,6 +7,15 @@ describe('grid wordmark', () => {
     for (const ch of WORD) expect(GRID_GLYPHS[ch]).toBeTruthy();
   });
 
+  it('the p stem rises above the bowl (longer at the top) on the same baseline', () => {
+    // pinned: the stem extends UP from the bowl — the glyph is not shifted
+    expect(GRID_GLYPHS.p[0]).toBe('.....');
+    expect(GRID_GLYPHS.p[1]).toBe('#....');
+    expect(GRID_GLYPHS.p[2]).toBe('#....');
+    expect(GRID_GLYPHS.p[3]).toBe('####.');
+    expect(GRID_GLYPHS.p[6]).toBe('#....'); // baseline row, like x-height letters
+  });
+
   it('lays the word out on the padded board', () => {
     const board = buildBoard(WORD);
     const filled = [...WORD].reduce(

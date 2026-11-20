@@ -66,7 +66,7 @@ Settings → **Variables and Secrets**:
 (Both have working defaults; dev login is disabled until you enable it, and
 `PUBLIC_BASE_URL` falls back to the request origin.)
 
-## 4 · Real sign-in (pick one or both)
+## 4 · Real sign-in (pick any combination)
 
 **Google** (~10 min): [console.cloud.google.com](https://console.cloud.google.com) →
 APIs & Services → Credentials → **Create OAuth client ID** (Web application) →
@@ -76,6 +76,22 @@ APIs & Services → Credentials → **Create OAuth client ID** (Web application)
 Then set two secrets (dashboard → Variables → **Add variable**, type Secret,
 or `npx wrangler secret put NAME`): `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`. The button appears on `/login` immediately.
+
+**Email codes** (zero setup): the email form on `/login` sends a 6-digit
+sign-in code — always available. With no mail provider configured the code is
+shown right in the login form (fine for private/self-host instances). To send
+real email, create a free [Resend](https://resend.com) account (100
+emails/day), verify a sender domain, then set secrets: `RESEND_API_KEY` and
+optionally `EMAIL_FROM` (e.g. `StoreMap <no-reply@yourshop.com>`).
+
+**Facebook**: [developers.facebook.com](https://developers.facebook.com) →
+Create App (type Business) → Facebook Login product → Settings →
+
+- Valid OAuth redirect URI: `https://<your-host>/api/auth/facebook/callback`
+
+Then set secrets `FACEBOOK_APP_ID` + `FACEBOOK_APP_SECRET`. The button
+appears on `/login` when both are set. (Public access to the email permission
+requires App Review — fine for testing with your own account in Dev mode.)
 
 **Cloudflare Access** (zero OAuth console, free ≤ 50 users): in Zero Trust →
 Access → Applications, add a self-hosted app for your domain covering

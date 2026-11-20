@@ -113,6 +113,9 @@ function maybeSnapshot(floorId, rows) {
   if (last && Date.now() - last.created_at_ms < SNAP_MIN_INTERVAL_MS) return;
   const elements = rows.map((r) => ({
     id: r[0],
+    // floor_id must be in the stored rows — restores re-inflate elements
+    // straight from this JSON and the editor filters by floor_id
+    floor_id: floorId,
     type: r[2],
     shape: r[3],
     geometry: r[4],

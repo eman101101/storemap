@@ -880,6 +880,20 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--ink-soft);
 }
+.pan-pad button.cam-mid { cursor: pointer; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.pan-pad button.cam-mid:hover { background: var(--hover); color: var(--ink); }
+/* struck-through camera — shown while the pad is hidden (same slot) */
+.cam-toggle {
+  position: absolute; top: 10px; right: 12px; z-index: 6;
+  width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--ink-soft); cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow); touch-action: manipulation;
+  transition: right 0.25s ease;
+}
+.cam-toggle:hover { background: var(--hover); color: var(--ink); }
+.side-open .cam-toggle { right: 332px; }
+.viewer-map .cam-toggle { top: 54px; }
 .viewer-map .pan-pad { top: 54px; right: 12px; }
 /* ＋/− zoom — bottom-right in both the 2D and 3D views, lifted clear of the
    bottom hint strip */
@@ -1299,6 +1313,9 @@ html[data-mode='dark'] .el-label.isle { stroke: rgba(8, 10, 9, 0.85); stroke-wid
 .facing-row b { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .facing-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .facing-controls { display: inline-flex; align-items: center; gap: 5px; }
+/* normal-sized action buttons in the facing properties panel (the 26px
+   squares of .facing-controls are for the little ▲/▼ steppers only) */
+.facing-actions { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .facing-controls button {
   width: 26px; height: 26px; border: 1px solid var(--line); background: var(--surface);
   border-radius: 7px; cursor: pointer; font-size: 11px; line-height: 1; color: var(--ink);

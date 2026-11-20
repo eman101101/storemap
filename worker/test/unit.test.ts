@@ -81,6 +81,16 @@ describe('validateElement', () => {
     expect(validateElement({ type: 'poi', shape: 'point', geometry: { x: 1.5, y: 2.5 } })).not.toBeNull();
     expect(validateElement({ type: 'aisle', shape: 'polyline', geometry: [[0, 0]] })).toBeNull();
   });
+
+  it('keeps string meta (the editor\'s form) and object meta', () => {
+    // parity with backend/src/lib/validate.js — string meta used to be wiped
+    const strRow = validateElement({ type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 2, h: 0.55, rot: 0 }, meta: JSON.stringify({ locked: true, planWidth: 13.3 }) });
+    expect(JSON.parse(strRow!.meta)).toEqual({ locked: true, planWidth: 13.3 });
+    const objRow = validateElement({ type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 1, h: 1, rot: 0 }, meta: { bays: 3 } });
+    expect(JSON.parse(objRow!.meta)).toEqual({ bays: 3 });
+    const junkRow = validateElement({ type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 1, h: 1, rot: 0 }, meta: 'not-json' });
+    expect(junkRow!.meta).toBe('{}');
+  });
 });
 
 describe('csv', () => {
@@ -128,6 +138,22 @@ describe('locationJson', () => {
     });
     expect(locationJson({ id: 'l2', meta: '{}' }).shelfId).toBeNull();
     expect(locationJson({ id: 'l3', meta: 'not json' }).shelfId).toBeNull();
+  });
+});
+
+describe('pinMetaJson', () => {
+  // Pinned to the Express backend's fields (see backend api.test.mjs) so pin
+  // meta round-trips identically on both engines.
+  it('persists shelf owner, planogram placement and pin size', async () => {
+    const { pinMetaJson } = await import('../src/routes/catalog');
+    expect(JSON.parse(pinMetaJson({ shelfId: 's1', shelfLevel: 2, facingW: 0.4, pinW: 0.8, pinH: 0.3 }))).toEqual({
+      shelfId: 's1', shelf_level: 2, w: 0.4, pinW: 0.8, pinH: 0.3,
+    });
+  });
+  it('omits unset fields and clamps pin sizes', async () => {
+    const { pinMetaJson } = await import('../src/routes/catalog');
+    expect(pinMetaJson({})).toBe('{}');
+    expect(JSON.parse(pinMetaJson({ pinW: 99, pinH: 0.001 }))).toEqual({ pinW: 3, pinH: 0.05 });
   });
 });
 

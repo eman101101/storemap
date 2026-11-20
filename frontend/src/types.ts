@@ -10,7 +10,7 @@ export interface User {
 
 export interface AuthInfo {
   user: User | null;
-  providers: { google: boolean; apple: boolean; dev: boolean };
+  providers: { google: boolean; apple: boolean; facebook: boolean; email: boolean; dev: boolean };
 }
 
 export interface Store {

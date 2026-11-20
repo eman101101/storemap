@@ -272,6 +272,29 @@ app.delete('/products/:id', requireAuth, async (c) => {
 
 /* ---- Product locations (pins on the map) ---- */
 
+/**
+ * Location meta JSON, in one place so the Workers and Express engines persist
+ * the same fields: the owning shelf, the planogram placement (row + facing
+ * width) and the pin's own marker size. Undefined fields are omitted, pin
+ * sizes clamp to 0.05–3 m.
+ */
+export function pinMetaJson(fields: {
+  shelfId?: string | null;
+  shelfLevel?: number;
+  facingW?: number;
+  pinW?: number;
+  pinH?: number;
+}): string {
+  const { shelfId, shelfLevel, facingW, pinW, pinH } = fields;
+  return JSON.stringify({
+    ...(shelfId ? { shelfId } : {}),
+    ...(shelfLevel !== undefined ? { shelf_level: shelfLevel } : {}),
+    ...(facingW !== undefined ? { w: facingW } : {}),
+    ...(pinW !== undefined ? { pinW: Math.min(3, Math.max(0.05, pinW)) } : {}),
+    ...(pinH !== undefined ? { pinH: Math.min(3, Math.max(0.05, pinH)) } : {}),
+  });
+}
+
 app.post('/products/:id/locations', requireAuth, async (c) => {
   const env = c.env as Env;
   const product = await ownedProduct(c, env, c.req.param('id'));
@@ -288,21 +311,30 @@ app.post('/products/:id/locations', requireAuth, async (c) => {
   // "a persisted meta.shelfId wins" owner derivation survives reloads.
   const shelfId =
     typeof body?.shelfId === 'string' && body.shelfId.trim() ? body.shelfId.trim().slice(0, 64) : null;
-  const meta = JSON.stringify(shelfId ? { shelfId } : {});
-  // One pin per product per floor: moving it updates the existing pin.
-  const existing = await first(env, 'SELECT * FROM product_locations WHERE product_id = ? AND floor_id = ?', product.id, floor.id);
-  let id: string;
-  if (existing) {
-    await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?', x, y, rot, meta, existing.id);
-    id = existing.id as string;
-  } else {
-    id = newId();
-    await run(
-      env,
-      'INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id, product.id, floor.id, x, y, rot, meta
-    );
+  const meta = pinMetaJson({
+    shelfId,
+    shelfLevel: num(body?.shelfLevel),
+    facingW: num(body?.facingW),
+    pinW: num(body?.pinW),
+    pinH: num(body?.pinH),
+  });
+  // A product can have several pins per floor (facings of the same item on a
+  // shelf). With `locationId` the call MOVES that pin; without one it inserts
+  // a new facing. (Parity with backend/src/routes/catalog.js.)
+  const relocateId = typeof body?.locationId === 'string' ? body.locationId : null;
+  if (relocateId) {
+    const owned = await first(env, 'SELECT id FROM product_locations WHERE id = ? AND product_id = ?', relocateId, product.id);
+    if (owned) {
+      await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?', x, y, rot, meta, relocateId);
+      return json(c, 201, { location: locationJson((await first(env, 'SELECT * FROM product_locations WHERE id = ?', relocateId))!) });
+    }
   }
+  const id = newId();
+  await run(
+    env,
+    'INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    id, product.id, floor.id, x, y, rot, meta
+  );
   return json(c, 201, { location: locationJson((await first(env, 'SELECT * FROM product_locations WHERE id = ?', id))!) });
 });
 

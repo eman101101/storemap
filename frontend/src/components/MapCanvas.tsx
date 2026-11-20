@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement, PointGeom, PolyGeom, Product, RectGeom, ProductLocation } from '../types';
 import {
-  elementContains, elementPoints, fitViewport, HANDLE_TYPES, polyPoints, polyMidpoint, rectCorners,
+  elementContains, elementPoints, fitViewport, HANDLE_TYPES, handleCursor, polyPoints, polyMidpoint, rectCorners,
   resizeRect, rotateRectTo, shelfAnchor, snap, snapPt, translateElement,
   type HandleType, type Viewport, type WorldPt,
 } from '../lib/geometry';
@@ -62,13 +62,16 @@ interface Props {
   onDraftAdd?: (p: WorldPt) => void;
   onDraftFinish?: () => void;
   onDraftCancel?: () => void;
-  onPlaceProduct?: (p: WorldPt) => void;
+  onPlaceProduct?: (p: WorldPt, targetShelfId?: string | null) => void;
+  /** Resolve a pin's owning shelf (editor-only) so hovering a pin during
+   *  product placement targets the group it belongs to. */
+  ownerOfPin?: (locationId: string) => string | null;
   onPinClick?: (productId: string) => void;
   /** Editor pick filter: 'all' selects fixtures, 'products' selects/drags pins only
    *  (clicks pass over floors and walls instead of grabbing them). */
   pickFilter?: 'all' | 'products';
   /** Drag/move a product pin. commit=false during the drag, true on release. */
-  onPinMove?: (locationId: string, productId: string, x: number, y: number, commit: boolean) => void;
+  onPinMove?: (locationId: string, productId: string, x: number, y: number, commit: boolean, orig?: { x: number; y: number }) => void;
   onPinSelect?: (productId: string) => void;
   /** Viewer tap on a map element (e.g. open a shelf's layout). */
   onElementClick?: (el: MapElement) => void;
@@ -92,7 +95,7 @@ type Interaction =
   | { kind: 'resize'; id: string; handle: HandleType; orig: RectGeom; began: boolean }
   | { kind: 'rotate'; id: string; orig: RectGeom; began: boolean }
   | { kind: 'draw-rect'; anchor: WorldPt }
-  | { kind: 'move-pin'; locationId: string; productId: string; moved: boolean }
+  | { kind: 'move-pin'; locationId: string; productId: string; moved: boolean; origX: number; origY: number }
   | null;
 
 const isTypingTarget = (t: EventTarget | null) =>
@@ -109,7 +112,7 @@ export default function MapCanvas(props: Props) {
   const {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
     selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true, locked = false, onMapContextMenu,
-    onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, onPinClick, onElementClick,
+    onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, ownerOfPin, onPinClick, onElementClick,
     focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
     pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
   } = props;
@@ -117,6 +120,9 @@ export default function MapCanvas(props: Props) {
   const [hoverAisle, setHoverAisle] = useState<{ id: string; sx: number; sy: number } | null>(null);
   /** Viewer: the shelf under the pointer, and where to pin its card. */
   const [hoverShelf, setHoverShelf] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  /** Editor, product tool: the group (shelf) a click would join — hovering a
+   *  shelf or one of its pins targets that shelf instead of creating an area. */
+  const [placeHoverShelfId, setPlaceHoverShelfId] = useState<string | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -397,7 +403,7 @@ export default function MapCanvas(props: Props) {
       if (bestPin) {
         onSelect?.(null);
         setSelectedPinId(bestPin.location.id);
-        interaction.current = { kind: 'move-pin', locationId: bestPin.location.id, productId: bestPin.product.id, moved: false };
+        interaction.current = { kind: 'move-pin', locationId: bestPin.location.id, productId: bestPin.product.id, moved: false, origX: bestPin.location.x, origY: bestPin.location.y };
         return;
       }
       interaction.current = { kind: 'pan', start: { x: e.clientX, y: e.clientY }, vp: viewport, moved: false };
@@ -470,7 +476,8 @@ export default function MapCanvas(props: Props) {
     }
 
     if (tool === 'product') {
-      onPlaceProduct?.(snapPt(w, grid));
+      onPlaceProduct?.(snapPt(w, grid), placeHoverShelfId);
+      setPlaceHoverShelfId(null);
       return;
     }
 
@@ -506,6 +513,26 @@ export default function MapCanvas(props: Props) {
     if (edit && draftPts.length > 0) {
       const w = toWorld(e);
       setCursorWorld(e.shiftKey ? straightSnap(draftPts[draftPts.length - 1], w) : w);
+    }
+
+    // Product placement hover: target the shelf under the pointer, or the
+    // group owning the nearest pin — the glow shows where a click will add.
+    if (edit && tool === 'product' && !interaction.current) {
+      const w = toWorld(e);
+      const shelf = elements.find((el) => el.type === 'shelf' && elementContains(el, w, 0.15));
+      if (shelf) {
+        setPlaceHoverShelfId(shelf.id);
+      } else {
+        let best: { id: string; d: number } | null = null;
+        for (const pin of pins) {
+          const d = Math.hypot(pin.location.x - w.x, pin.location.y - w.y);
+          if (d < Math.max(0.5, 16 / viewport.scale) && (!best || d < best.d)) best = { id: pin.location.id, d };
+        }
+        const owner = best ? ownerOfPin?.(best.id) ?? null : null;
+        setPlaceHoverShelfId(owner);
+      }
+    } else if (placeHoverShelfId && tool !== 'product') {
+      setPlaceHoverShelfId(null);
     }
 
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -585,8 +612,11 @@ export default function MapCanvas(props: Props) {
       onElementsChange?.(next, it.began ? 'live' : 'begin');
       it.began = true;
     } else if (it.kind === 'resize') {
+      // grid-snap the pointer only at axis-aligned rotations — at odd angles
+      // world snapping lands the local dimensions off-grid
+      const pt = it.orig.rot % 90 === 0 ? snapPt(w, grid) : w;
       replaceElement(
-        { ...elements.find((el) => el.id === it.id)!, geom: resizeRect(it.orig, it.handle, snapPt(w, grid)) },
+        { ...elements.find((el) => el.id === it.id)!, geom: resizeRect(it.orig, it.handle, pt) },
         it.began ? 'live' : 'begin'
       );
       it.began = true;
@@ -619,7 +649,7 @@ export default function MapCanvas(props: Props) {
     } else if (it.kind === 'move-pin') {
       if (it.moved) {
         const snapped = snapPt(toWorld(e), grid);
-        onPinMove?.(it.locationId, it.productId, snapped.x, snapped.y, true);
+        onPinMove?.(it.locationId, it.productId, snapped.x, snapped.y, true, { x: it.origX, y: it.origY });
       } else {
         onPinSelect?.(it.productId);
       }
@@ -855,6 +885,24 @@ export default function MapCanvas(props: Props) {
           <SelectionOverlay r={sel.geom as RectGeom} scale={scale} label={sel.label} />
         )}
 
+        {/* product-placement target: the group a click would join */}
+        {edit && tool === 'product' && placeHoverShelfId &&
+          (() => {
+            const target = elements.find((el) => el.id === placeHoverShelfId && el.shape === 'rect');
+            if (!target) return null;
+            const pts = rectCorners(target.geom as RectGeom).map((p) => `${p.x},${p.y}`).join(' ');
+            return (
+              <polygon
+                points={pts}
+                fill="rgba(47, 158, 66, 0.14)"
+                stroke="#2f9e44"
+                strokeWidth={2.5}
+                strokeDasharray={`${6 / scale} ${4 / scale}`}
+                pointerEvents="none"
+              />
+            );
+          })()}
+
         {!edit &&
           aisleEls.map((el) => {
             const pts =
@@ -1032,12 +1080,18 @@ function ProductPin({
   // the marker sits on the shelf's outline — the wall the item is stocked against
   const px = anchor?.x ?? location.x;
   const py = anchor?.y ?? location.y;
+  // per-pin marker size set from the editor's pin panel (meta.pinW/pinH, metres)
+  let pinSize: { w: number; h: number } | null = null;
+  try {
+    const m = JSON.parse(location.meta || '{}');
+    if (typeof m.pinW === 'number' && typeof m.pinH === 'number') pinSize = { w: m.pinW, h: m.pinH };
+  } catch { /* unparseable meta → default size */ }
   // flat facing: a slim bar ALONG the shelf edge (anchored, like stock on a
   // shelf); free-standing pins keep a small square
   const anchored = anchor && typeof anchor.nx === 'number' && typeof anchor.ny === 'number';
   const along = Math.atan2(anchor?.ny ?? 0, anchor?.nx ?? 0) * (180 / Math.PI) + 90;
-  const w = focused ? 0.62 : 0.5; // facing width along the shelf edge
-  const h = focused ? 0.26 : 0.2; // depth off the face
+  const w = pinSize?.w ?? (focused ? 0.62 : 0.5); // facing width along the shelf edge
+  const h = pinSize?.h ?? (focused ? 0.26 : 0.2); // depth off the face
   return (
     <g
       onPointerDown={clickable ? (e) => { e.stopPropagation(); onClick(); } : undefined}
@@ -1059,10 +1113,10 @@ function ProductPin({
         />
       ) : (
         <rect
-          x={px - 0.21}
-          y={py - 0.21}
-          width={0.42}
-          height={0.42}
+          x={px - (pinSize?.w ?? 0.42) / 2}
+          y={py - (pinSize?.h ?? 0.42) / 2}
+          width={pinSize?.w ?? 0.42}
+          height={pinSize?.h ?? 0.42}
           rx={0.08}
           fill={color}
           stroke="#fff"
@@ -1092,18 +1146,6 @@ function ProductPin({
 }
 
 /** Selection outline + 8 resize handles + rotation handle (screen-constant sizes). */
-
-/** Resize cursors per handle direction (diagonals / vertical / horizontal). */
-const HANDLE_CURSOR: Record<HandleType, string> = {
-  nw: 'nwse-resize',
-  se: 'nwse-resize',
-  ne: 'nesw-resize',
-  sw: 'nesw-resize',
-  n: 'ns-resize',
-  s: 'ns-resize',
-  e: 'ew-resize',
-  w: 'ew-resize',
-};
 
 function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; label: string }) {
   const corners = rectCorners(r);
@@ -1149,7 +1191,7 @@ function SelectionOverlay({ r, scale, label }: { r: RectGeom; scale: number; lab
           strokeWidth={1.6}
           vectorEffect="non-scaling-stroke"
           pointerEvents="all"
-          style={{ cursor: HANDLE_CURSOR[h.t] }}
+          style={{ cursor: handleCursor(h.t, r.rot) }}
         />
       ))}
       <line x1={rotStem.x} y1={rotStem.y} x2={rotHandle.x} y2={rotHandle.y} stroke="#2f6f3e" strokeWidth={1.4} vectorEffect="non-scaling-stroke" />

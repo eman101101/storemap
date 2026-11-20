@@ -286,24 +286,32 @@ router.post('/products/:id/locations', requireAuth, handler(async (req, res) => 
   // stored in meta so the planogram editor can move items vertically / resize
   const shelfLevel = num(req.body?.shelfLevel);
   const facingW = num(req.body?.facingW);
+  // the pin's own marker size on the map (metres), so owners can lengthen or
+  // widen an individual pin from the editor's pin panel
+  const pinW = num(req.body?.pinW);
+  const pinH = num(req.body?.pinH);
   const meta = JSON.stringify({
     ...(shelfId ? { shelfId } : {}),
     ...(shelfLevel !== undefined ? { shelf_level: shelfLevel } : {}),
     ...(facingW !== undefined ? { w: facingW } : {}),
+    ...(pinW !== undefined ? { pinW: Math.min(3, Math.max(0.05, pinW)) } : {}),
+    ...(pinH !== undefined ? { pinH: Math.min(3, Math.max(0.05, pinH)) } : {}),
   });
-  // One pin per product per floor: moving it updates the existing pin.
-  const existing = db
-    .prepare('SELECT * FROM product_locations WHERE product_id = ? AND floor_id = ?')
-    .get(product.id, floor.id);
-  if (existing) {
-    db.prepare('UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?').run(x, y, rot, meta, existing.id);
-    var id = existing.id;
-  } else {
-    id = newId();
-    db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      id, product.id, floor.id, x, y, rot, meta
-    );
+  // A product can have several pins per floor (facings of the same item on a
+  // shelf). With `locationId` the call MOVES that pin; without one it inserts
+  // a new facing.
+  const relocateId = typeof req.body?.locationId === 'string' ? req.body.locationId : null;
+  if (relocateId) {
+    const owned = db.prepare('SELECT id FROM product_locations WHERE id = ? AND product_id = ?').get(relocateId, product.id);
+    if (owned) {
+      db.prepare('UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?').run(x, y, rot, meta, relocateId);
+      return sendJson(res, 201, { location: locationJson(db.prepare('SELECT * FROM product_locations WHERE id = ?').get(relocateId)) });
+    }
   }
+  const id = newId();
+  db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+    id, product.id, floor.id, x, y, rot, meta
+  );
   sendJson(res, 201, { location: locationJson(db.prepare('SELECT * FROM product_locations WHERE id = ?').get(id)) });
 }));
 

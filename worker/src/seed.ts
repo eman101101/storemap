@@ -9,7 +9,7 @@
  * that "Open the demo maps" signs into.
  */
 import type { Env } from './config';
-import { first } from './db';
+import { first, run } from './db';
 import { newId } from './util';
 
 interface Face {
@@ -28,13 +28,13 @@ interface Slot {
 /** id, floor_id, type, shape, geometry, label, color, z_index — meta is inlined as '{}' in the SQL. */
 type ElemRow = [string, string, string, string, string, string, string, number];
 type ProdRow = [string, string, string | null, string, string, string, string, string, number, string];
-type LocRow = [string, string, string, number, number];
+type LocRow = [string, string, string, number, number, string];
 
 const ELEMENT_SQL = `INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index)
   VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)`;
 const PRODUCT_SQL = `INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-const LOCATION_SQL = `INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, 0, '{}')`;
+const LOCATION_SQL = `INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, 0, ?)`;
 
 /** Chunk statements — D1 batches stay comfortably within limits. */
 function chunks<T>(arr: T[], size: number): T[][] {
@@ -105,6 +105,75 @@ async function ensureStore(
 
 const W = 54;
 const H = 36;
+
+/**
+ * Real product photos for the demo planogram — bundled SPA assets (served
+ * from frontend/public/demo-products by both engines, so the URL works on
+ * Express and Workers with no storage setup). Downloaded from Open Food
+ * Facts; see frontend/public/demo-products/ATTRIBUTION.md (ODbL).
+ * Regenerate with: node backend/scripts/fetch-demo-photos.mjs
+ */
+const PHOTO_URLS: Record<string, string> = {
+  'Organic Whole Milk 1L': '/demo-products/organic-whole-milk-1l.jpg',
+  'Oat Drink Barista 1L': '/demo-products/oat-drink-barista-1l.jpg',
+  'Greek Yogurt 500g': '/demo-products/greek-yogurt-500g.jpg',
+  'Mozzarella Ball 125g': '/demo-products/mozzarella-ball-125g.jpg',
+  'Mild Cheddar Block 350g': '/demo-products/mild-cheddar-block-350g.jpg',
+  'Salted Butter 250g': '/demo-products/salted-butter-250g.jpg',
+  'Kefir 1L': '/demo-products/kefir-1l.jpg',
+  'Cream Cheese Tub 300g': '/demo-products/cream-cheese-tub-300g.jpg',
+  'Gouda Slices 200g': '/demo-products/gouda-slices-200g.jpg',
+  'Lactose-Free Milk 1L': '/demo-products/lactose-free-milk-1l.jpg',
+  'Orange Juice 1L': '/demo-products/orange-juice-1l.jpg',
+  'Cola 2L': '/demo-products/cola-2l.jpg',
+  'Ground Coffee 500g': '/demo-products/ground-coffee-500g.jpg',
+  'Espresso Beans 1kg': '/demo-products/espresso-beans-1kg.jpg',
+  'Green Tea 40 Bags': '/demo-products/green-tea-40-bags.jpg',
+  'English Breakfast Tea 80 Bags': '/demo-products/english-breakfast-tea-80-bags.jpg',
+  'Hot Chocolate Mix 400g': '/demo-products/hot-chocolate-mix-400g.jpg',
+  'Cold Brew Coffee 1L': '/demo-products/cold-brew-coffee-1l.jpg',
+  'Almond Milk 1L': '/demo-products/almond-milk-1l.jpg',
+  'Coconut Water 1L': '/demo-products/coconut-water-1l.jpg',
+  'Iced Tea Lemon 1.5L': '/demo-products/iced-tea-lemon-15l.jpg',
+  'Lemon-Lime Soda 2L': '/demo-products/lemon-lime-soda-2l.jpg',
+  'Tonic Water 6-pack': '/demo-products/tonic-water-6-pack.jpg',
+  'Energy Drink 4-pack': '/demo-products/energy-drink-4-pack.jpg',
+  'Sea Salt Crisps 150g': '/demo-products/sea-salt-crisps-150g.jpg',
+  'Tortilla Chips 300g': '/demo-products/tortilla-chips-300g.jpg',
+  'Salted Peanuts 200g': '/demo-products/salted-peanuts-200g.jpg',
+  'Mixed Nuts 300g': '/demo-products/mixed-nuts-300g.jpg',
+  'Roasted Cashews 200g': '/demo-products/roasted-cashews-200g.jpg',
+  'Milk Chocolate Bar 100g': '/demo-products/milk-chocolate-bar-100g.jpg',
+  'Dark Chocolate 70% 100g': '/demo-products/dark-chocolate-70-100g.jpg',
+  'Choc Chip Cookies 300g': '/demo-products/choc-chip-cookies-300g.jpg',
+  'Digestive Biscuits 400g': '/demo-products/digestive-biscuits-400g.jpg',
+  'Jaffa Cakes 12-pack': '/demo-products/jaffa-cakes-12-pack.jpg',
+  'Gummy Bears 200g': '/demo-products/gummy-bears-200g.jpg',
+  'Sweet Popcorn 100g': '/demo-products/sweet-popcorn-100g.jpg',
+  'Salted Pretzels 250g': '/demo-products/salted-pretzels-250g.jpg',
+  'Rice Cakes 150g': '/demo-products/rice-cakes-150g.jpg',
+  'Sourdough Loaf': '/demo-products/sourdough-loaf.jpg',
+  'Croissants 4-pack': '/demo-products/croissants-4-pack.jpg',
+  'Bagels 6-pack': '/demo-products/bagels-6-pack.jpg',
+  'Brioche Buns 6-pack': '/demo-products/brioche-buns-6-pack.jpg',
+  'Frozen Pepperoni Pizza': '/demo-products/frozen-pepperoni-pizza.jpg',
+  'Frozen Margherita Pizza': '/demo-products/frozen-margherita-pizza.jpg',
+  'Vanilla Ice Cream 1L': '/demo-products/vanilla-ice-cream-1l.jpg',
+  'Chocolate Ice Cream 1L': '/demo-products/chocolate-ice-cream-1l.jpg',
+  'French Fries 1.5kg': '/demo-products/french-fries-15kg.jpg',
+  'Garden Peas 1kg': '/demo-products/garden-peas-1kg.jpg',
+  'Fish Fingers 20-pack': '/demo-products/fish-fingers-20-pack.jpg',
+  'Chicken Nuggets 750g': '/demo-products/chicken-nuggets-750g.jpg',
+  'Washing Up Liquid 500ml': '/demo-products/washing-up-liquid-500ml.jpg',
+  'Hand Soap 500ml': '/demo-products/hand-soap-500ml.jpg',
+  'Antibacterial Spray 750ml': '/demo-products/antibacterial-spray-750ml.jpg',
+  'Bacon Rashers 300g': '/demo-products/bacon-rashers-300g.jpg',
+  'Salmon Fillets 2-pack': '/demo-products/salmon-fillets-2-pack.jpg',
+  'Honey-Roast Ham 200g': '/demo-products/honey-roast-ham-200g.jpg',
+  'Pork Sausages 8-pack': '/demo-products/pork-sausages-8-pack.jpg',
+  'Smoked Salmon 180g': '/demo-products/smoked-salmon-180g.jpg',
+  'Chorizo Ring 250g': '/demo-products/chorizo-ring-250g.jpg',
+};
 
 const CATS: [string, string, string, number, string[]][] = [
   ['Dairy', '#3b6fd4', '🥛', 20, [
@@ -262,9 +331,15 @@ async function seedFreshmart(env: Env, ownerId: string): Promise<void> {
     const price = Math.round((0.79 + ((i * 37) % 920) / 100) * 100) / 100;
     prodRows.push([
       pid, storeId, catIds[p.category], p.name, BRANDS[i % BRANDS.length],
-      `${p.category.slice(0, 3).toUpperCase()}-${String(i + 1).padStart(3, '0')}`, '', '', price, '',
+      `${p.category.slice(0, 3).toUpperCase()}-${String(i + 1).padStart(3, '0')}`, '', '', price,
+      PHOTO_URLS[p.name] ?? '',
     ]);
-    locRows.push([newId(), pid, floorId, slot.x, slot.y]);
+    // stock planogram rows like a real store: facings cycle the shelf's rows
+    // with a per-item facing width, so the planogram reads as a full gondola
+    const levels = 4;
+    const level = (i % levels) + 1;
+    const facingW = Math.round((0.3 + ((i * 7) % 5) * 0.035) * 100) / 100;
+    locRows.push([newId(), pid, floorId, slot.x, slot.y, JSON.stringify({ shelf_level: level, w: facingW })]);
   }
 
   await insertAll(env, ELEMENT_SQL, elements);
@@ -394,7 +469,7 @@ async function seedAnnex(env: Env, ownerId: string): Promise<void> {
         pid, storeId, acat[items[i].category], items[i].name, 'Harbour Line',
         `ANN-${String(skuOffset + i + 1).padStart(3, '0')}`, '', '', Math.round((0.95 + ((i * 53) % 1800) / 100) * 100) / 100, '',
       ]);
-      locRows.push([newId(), pid, floorId, slot.x, slot.y]);
+      locRows.push([newId(), pid, floorId, slot.x, slot.y, JSON.stringify({ shelf_level: (i % 3) + 1, w: 0.32 })]);
     }
   };
   // skuOffset keeps SKUs unique across the two calls — D1's unique
@@ -829,9 +904,15 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
     ]);
     return id;
   });
-  for (const l of spec.locations) locRows.push([newId(), prodIds[l.product], floorId, l.x, l.y]);
+  const specLevels = 3;
+  for (const l of spec.locations) {
+    locRows.push([newId(), prodIds[l.product], floorId, l.x, l.y, JSON.stringify({ shelf_level: (l.product % specLevels) + 1, w: 0.3 })]);
+  }
 
   await insertAll(env, ELEMENT_SQL, elements);
+  // the example stores' planograms draw 2 m wide (planogram-only option —
+  // the shelf footprints on the map keep their real size)
+  await run(env, "UPDATE map_elements SET meta = ? WHERE floor_id = ? AND type = 'shelf' AND meta = '{}'", JSON.stringify({ planWidth: 2 }), floorId);
   await insertAll(env, 'INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)', catRows);
   await insertAll(env, PRODUCT_SQL, prodRows);
   await insertAll(env, LOCATION_SQL, locRows);

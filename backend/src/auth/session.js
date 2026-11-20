@@ -49,7 +49,8 @@ export function requireAuth(req, res, next) {
  */
 export function devLoginAllowed(email) {
   const row = db.prepare('SELECT provider FROM users WHERE email = ?').get(email);
-  return !row || row.provider === 'dev';
+  // dev + email are both passwordless email identities — either can claim it
+  return !row || row.provider === 'dev' || row.provider === 'email';
 }
 
 /** Upsert a user from an OIDC identity claim set. */

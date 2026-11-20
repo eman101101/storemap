@@ -8,6 +8,7 @@ import { first } from '../db';
 import { issueSession, clearSession, upsertUser, currentUser } from '../session';
 import { parseCookies, setCookie, clearCookie } from '../cookies';
 import { json, rateLimit } from '../http';
+import { emailValid, emailLoginAllowed, issueLoginCode, sendCode, checkLoginCode } from '../emailLogin';
 
 const app = new Hono<AppEnv>();
 
@@ -198,6 +199,129 @@ app.post('/apple/callback', loginLimiter, async (c) => {
   }
 });
 
+/* ---------------- Facebook (identity from Graph /me — no id_token) ---------------- */
+
+function facebookAuthorizeUrl(c: any, { state }: { state: string }): string {
+  const env = c.env as Env;
+  const params = new URLSearchParams({
+    client_id: env.FACEBOOK_APP_ID || '',
+    redirect_uri: `${c.get('config').publicBaseUrl}/api/auth/facebook/callback`,
+    state,
+    response_type: 'code',
+    scope: 'email,public_profile',
+  });
+  return `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
+}
+
+app.get('/facebook', loginLimiter, (c) => {
+  const cfg = c.get('config');
+  if (!providersConfigured(cfg).facebook) return failLogin(c, 'Facebook sign-in is not configured on this server.');
+  const { state } = startAuth(c);
+  return c.redirect(facebookAuthorizeUrl(c, { state }));
+});
+
+async function facebookCallback(c: any): Promise<Response> {
+  const env = c.env as Env;
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+  const sn = readStateNonce(c, state || '');
+  if (!code || !sn) return failLogin(c, 'Invalid or expired sign-in state. Please try again.');
+  try {
+    const redirectUri = `${c.get('config').publicBaseUrl}/api/auth/facebook/callback`;
+    const tokenRes = await fetch(
+      `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
+        client_id: env.FACEBOOK_APP_ID || '',
+        client_secret: env.FACEBOOK_APP_SECRET || '',
+        redirect_uri: redirectUri,
+        code: String(code),
+      })}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!tokenRes.ok) throw new Error(`Facebook token exchange failed: ${tokenRes.status}`);
+    const { access_token: accessToken } = (await tokenRes.json()) as { access_token?: string };
+    if (!accessToken) throw new Error('Facebook token exchange returned no token');
+
+    const meRes = await fetch(
+      `https://graph.facebook.com/v21.0/me?${new URLSearchParams({
+        fields: 'id,name,email,picture.type(large)',
+        access_token: accessToken,
+      })}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!meRes.ok) throw new Error(`Facebook /me failed: ${meRes.status}`);
+    const me = (await meRes.json()) as { id: string; name?: string; email?: string; picture?: { data?: { url?: string } } };
+    if (!me.email) throw new Error('Facebook account has no shared email');
+
+    const identity = {
+      provider: 'facebook' as const,
+      sub: String(me.id),
+      email: String(me.email).toLowerCase(),
+      name: me.name || me.email.split('@')[0],
+      avatarUrl: me.picture?.data?.url || '',
+    };
+    return finishLogin(c, await upsertUser(c.env, identity));
+  } catch (err) {
+    console.error('Facebook callback failed:', (err as Error).message);
+    return failLogin(c, 'Facebook sign-in failed. Please try again.');
+  }
+}
+app.get('/facebook/callback', loginLimiter, facebookCallback);
+
+/* ---------------- Email sign-in codes (passwordless) ---------------- */
+
+const codeLimiter = rateLimit({ windowMs: 60_000, max: 10 });
+// guessing budget for the 6-digit code — separate from the OAuth limiter so
+// code verification doesn't share the (tighter) login-attempt budget
+const codeVerifyLimiter = rateLimit({ windowMs: 60_000, max: 20 });
+
+app.post('/email/request', codeLimiter, async (c) => {
+  const env = c.env as Env;
+  const cfg = c.get('config');
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body?.email || '').toLowerCase().trim();
+  if (!emailValid(email)) return json(c, 400, { error: 'Enter a valid email address.' });
+  if (!(await emailLoginAllowed(env, email))) {
+    return json(c, 403, { error: 'This email belongs to a Google/Apple/Facebook account — sign in with that provider.' });
+  }
+  const code = await issueLoginCode(env, email);
+  if (cfg.resendApiKey) {
+    try {
+      await sendCode(cfg.resendApiKey, cfg.emailFrom, email, code);
+    } catch (err) {
+      console.error('Email code send failed:', (err as Error).message);
+      return json(c, 502, { error: 'Could not send the email right now. Try again.' });
+    }
+  } else {
+    // no mail provider configured — hand the code straight to the caller so
+    // local/self-host instances work with zero setup
+    console.log(`[email-login] code for ${email}: ${code}`);
+    return json(c, 200, { ok: true, devCode: code });
+  }
+  return json(c, 200, { ok: true });
+});
+
+app.post('/email/verify', codeVerifyLimiter, async (c) => {
+  const env = c.env as Env;
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body?.email || '').toLowerCase().trim();
+  const code = String(body?.code || '');
+  if (!emailValid(email) || !/^\d{6}$/.test(code)) {
+    return json(c, 400, { error: 'Enter the 6-digit code from the email.' });
+  }
+  if (!(await checkLoginCode(env, email, code))) {
+    return json(c, 401, { error: 'That code is wrong or has expired. Request a new one.' });
+  }
+  const user = await upsertUser(env, {
+    provider: 'email',
+    sub: email,
+    email,
+    name: email.split('@')[0],
+    avatarUrl: '',
+  });
+  await issueSession(c, env, user.id);
+  return json(c, 200, { user: { id: user.id, email: user.email, name: user.name } });
+});
+
 /* ---------------- Dev/demo login ---------------- */
 
 app.post('/dev-login', loginLimiter, async (c) => {
@@ -208,9 +332,10 @@ app.post('/dev-login', loginLimiter, async (c) => {
   const email = String(body?.email || 'owner@example.com').toLowerCase().slice(0, 200);
   const name = String(body?.name || email.split('@')[0]).slice(0, 100);
   // Dev login accepts any email by design — but never one that already
-  // belongs to a real Google/Apple account (that would hand the keys over).
+  // belongs to a real Google/Apple/Facebook account (that would hand the keys
+  // over). dev + email are both passwordless email identities — either may enter.
   const existing = await first(env, 'SELECT provider FROM users WHERE email = ?', email);
-  if (existing && existing.provider !== 'dev') {
+  if (existing && existing.provider !== 'dev' && existing.provider !== 'email') {
     return json(c, 403, { error: 'This email belongs to an existing account — sign in with its original provider.' });
   }
   const user = await upsertUser(env, { provider: 'dev', sub: email, email, name, avatarUrl: '' });

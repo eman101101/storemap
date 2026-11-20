@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   fitViewport, screenToWorld, worldToScreen, rectCorners, elementContains,
-  translateElement, resizeRect, snap, bboxOf, shelfAnchor,
+  translateElement, resizeRect, handleCursor, snap, bboxOf, shelfAnchor,
 } from './geometry';
 import type { MapElement } from '../types';
 
@@ -100,6 +100,64 @@ describe('editing operations', () => {
     expect(small.h).toBeGreaterThanOrEqual(0.3);
     const grown = resizeRect(r, 'nw', { x: -1, y: -1 });
     expect(grown.w).toBeCloseTo(3);
+  });
+
+  it('resizeRect at rot=90 changes one dimension and keeps the far edge world-fixed', () => {
+    // 4×2 shelf rotated 90°: local west edge faces world-up, local east edge world-down
+    const r = { x: 0, y: 0, w: 4, h: 2, rot: 90 };
+    const before = rectCorners(r);
+    const out = resizeRect(r, 'w', { x: 2, y: -2 });
+    expect(out.w).toBeCloseTo(5); // only the dragged dimension grew
+    expect(out.h).toBeCloseTo(2);
+    const after = rectCorners(out);
+    // the dragged (west→world top) edge now sits under the cursor at y=-2
+    expect(Math.min(...after.map((p) => p.y))).toBeCloseTo(-2);
+    // the opposite (east→world bottom) edge did not move
+    const bottomBefore = Math.max(...before.map((p) => p.y));
+    const bottomAfter = Math.max(...after.map((p) => p.y));
+    expect(bottomAfter).toBeCloseTo(bottomBefore);
+    expect(out.rot).toBe(90);
+  });
+
+  it('resizeRect at rot=45 pins the opposite corner under the cursor', () => {
+    const r = { x: 2, y: 2, w: 4, h: 2, rot: 45 };
+    const before = rectCorners(r);
+    // dragging 'nw' — the SE corner must stay exactly put
+    const out = resizeRect(r, 'nw', { x: 0, y: 1 });
+    const after = rectCorners(out);
+    const seBefore = before[2]; // rectCorners: CW from local top-left → [TL, TR, BR, BL]
+    const seAfter = after[2];
+    expect(seAfter.x).toBeCloseTo(seBefore.x);
+    expect(seAfter.y).toBeCloseTo(seBefore.y);
+    // and every corner still respects min size (up to float epsilon in the clamp)
+    expect(out.w).toBeGreaterThanOrEqual(0.29);
+    expect(out.h).toBeGreaterThanOrEqual(0.29);
+  });
+
+  it('resizeRect at rot=0 keeps prior behavior (se drag grows both dims)', () => {
+    const r = { x: 1, y: 1, w: 2, h: 2, rot: 0 };
+    const out = resizeRect(r, 'se', { x: 5, y: 4 });
+    expect(out.x).toBeCloseTo(1);
+    expect(out.y).toBeCloseTo(1);
+    expect(out.w).toBeCloseTo(4);
+    expect(out.h).toBeCloseTo(3);
+  });
+});
+
+describe('handleCursor', () => {
+  it('unrotated handles use the classic directions', () => {
+    expect(handleCursor('w', 0)).toBe('ew-resize');
+    expect(handleCursor('n', 0)).toBe('ns-resize');
+    expect(handleCursor('nw', 0)).toBe('nwse-resize');
+    expect(handleCursor('ne', 0)).toBe('nesw-resize');
+  });
+
+  it('rotated handles swap to match the on-screen drag axis', () => {
+    expect(handleCursor('w', 90)).toBe('ns-resize'); // top edge of a 90° shelf
+    expect(handleCursor('n', 90)).toBe('ew-resize');
+    expect(handleCursor('nw', 90)).toBe('nesw-resize');
+    expect(handleCursor('w', 45)).toBe('nwse-resize');
+    expect(handleCursor('w', 180)).toBe('ew-resize');
   });
 });
 

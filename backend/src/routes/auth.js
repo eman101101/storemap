@@ -5,6 +5,8 @@ import { randomToken } from '../lib/jwt.js';
 import { issueSession, clearSession, upsertUser, currentUser, devLoginAllowed } from '../auth/session.js';
 import * as google from '../auth/google.js';
 import * as apple from '../auth/apple.js';
+import * as facebook from '../auth/facebook.js';
+import * as email from '../auth/email.js';
 
 const router = Router();
 
@@ -90,6 +92,75 @@ router.post(
     }
   })
 );
+
+// ---- Facebook (authorization-code flow; identity from Graph /me) ----
+router.get('/facebook', loginLimiter, (req, res) => {
+  if (!facebook.facebookEnabled()) return failLogin(res, 'Facebook sign-in is not configured on this server.');
+  const { state } = startAuth(res);
+  res.redirect(facebook.authorizeUrl({ state }));
+});
+
+router.get('/facebook/callback', loginLimiter, handler(async (req, res) => {
+  const { code, state } = req.query;
+  const sn = readStateNonce(req, String(state || ''));
+  if (!code || !sn) return failLogin(res, 'Invalid or expired sign-in state. Please try again.');
+  try {
+    const identity = await facebook.handleCallback({ code: String(code) });
+    finishLogin(res, upsertUser(identity));
+  } catch (err) {
+    console.error('Facebook callback failed:', err.message);
+    failLogin(res, 'Facebook sign-in failed. Please try again.');
+  }
+}));
+
+// ---- Email sign-in codes (passwordless; Resend-delivered when configured) ----
+const codeLimiter = rateLimit({ windowMs: 60_000, max: 10 });
+// guessing budget for the 6-digit code — separate from the OAuth limiter so
+// code verification doesn't share the (tighter) login-attempt budget
+const codeVerifyLimiter = rateLimit({ windowMs: 60_000, max: 20 });
+
+router.post('/email/request', codeLimiter, handler(async (req, res) => {
+  const emailAddr = String(req.body?.email || '').toLowerCase().trim();
+  if (!email.emailValid(emailAddr)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
+  if (!email.emailLoginAllowed(emailAddr)) {
+    return sendJson(res, 403, { error: 'This email belongs to a Google/Apple/Facebook account — sign in with that provider.' });
+  }
+  const { code, emailed } = email.issueLoginCode(emailAddr);
+  if (emailed) {
+    try {
+      await email.sendCode(emailAddr, code);
+    } catch (err) {
+      console.error('Email code send failed:', err.message);
+      return sendJson(res, 502, { error: 'Could not send the email right now. Try again.' });
+    }
+  } else {
+    // no mail provider configured — hand the code straight to the caller so
+    // local/self-host instances work with zero setup
+    console.log(`[email-login] code for ${emailAddr}: ${code}`);
+    return sendJson(res, 200, { ok: true, devCode: code });
+  }
+  sendJson(res, 200, { ok: true });
+}));
+
+router.post('/email/verify', codeVerifyLimiter, handler(async (req, res) => {
+  const emailAddr = String(req.body?.email || '').toLowerCase().trim();
+  const code = String(req.body?.code || '');
+  if (!email.emailValid(emailAddr) || !/^\d{6}$/.test(code)) {
+    return sendJson(res, 400, { error: 'Enter the 6-digit code from the email.' });
+  }
+  if (!email.checkLoginCode(emailAddr, code)) {
+    return sendJson(res, 401, { error: 'That code is wrong or has expired. Request a new one.' });
+  }
+  const user = upsertUser({
+    provider: 'email',
+    sub: emailAddr,
+    email: emailAddr,
+    name: emailAddr.split('@')[0],
+    avatarUrl: '',
+  });
+  issueSession(res, user.id);
+  sendJson(res, 200, { user: { id: user.id, email: user.email, name: user.name } });
+}));
 
 // ---- Dev/demo login (disabled in production unless ENABLE_DEV_LOGIN=true) ----
 router.post('/dev-login', loginLimiter, handler(async (req, res) => {

@@ -11,7 +11,7 @@ import { aisleContents, shelfContents, AISLE_REACH_M, SHELF_TOL_M } from '../lib
 import { shelfBoardZs, shelfItemSize, shelfSideOf, shelfRunLength } from '../lib/shelfLayout';
 
 export interface Pin {
-  location: { id: string; x: number; y: number; product_id: string };
+  location: { id: string; x: number; y: number; product_id: string; meta?: string };
   product: { name: string; category_name?: string | null; category_color?: string | null };
 }
 
@@ -26,6 +26,9 @@ interface Props {
   /** When set (seq changes), the camera flies the route from its start to the item. */
   flythrough?: { points: WorldPt[]; seq: number } | null;
   onPinClick?: (productId: string) => void;
+  /** editor pick filter — Select: Items suppresses fixture grabs (pins only),
+   *  Select: Structures suppresses pin taps (fixtures only) */
+  pickFilter?: 'all' | 'products';
   /** All pins on the floor — drives the visual product blocks on the shelf faces. */
   stockPins?: Pin[];
   /** Draw the per-product blocks on shelf faces (off for clean, pin-free maps). */
@@ -114,7 +117,7 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
   requestAnimationFrame(step);
 }
 
-export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false }: Props) {
+export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false, pickFilter = 'all' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
@@ -179,6 +182,13 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
           const a = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
           if (!a) return null;
           const size = shelfItemSize(a.el);
+          // per-pin marker size from the editor's "Size on map" (meta.pinW/pinH)
+          // wins over the shelf-wide drawn size — visible in 3D like in 2D
+          let pinSize: { w: number; h: number } | null = null;
+          try {
+            const pm = JSON.parse(p.location.meta || '{}');
+            if (typeof pm.pinW === 'number' && typeof pm.pinH === 'number') pinSize = { w: pm.pinW, h: pm.pinH };
+          } catch { /* unparseable meta → shelf default */ }
           // facing runs scale with the shelf: a 19 m gondola carries wider
           // items than a 2 m checkout counter (clamped to stay sensible)
           const run = shelfRunLength(a.el);
@@ -193,8 +203,8 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
             focused: isFocus(p.location.id),
             hovered: p.location.id === hoverLoc,
             zs: heavy ? [zs[Math.floor(zs.length / 2)] ?? zs[0]!] : zs,
-            h: size.h,
-            w: size.w * scaleW,
+            h: pinSize?.h ?? size.h,
+            w: pinSize ? pinSize.w : size.w * scaleW,
           };
         })
         .filter((s): s is StockItem => s !== null);
@@ -567,7 +577,13 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       return;
     }
     if (edit && !locked && e.button === 0) {
-      // edit mode: grabbing a fixture drags it on the floor plane; empty space orbits
+      // edit mode: grabbing a fixture drags it on the floor plane; empty space
+      // orbits. Select: Items hands clicks to the pins instead — fixtures
+      // stop being grabbable/selectable.
+      if (pickFilter === 'products') {
+        drag.current = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false };
+        return;
+      }
       const px = screenPx(e);
       const hit = fixtureAt(px.x, px.y);
         if (hit) {
@@ -750,11 +766,15 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     const py = e.clientY - rect.top;
     let best: PinHit | null = null;
     let bestD = 18;
-    for (const hit of hitsRef.current.pins) {
-      const dist = Math.hypot(hit.sx - px, hit.sy - py);
-      if (dist < bestD) {
-        bestD = dist;
-        best = hit;
+    // Select: Structures — taps select fixtures (already handled on
+    // pointerdown); don't steal them for pins
+    if (!(edit && pickFilter === 'all')) {
+      for (const hit of hitsRef.current.pins) {
+        const dist = Math.hypot(hit.sx - px, hit.sy - py);
+        if (dist < bestD) {
+          bestD = dist;
+          best = hit;
+        }
       }
     }
     if (best) {

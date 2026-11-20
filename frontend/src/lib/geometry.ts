@@ -259,7 +259,10 @@ export type HandleType = (typeof HANDLE_TYPES)[number];
 /**
  * Resize a rect by dragging one of 8 handles. The rect is rotated around its
  * center, so we work in the rect's local frame: convert the pointer to local
- * coordinates, adjust the local AABB, then rebuild the world rect.
+ * coordinates, adjust the local AABB, then rebuild the world rect so the
+ * opposite corner (edge midpoint for edge handles) stays FIXED in world space.
+ * The renderer pivots the rect about its — new — center; reusing the local
+ * AABB as world x/y would slide that fixed edge sideways whenever rot ≠ 0.
  */
 export function resizeRect(
   r: RectGeom,
@@ -284,7 +287,41 @@ export function resizeRect(
   if (handle.includes('e')) x1 = Math.max(local.x, x0 + minSize);
   if (handle.includes('n')) y0 = Math.min(local.y, y1 - minSize);
   if (handle.includes('s')) y1 = Math.max(local.y, y0 + minSize);
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, rot: r.rot };
+  // opposite corner/edge of the ORIGINAL rect — its world position is invariant
+  const fixedLocal = {
+    x: handle.includes('w') ? r.x + r.w : handle.includes('e') ? r.x : r.x + r.w / 2,
+    y: handle.includes('n') ? r.y + r.h : handle.includes('s') ? r.y : r.y + r.h / 2,
+  };
+  // local → world rotation (+rot = CW in SVG's y-down coords, like rotate())
+  const b = (r.rot * Math.PI) / 180;
+  const cb = Math.cos(b);
+  const sb = Math.sin(b);
+  const worldFixed = {
+    x: cx + (fixedLocal.x - cx) * cb - (fixedLocal.y - cy) * sb,
+    y: cy + (fixedLocal.x - cx) * sb + (fixedLocal.y - cy) * cb,
+  };
+  const d = { x: (x0 + x1) / 2 - fixedLocal.x, y: (y0 + y1) / 2 - fixedLocal.y };
+  const worldCx = worldFixed.x + d.x * cb - d.y * sb;
+  const worldCy = worldFixed.y + d.x * sb + d.y * cb;
+  return { x: worldCx - (x1 - x0) / 2, y: worldCy - (y1 - y0) / 2, w: x1 - x0, h: y1 - y0, rot: r.rot };
+}
+
+/**
+ * Cursor for a resize handle on a rect rotated by `rot` degrees — the drag
+ * axis rotates with the element, so a 'w' handle on a 90°-rotated shelf
+ * resizes vertically on screen and must show the ns-resize cursor.
+ */
+export function handleCursor(handle: HandleType, rot: number): string {
+  const lx = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0;
+  const ly = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0;
+  if (!lx && !ly) return 'default';
+  const a = (rot * Math.PI) / 180;
+  const dx = lx * Math.cos(a) - ly * Math.sin(a);
+  const dy = lx * Math.sin(a) + ly * Math.cos(a);
+  // the cursor names an axis, not a direction — fold into [0, 180)
+  const deg = (((Math.atan2(dy, dx) * 180) / Math.PI) % 180 + 180) % 180;
+  const snap = (Math.round(deg / 45) * 45) % 180;
+  return snap === 0 ? 'ew-resize' : snap === 45 ? 'nwse-resize' : snap === 90 ? 'ns-resize' : 'nesw-resize';
 }
 
 /** Set rect rotation so the rect "points" from its center toward worldPt. */

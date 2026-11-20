@@ -244,6 +244,10 @@ test('autosave snapshots: throttled changelog + restore round-trip', async () =>
   const got = await call(`/api/floors/${floorId}/snapshots/${snap.id}`, { cookie });
   assert.equal(got.status, 200);
   assert.equal(got.body.snapshot.elements.length, 2);
+  assert.ok(
+    got.body.snapshot.elements.every((e) => e.floor_id === floorId),
+    'snapshot rows carry floor_id — the editor re-inflates them per floor'
+  );
   await call(`/api/floors/${floorId}/elements`, { method: 'PUT', cookie, body: { elements: got.body.snapshot.elements } });
   const after = await call(`/api/stores/${storeId}/full`, { cookie });
   assert.equal(after.body.elements.length, 2);
@@ -335,10 +339,11 @@ test('catalog: categories, products, locations, and search', async () => {
     method: 'POST', cookie, body: { floor_id: floorId, x: 7.5, y: 8 },
   });
   assert.equal(loc.status, 201);
+  // moving requires the pin's id — without it a second facing is inserted
   const moved = await call(`/api/products/${prod.body.product.id}/locations`, {
-    method: 'POST', cookie, body: { floor_id: floorId, x: 8, y: 8.5 },
+    method: 'POST', cookie, body: { floor_id: floorId, locationId: loc.body.location.id, x: 8, y: 8.5 },
   });
-  assert.equal(moved.body.location.id, loc.body.location.id, 'one pin per product per floor');
+  assert.equal(moved.body.location.id, loc.body.location.id, 'locationId moves the pin in place');
   assert.equal(moved.body.location.x, 8);
 
   const search = await call(`/api/public/stores/${'search-foods'}/search?q=sour`);
@@ -362,11 +367,17 @@ test('pin shelfId persists in meta and round-trips through every payload', async
 
   // create with a shelfId → top-level field + meta JSON
   const loc = await call(`/api/products/${productId}/locations`, {
-    method: 'POST', cookie, body: { floor_id: floorId, x: 3, y: 4, shelfId: 'shelf-7' },
+    method: 'POST', cookie,
+    body: { floor_id: floorId, x: 3, y: 4, shelfId: 'shelf-7', shelfLevel: 2, facingW: 0.4, pinW: 0.8, pinH: 0.3 },
   });
   assert.equal(loc.status, 201);
   assert.equal(loc.body.location.shelfId, 'shelf-7');
-  assert.equal(JSON.parse(loc.body.location.meta).shelfId, 'shelf-7');
+  const locMeta = JSON.parse(loc.body.location.meta);
+  assert.equal(locMeta.shelfId, 'shelf-7');
+  assert.equal(locMeta.shelf_level, 2, 'planogram row persists');
+  assert.equal(locMeta.w, 0.4, 'facing width persists');
+  assert.equal(locMeta.pinW, 0.8, 'pin length persists');
+  assert.equal(locMeta.pinH, 0.3, 'pin width persists');
 
   // the store full payload carries it too
   const after = await call(`/api/stores/${storeId}/full`, { cookie });
@@ -378,9 +389,9 @@ test('pin shelfId persists in meta and round-trips through every payload', async
   assert.equal(pub.body.locations[0].shelfId, 'shelf-7');
   assert.ok(pub.body.locations[0].meta);
 
-  // re-pinning the same product+floor without a shelfId clears the association
+  // re-pinning with the pin's id updates it in place — no shelfId clears the association
   const cleared = await call(`/api/products/${productId}/locations`, {
-    method: 'POST', cookie, body: { floor_id: floorId, x: 5, y: 6 },
+    method: 'POST', cookie, body: { floor_id: floorId, locationId: loc.body.location.id, x: 5, y: 6 },
   });
   assert.equal(cleared.status, 201);
   assert.equal(cleared.body.location.id, loc.body.location.id, 'same pin, updated in place');
@@ -786,6 +797,75 @@ test('dev login cannot take over an existing social account', async () => {
   // fresh emails (and existing dev accounts) still sign in fine
   const fresh = await loginAs('after-takeover@example.com');
   assert.ok(fresh.startsWith('st_session='));
+});
+
+test('products hold multiple pins per floor; locationId moves one pin', async () => {
+  const cookie = await loginAs('shelfy@example.com'); // cached — no extra dev-login
+  const { body } = await call('/api/stores', { method: 'POST', cookie, body: { name: 'Face Mart' } });
+  const storeId = body.store.id;
+  const floorId = (await call(`/api/stores/${storeId}/full`, { cookie })).body.floors[0].id;
+  const prod = await call(`/api/stores/${storeId}/products`, { method: 'POST', cookie, body: { name: 'Cola Can 330ml' } });
+  const productId = prod.body.product.id;
+
+  // two inserts (no locationId) = two facings of the same item
+  const a = await call(`/api/products/${productId}/locations`, { method: 'POST', cookie, body: { floor_id: floorId, x: 1, y: 1 } });
+  const b = await call(`/api/products/${productId}/locations`, { method: 'POST', cookie, body: { floor_id: floorId, x: 2, y: 1 } });
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  assert.notEqual(a.body.location.id, b.body.location.id);
+  const full = await call(`/api/stores/${storeId}/full`, { cookie });
+  assert.equal(full.body.locations.filter((l) => l.product_id === productId).length, 2);
+
+  // moving via locationId updates only that pin
+  const moved = await call(`/api/products/${productId}/locations`, {
+    method: 'POST', cookie, body: { floor_id: floorId, locationId: a.body.location.id, x: 5, y: 6 },
+  });
+  assert.equal(moved.status, 201);
+  assert.equal(moved.body.location.id, a.body.location.id);
+  assert.equal(moved.body.location.x, 5);
+  const after = await call(`/api/stores/${storeId}/full`, { cookie });
+  const pins = after.body.locations.filter((l) => l.product_id === productId);
+  assert.equal(pins.length, 2, 'still two facings');
+  assert.ok(pins.some((l) => l.id === b.body.location.id && l.x === 2), 'the untouched copy keeps its spot');
+});
+
+test('email code sign-in: request (devCode locally) → verify → session', async () => {
+  // providers payload carries the new flags
+  const me = await call('/api/auth/me');
+  assert.equal(me.body.providers.email, true);
+  assert.equal(me.body.providers.facebook, false);
+
+  // no RESEND_API_KEY in tests → the code comes back for local mode
+  const req = await call('/api/auth/email/request', { method: 'POST', body: { email: 'coder@example.com' } });
+  assert.equal(req.status, 200);
+  assert.match(req.body.devCode, /^\d{6}$/);
+
+  // wrong code is rejected without consuming the real one
+  const wrong = await call('/api/auth/email/verify', { method: 'POST', body: { email: 'coder@example.com', code: '000000' } });
+  assert.equal(wrong.status, 401);
+
+  // the real code signs in and the session works
+  const ok = await call('/api/auth/email/verify', { method: 'POST', body: { email: 'coder@example.com', code: req.body.devCode } });
+  assert.equal(ok.status, 200);
+  const cookie = sessionCookie(ok.setCookie);
+  assert.ok(cookie.startsWith('st_session='));
+  const mine = await call('/api/stores/mine', { cookie });
+  assert.equal(mine.status, 200);
+
+  // codes are single-use
+  const replay = await call('/api/auth/email/verify', { method: 'POST', body: { email: 'coder@example.com', code: req.body.devCode } });
+  assert.equal(replay.status, 401);
+});
+
+test('email codes cannot take over a social account', async () => {
+  const { db, newId } = await import('../src/db.js');
+  db.prepare("INSERT INTO users (id, email, name, provider, provider_sub) VALUES (?, ?, ?, 'facebook', ?)").run(
+    newId(), 'fbowner@example.com', 'FB User', 'fb-sub-1'
+  );
+  const req = await call('/api/auth/email/request', { method: 'POST', body: { email: 'fbowner@example.com' } });
+  assert.equal(req.status, 403);
+  const row = db.prepare('SELECT provider FROM users WHERE email = ?').get('fbowner@example.com');
+  assert.equal(row.provider, 'facebook');
 });
 
 test('shopper meta escapes hostile store fields (no script breakout)', async () => {

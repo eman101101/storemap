@@ -72,6 +72,14 @@ test('shopper: search → route badge → 2D → 3D', async ({ page }) => {
   await expect(page.locator('.viewer-map > svg')).toBeVisible();
   await page.getByRole('button', { name: '3D', exact: true }).click();
   await expect(page.locator('.viewer-map canvas')).toBeVisible();
+  // camera controls start hidden behind the struck-through camera toggle
+  await expect(page.locator('.viewer-map .cam-toggle')).toBeVisible();
+  await expect(page.locator('.viewer-map .pan-pad')).toHaveCount(0);
+  await page.locator('.viewer-map .cam-toggle').click();
+  await expect(page.locator('.viewer-map .pan-pad')).toBeVisible();
+  // the pad's centre camera glyph hides it again
+  await page.locator('.viewer-map .pan-pad button[aria-label="Hide camera controls"]').click();
+  await expect(page.locator('.viewer-map .pan-pad')).toHaveCount(0);
 });
 
 test('shopper: multi-stop trip', async ({ page }) => {
@@ -96,13 +104,19 @@ test('shopper: OG meta injected', async ({ page }) => {
 });
 
 test('editor: opens, outline lists elements, history snapshots', async ({ page }) => {
-  // /login pops the sign-in modal over the homepage now
+  // /login pops the sign-in modal over the homepage now — sign in with an
+  // email code (local mode: no mail provider, the code is shown in the form)
   await page.goto('/login');
   await page.getByLabel('Email').fill('e2e@storemap.test');
-  // scope to the modal — the navbar also has a "Sign in" button (strict mode
-  // would reject the ambiguous global locator)
+  await page.getByRole('button', { name: 'Email me a code' }).click();
+  const code = (await page.getByText(/your code:/).textContent()).match(/(\d{6})/)![1];
+  await page.getByLabel('Code').fill(code);
+  // scope to the modal — the navbar also has a "Sign in" button
   await page.getByRole('dialog', { name: 'Sign in' }).getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.goto(`/dashboard/stores/${storeId}`);
+  // first visit per device auto-opens the editor tour — get it out of the way
+  const skipTour = page.getByRole('button', { name: 'Skip tour' });
+  if (await skipTour.isVisible().catch(() => false)) await skipTour.click();
   // the side panel is a pull-out drawer (closed on a fresh device) and the
   // outline groups collapse by default — rows render only under open groups.
   // Re-expand after every remount: selecting an element swaps the outline
@@ -139,4 +153,30 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   await expect(page.locator('.save-state')).toContainText('Saved', { timeout: 10_000 });
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.locator('.snapshot-item').first()).toBeVisible({ timeout: 10_000 });
+  // restore round-trip through the confirm modal (regression: restored rows
+  // used to lose floor_id — the map went blank and the autosave wiped the
+  // floor server-side). The snapshot predates the drawn shelf → 4 rows back.
+  await page.getByRole('button', { name: '↩ Restore' }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Restore this snapshot?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expandOutline();
+  await expect(page.locator('.outline-row')).toHaveCount(4, { timeout: 10_000 });
+
+  // Add-item from the map: the 📍 tool works with nothing pre-selected —
+  // clicking empty space creates the item's own AREA (a 5th element), opens
+  // the product form, and saving pins the item into it in one step
+  await page.getByRole('button', { name: /Add item/ }).click();
+  // mid-map empty space: clear of the shelves, the left tool rail and the
+  // open side-panel drawer that overlays the right edge
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.28);
+  const form = page.getByRole('dialog', { name: 'Add product' });
+  await expect(form).toBeVisible();
+  await form.getByLabel('Name').fill('Map Made Cola');
+  await form.getByRole('button', { name: 'Save product' }).click();
+  // the pin panel opens on the new item, showing its (new) area group
+  await expect(page.locator('.panel-section', { hasText: '📍 Map Made Cola' })).toBeVisible({ timeout: 10_000 });
+  // close the pin card to bring the outline back — the new area is element #5
+  await page.getByRole('button', { name: 'Close pin panel' }).click();
+  await expandOutline();
+  await expect(page.locator('.outline-row')).toHaveCount(5, { timeout: 10_000 });
 });

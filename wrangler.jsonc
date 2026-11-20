@@ -72,6 +72,13 @@
 		"GOOGLE_CLIENT_ID": "771509644765-3as32ji9p6n3ga761okjv153408j6n6h.apps.googleusercontent.com",
 		// Optional Apple sign-in — all four values as secrets on Cloudflare:
 		//   APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY (.p8)
+		// Optional Facebook sign-in (developers.facebook.com → app ID + secret;
+		// redirect URI {PUBLIC_BASE_URL}/api/auth/facebook/callback) — secrets:
+		//   FACEBOOK_APP_ID, FACEBOOK_APP_SECRET
+		// Email sign-in codes: always available. With a Resend API key the
+		// 6-digit code is emailed; without it the login UI shows the code
+		// (local/self-host mode). Optional secrets:
+		//   RESEND_API_KEY, EMAIL_FROM (e.g. "StoreMap <no-reply@yourshop.com>")
 		// Optional Cloudflare Access (Zero Trust) sign-in — the built-in auth option.
 		// Protect the dashboard + owner API paths with an Access application (free
 		// for up to 50 users), then set as secrets:

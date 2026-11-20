@@ -41,17 +41,33 @@ describe('computeShelfLayout', () => {
       pin(1, 0.5, 'top', '{"shelf_level":3}'),
       pin(3.5, 0.5, 'bottom'),
     ])!;
-    expect(layout.meta).toEqual({ bays: 2, levels: 3 });
+    expect(layout.meta.bays).toBe(2);
+    expect(layout.meta.levels).toBe(3);
     expect(layout.bays[0].slots[0].level).toBe(3);
     expect(layout.bays[1].slots[0].level).toBe(1);
   });
 
-  it('maps pins on deep shelves to levels by depth', () => {
+  it('planWidth overrides the drawing width without touching pin fractions', () => {
+    // planogram-only length: the drawing spans 10 m while the physical shelf
+    // is 5 m — pin positions keep their 0..1 fraction of the physical width
+    const s: MapElement = { ...shelf, meta: JSON.stringify({ planWidth: 10, planDepth: 1 }) };
+    const layout = computeShelfLayout(s, [pin(2.5, 0.5, 'mid')])!;
+    expect(layout.width).toBe(10);
+    expect(layout.depth).toBe(1);
+    const slots = layout.bays.flatMap((b) => b.slots);
+    expect(slots).toHaveLength(1);
+    expect(slots[0].u).toBeCloseTo(0.5);
+  });
+
+  it('deep shelves put unpinned-row items on the bottom board (one face)', () => {
+    // planograms are a single shelf face: level comes from the pin's persisted
+    // shelf_level, geometric depth no longer implies rows
     const deep: MapElement = { ...shelf, meta: JSON.stringify({ levels: 2 }), geom: { x: 0, y: 0, w: 5, h: 2, rot: 0 } };
     const layout = computeShelfLayout(deep, [pin(1, 0.2, 'front'), pin(3, 1.8, 'back')])!;
     const levels = layout.bays.flatMap((b) => b.slots.map((s) => [s.product.id, s.level]));
-    expect(levels).toContainEqual(['front', 2]);
+    expect(levels).toContainEqual(['front', 1]);
     expect(levels).toContainEqual(['back', 1]);
+    expect(layout.bays.every((b) => b.slots.every((s) => !('side' in s)))).toBe(true);
   });
 
   it('classifies pins outside the shelf footprint', () => {

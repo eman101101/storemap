@@ -13,11 +13,12 @@ import { elementToRow, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
 import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useTheme } from '../theme';
-import { CameraCaptureModal, CameraPad, Field, Modal, ZoomPad } from './ui';
+import { CameraCaptureModal, CameraPad, CameraToggle, Field, Modal, ZoomPad } from './ui';
 import { removeBackground } from '../lib/imageBg';
 import { defaultWeek, parseStoreHours, serializeWeek, WEEK_DAYS, type DayHours, type WeekDay, type WeekHours } from '../lib/storeHours';
 import { useLoginModal } from '../App';
 import { EditorTour, GlossaryModal, type TourStep } from './EditorHelp';
+import { shelfLocalToWorld, worldToShelfLocal } from '../lib/shelfLayout';
 
 /**
  * The editor's data source. On the dashboard it's the real api; in the
@@ -47,7 +48,7 @@ const TOOL_HINTS: Partial<Record<EditorTool, string>> = {
   zone: 'Drag to draw a zone rectangle',
   entrance: 'Click to place the entrance marker',
   poi: 'Click to place a point of interest',
-  product: 'Click a spot on a shelf to add the selected item · Esc to cancel',
+  product: 'Click empty space to create an item area · hover a group to add to it · Esc cancels',
 };
 
 /** A starter skeleton sized to the floor: outer walls, an entrance and blank
@@ -145,6 +146,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
   const [showControls, setShowControls] = useState(false);
+  // the 3D camera pad starts hidden behind the struck-through camera toggle
+  const [camPadOpen, setCamPadOpen] = useState(false);
   // onboarding tour + glossary; the tour offers itself once per device
   const [exportOpen, setExportOpen] = useState(false);
   const [hideLabels, setHideLabels] = useState(false);
@@ -166,10 +169,21 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // shelves can't Hoover up their products
   const pinGestureBase = useRef<MapElement[] | null>(null);
   const pinSaveTimer = useRef<number | null>(null);
-  const pendingPinSaves = useRef<{ productId: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number }[]>([]);
+  const pendingPinSaves = useRef<{ productId: string; locationId?: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }[]>([]);
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const [shelfPreviewId, setShelfPreviewId] = useState<string | null>(null);
+  // a product pin selected on the map — shows the pin card (size + planogram)
+  // in the side panel's Map tab
+  const [selectedPinProductId, setSelectedPinProductId] = useState<string | null>(null);
+  // the Products tab filters to the selected pin's group until cleared —
+  // selecting another pin re-arms it
+  const [productsGroupOpen, setProductsGroupOpen] = useState(true);
+  const selectPin = (productId: string) => {
+    setFlashProductId(productId);
+    setSelectedPinProductId(productId);
+    setProductsGroupOpen(true);
+  };
   // shelves mid-gesture: their owned pins hide while the shelf moves and
   // reappear (re-homed) when the gesture ends — no pins floating mid-drag
   const [movingShelfIds, setMovingShelfIds] = useState<Set<string>>(new Set());
@@ -241,6 +255,13 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bgOpacity, setBgOpacity] = useState(0.95);
   const [pinQueue, setPinQueue] = useState<string[]>([]);
+  // create-from-map flow: the spot (and its new/target area) the product form
+  // should pin into once the item is saved
+  const [newItemAt, setNewItemAt] = useState<{ x: number; y: number; shelfId: string } | null>(null);
+  // group-move confirmations: a pin dropped on another group, or a shelf
+  // (with its items) dropped onto another — cancel reverses the move
+  const [pendingPinMove, setPendingPinMove] = useState<{ locationId: string; productId: string; x: number; y: number; orig: { x: number; y: number }; fromShelfId: string | null; toShelfId: string | null } | null>(null);
+  const [pendingShelfMerge, setPendingShelfMerge] = useState<{ movedShelfId: string; targetShelfId: string; targetLabel: string; facingCount: number } | null>(null);
   const dirtyRef = useRef(false);
 
   // ---- load ----
@@ -298,16 +319,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
 
   /** Queue pin-position saves (debounced, mirroring the elements autosave). */
   const schedulePinSaves = useCallback(
-    (saves: { productId: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number }[]) => {
+    (saves: { productId: string; locationId?: string; x: number; y: number; floorId: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }[]) => {
       if (!saves.length) return;
       pendingPinSaves.current = [
-        ...pendingPinSaves.current.filter((s) => !saves.some((n) => n.productId === s.productId)),
+        ...pendingPinSaves.current.filter((s) => !saves.some((n) => (n.locationId ?? n.productId) === (s.locationId ?? s.productId))),
         ...saves,
       ];
       if (pinSaveTimer.current) window.clearTimeout(pinSaveTimer.current);
       pinSaveTimer.current = window.setTimeout(() => {
         for (const s of pendingPinSaves.current) {
-          apix.setProductLocation(s.productId, { floor_id: s.floorId, x: s.x, y: s.y, shelfId: s.shelfId, shelfLevel: s.shelfLevel, facingW: s.facingW })
+          apix.setProductLocation(s.productId, { floor_id: s.floorId, locationId: s.locationId, x: s.x, y: s.y, shelfId: s.shelfId, shelfLevel: s.shelfLevel, facingW: s.facingW, pinW: s.pinW, pinH: s.pinH })
             .catch(() => { /* keep the optimistic position */ });
         }
         pendingPinSaves.current = [];
@@ -351,6 +372,29 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         // no gesture (delete/add/panel edit): "before" is the current state
         const baseEls = base ?? elements;
         const baseById = new Map(baseEls.map((e) => [e.id, e]));
+        // a shelf dropped so its centre lands on ANOTHER shelf asks to merge
+        // the groups — its items re-home to the target; cancel undoes the move
+        for (const el of nextFloorEls) {
+          const start = baseById.get(el.id);
+          if (!start || start.type !== 'shelf' || el.type !== 'shelf' || start.shape !== 'rect' || el.shape !== 'rect') continue;
+          const bg = start.geom as RectGeom;
+          const ng = el.geom as RectGeom;
+          if (bg.x === ng.x && bg.y === ng.y) continue;
+          const cx = ng.x + ng.w / 2;
+          const cy = ng.y + ng.h / 2;
+          const target = shelfIdAtPoint({ x: cx, y: cy }, nextFloorEls.filter((e) => e.id !== el.id));
+          if (target && target !== el.id && !pendingShelfMerge) {
+            const facings = locations.filter((l) => l.floor_id === floor.id && ownerOf(l) === el.id).length;
+            const targetEl = nextFloorEls.find((e) => e.id === target);
+            setPendingShelfMerge({
+              movedShelfId: el.id,
+              targetShelfId: target,
+              targetLabel: (targetEl && (targetEl as MapElement).label) || 'shelf',
+              facingCount: facings,
+            });
+            break;
+          }
+        }
         for (const el of nextFloorEls) {
           const start = baseById.get(el.id);
           if (!start || start.type !== 'shelf' || el.type !== 'shelf') continue;
@@ -706,15 +750,41 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   }, [floor, draftPts, tool, floorElements, addElement]);
 
   // ---- product placement ----
-  const placeProduct = async (p: WorldPt) => {
-    if (!placeProductId || !floor) return;
-    const shelfId = shelfIdAtPoint(p, floorElements);
+  // targetShelfId comes from hovering a group while placing (MapCanvas);
+  // otherwise the click point decides via geometric containment.
+  const placeProduct = async (p: WorldPt, targetShelfId?: string | null) => {
+    if (!floor) return;
+    // Add-item with nothing pre-selected: clicking empty space CREATES the
+    // item's own area (a small shelf — resize its length like any shelf to
+    // shape the planogram); hovering an existing group targets it instead.
+    if (!placeProductId) {
+      let shelfId = targetShelfId ?? shelfIdAtPoint(p, floorElements) ?? undefined;
+      if (!shelfId) {
+        const area: MapElement = {
+          id: crypto.randomUUID(),
+          floor_id: floor.id,
+          type: 'shelf',
+          shape: 'rect',
+          geom: { x: p.x - 1, y: p.y - 0.275, w: 2, h: 0.55, rot: 0 },
+          label: '', color: '', meta: '{}', z_index: 1,
+        };
+        changeElements([...floorElements, area], 'push', 'create item area');
+        shelfId = area.id;
+      }
+      setNewItemAt({ x: p.x, y: p.y, shelfId });
+      setTool('select');
+      return;
+    }
+    const shelfId = targetShelfId ?? shelfIdAtPoint(p, floorElements);
     if (tryMode) session?.logAction('pin product');
     try {
-      const { location } = await apix.setProductLocation(placeProductId, { floor_id: floor.id, x: p.x, y: p.y, shelfId: shelfId ?? undefined });
+      // re-placing an item MOVES its existing pin (products can hold several
+      // facings — the planogram's Add copy makes new ones)
+      const existing = locations.find((l) => l.product_id === placeProductId && l.floor_id === floor.id);
+      const { location } = await apix.setProductLocation(placeProductId, { floor_id: floor.id, x: p.x, y: p.y, locationId: existing?.id, shelfId: shelfId ?? undefined });
       stampOwner(location.id, shelfId);
       setLocations((prev) => [
-        ...prev.filter((l) => !(l.product_id === placeProductId && l.floor_id === floor.id)),
+        ...prev.filter((l) => !(l.product_id === placeProductId && l.floor_id === floor.id && l.id !== location.id)),
         location,
       ]);
     } catch {
@@ -768,17 +838,228 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     );
   };
 
-  /** Drag a product pin: local during the gesture, one API upsert on release. */
-  const movePin = (locationId: string, productId: string, x: number, y: number, commit: boolean) => {
+  /** Drag a product pin: local during the gesture, one API upsert on release.
+   *  Dropping it on a DIFFERENT group asks before re-homing — cancel reverses
+   *  the move back to where the drag started. */
+  const movePin = (locationId: string, productId: string, x: number, y: number, commit: boolean, orig?: { x: number; y: number }) => {
     setLocations((prev) => prev.map((l) => (l.id === locationId ? { ...l, x, y } : l)));
     if (commit) {
       if (!floor) return;
-      const shelfId = shelfIdAtPoint({ x, y }, floorElements);
-      stampOwner(locationId, shelfId);
-      apix.setProductLocation(productId, { floor_id: floor.id, x, y, shelfId: shelfId ?? undefined })
+      const cur = locations.find((l) => l.id === locationId);
+      const fromShelfId = cur ? ownerOf(cur) : null;
+      const toShelfId = shelfIdAtPoint({ x, y }, floorElements);
+      if (toShelfId !== fromShelfId) {
+        // group change — ask before re-homing; the pin stays at the drop point
+        // until the answer (reverted on cancel)
+        setPendingPinMove({ locationId, productId, x, y, orig: orig ?? { x: cur?.x ?? x, y: cur?.y ?? y }, fromShelfId, toShelfId });
+        return;
+      }
+      stampOwner(locationId, toShelfId);
+      // the server rebuilds meta from the fields we send — carry the pin's
+      // planogram placement + size forward so a drag doesn't erase them
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(cur?.meta || '{}'); } catch { /* keep {} */ }
+      apix.setProductLocation(productId, {
+        floor_id: floor.id, locationId, x, y, shelfId: toShelfId ?? undefined,
+        ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+        ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+        ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
+        ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+      })
         .then(({ location }) => setLocations((prev) => prev.map((l) => (l.id === locationId ? location : l))))
         .catch(() => { /* keep the optimistic position; the badge shows save state */ });
     }
+  };
+
+  /** Resolve a pending group-move ask: keep the drop (re-home) or revert. */
+  const resolvePendingPinMove = (accept: boolean) => {
+    const ask = pendingPinMove;
+    if (!ask || !floor) { setPendingPinMove(null); return; }
+    setPendingPinMove(null);
+    if (!accept) {
+      // move is reversed: pin back where the drag started, original owner kept
+      setLocations((prev) => prev.map((l) => (l.id === ask.locationId ? { ...l, x: ask.orig.x, y: ask.orig.y } : l)));
+      return;
+    }
+    const cur = locations.find((l) => l.id === ask.locationId);
+    stampOwner(ask.locationId, ask.toShelfId);
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(cur?.meta || '{}'); } catch { /* keep {} */ }
+    apix.setProductLocation(ask.productId, {
+      floor_id: floor.id, locationId: ask.locationId, x: ask.x, y: ask.y, shelfId: ask.toShelfId ?? undefined,
+      ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+      ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+      ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
+      ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+    })
+      .then(({ location }) => setLocations((prev) => prev.map((l) => (l.id === ask.locationId ? location : l))))
+      .catch(() => { /* keep the position */ });
+  };
+
+  /** Resolve a shelf-merge ask: re-home the moved shelf's items to the target
+   *  group, or undo the whole move (elements + pins). */
+  const resolvePendingShelfMerge = (accept: boolean) => {
+    const ask = pendingShelfMerge;
+    setPendingShelfMerge(null);
+    if (!ask) return;
+    if (!accept) {
+      undo();
+      return;
+    }
+    const movedPins = locations.filter((l) => l.floor_id === floor?.id && ownerOf(l) === ask.movedShelfId);
+    for (const loc of movedPins) {
+      stampOwner(loc.id, ask.targetShelfId);
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
+      schedulePinSaves([{
+        productId: loc.product_id, locationId: loc.id, x: loc.x, y: loc.y, floorId: loc.floor_id,
+        shelfId: ask.targetShelfId,
+        ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+        ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+        ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
+        ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+      }]);
+    }
+    setSelectedPinProductId(null);
+  };
+
+  /** Rename a group (the owner shelf's label). */
+  const renameGroup = (shelfId: string, label: string) => {
+    changeElements(
+      floorElements.map((el) => (el.id === shelfId ? { ...el, label: label.slice(0, 80) } : el)),
+      'push',
+      'rename group'
+    );
+  };
+
+  /** Add-another-item anchored at a specific facing of the planogram. */
+  const addAnotherItemAt = (locationId: string) => {
+    const loc = locations.find((l) => l.id === locationId);
+    if (!loc || !shelfPreview || shelfPreview.shape !== 'rect' || !floor) return;
+    const r = shelfPreview.geom as RectGeom;
+    const curU = Math.min(0.9, Math.max(0.05, worldToShelfLocal(r, loc).x / r.w));
+    const u = Math.min(0.95, curU + 0.12);
+    const pt = shelfLocalToWorld(r, u * r.w, r.h / 2);
+    setNewItemAt({ x: pt.x, y: pt.y, shelfId: shelfPreview.id });
+  };
+
+  /** Resize a pin's on-map marker (metres) — optimistic + debounced save. */
+  const setPinSize = (loc: ProductLocation, pinW: number, pinH: number) => {
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
+    setLocations((prev) => prev.map((l) => (l.id === loc.id ? { ...l, meta: JSON.stringify({ ...m, pinW, pinH }) } : l)));
+    schedulePinSaves([{
+      productId: loc.product_id, locationId: loc.id, x: loc.x, y: loc.y, floorId: loc.floor_id,
+      shelfId: ownerOf(loc) ?? undefined,
+      ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+      ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+      pinW, pinH,
+    }]);
+  };
+
+  /** One-shot pin save: optimistic state, then the API (moves this exact pin). */
+  const persistPinUpdate = (loc: ProductLocation, patch: { x?: number; y?: number; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }) => {
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(loc.meta || '{}'); } catch { /* fresh */ }
+    const shelfLevel = patch.shelfLevel ?? (typeof meta.shelf_level === 'number' ? meta.shelf_level : undefined);
+    const facingW = patch.facingW ?? (typeof meta.w === 'number' ? meta.w : undefined);
+    const pinW = patch.pinW ?? (typeof meta.pinW === 'number' ? meta.pinW : undefined);
+    const pinH = patch.pinH ?? (typeof meta.pinH === 'number' ? meta.pinH : undefined);
+    setLocations((prev) =>
+      prev.map((l) => {
+        if (l.id !== loc.id) return l;
+        if (patch.shelfLevel !== undefined) meta.shelf_level = patch.shelfLevel;
+        if (patch.facingW !== undefined) meta.w = patch.facingW;
+        if (patch.pinW !== undefined) meta.pinW = patch.pinW;
+        if (patch.pinH !== undefined) meta.pinH = patch.pinH;
+        return { ...l, x: patch.x ?? l.x, y: patch.y ?? l.y, meta: JSON.stringify(meta) };
+      })
+    );
+    apix.setProductLocation(loc.product_id, {
+      floor_id: loc.floor_id, locationId: loc.id, x: patch.x ?? loc.x, y: patch.y ?? loc.y,
+      shelfId: ownerOf(loc) ?? undefined,
+      ...(shelfLevel !== undefined ? { shelfLevel } : {}),
+      ...(facingW !== undefined ? { facingW } : {}),
+      ...(pinW !== undefined ? { pinW } : {}),
+      ...(pinH !== undefined ? { pinH } : {}),
+    }).catch(() => { /* keep the optimistic state */ });
+  };
+
+  // ---- planogram editor callbacks (ShelfDetail editing mode) ----
+  /** Drag commit: place the facing at along-shelf fraction u, row `level`. */
+  const moveFacing = (locationId: string, u: number, level: number) => {
+    const loc = locations.find((l) => l.id === locationId);
+    if (!loc || !shelfPreview || shelfPreview.shape !== 'rect') return;
+    const r = shelfPreview.geom as RectGeom;
+    const local = { x: Math.min(r.w, Math.max(0, u * r.w)), y: r.h / 2 };
+    const p = shelfLocalToWorld(r, local.x, local.y);
+    persistPinUpdate(loc, { x: p.x, y: p.y, shelfLevel: level });
+  };
+
+  /** Duplicate a facing: same product, own spot just right of the original. */
+  const addFacingCopy = (locationId: string) => {
+    const loc = locations.find((l) => l.id === locationId);
+    if (!loc || !shelfPreview || !floor || shelfPreview.shape !== 'rect') return;
+    const r = shelfPreview.geom as RectGeom;
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
+    const facingW = typeof m.w === 'number' ? m.w : 0.32;
+    const curU = worldToShelfLocal(r, loc).x / r.w;
+    const u = curU + Math.max(0.06, facingW / r.w) > 0.96 ? Math.max(0.04, curU - Math.max(0.06, facingW / r.w)) : curU + Math.max(0.06, facingW / r.w);
+    const p = shelfLocalToWorld(r, u * r.w, r.h / 2);
+    const shelfId = ownerOf(loc) ?? shelfPreview.id;
+    apix.setProductLocation(loc.product_id, {
+      floor_id: floor.id, x: p.x, y: p.y, shelfId,
+      ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
+      ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
+      ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
+      ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+    })
+      .then(({ location }) => {
+        setLocations((prev) => [...prev, location]);
+        stampOwner(location.id, shelfId);
+      })
+      .catch(() => { /* surface via save state */ });
+  };
+
+  const removeFacing = (locationId: string) => {
+    apix.deleteLocation(locationId).catch(() => { /* keep locally on failure */ });
+    setLocations((prev) => prev.filter((l) => l.id !== locationId));
+    shelfOwner.current.delete(locationId);
+    if (selectedPinProductId) {
+      const stillHasPin = locations.some((l) => l.product_id === selectedPinProductId && l.id !== locationId);
+      if (!stillHasPin) setSelectedPinProductId(null);
+    }
+  };
+
+  /** Planogram-only length × depth — stored as planogram options on the
+   *  shelf's meta. The shelf's footprint on the map is never touched. */
+  const resizeShelfArea = (w: number, h: number) => {
+    if (!shelfPreview) return;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(shelfPreview.meta || '{}'); } catch { /* keep {} */ }
+    changeElements(
+      floorElements.map((el) =>
+        el.id === shelfPreview.id
+          ? { ...el, meta: JSON.stringify({ ...meta, planWidth: clamp(w, 0.3, 60), planDepth: clamp(h, 0.2, 6) }) }
+          : el
+      ),
+      'push',
+      'set planogram size'
+    );
+  };
+
+  const changeShelfRows = (levels: number) => {
+    if (!shelfPreview) return;
+    const clamped = Math.min(8, Math.max(1, Math.round(levels)));
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(shelfPreview.meta || '{}'); } catch { /* keep {} */ }
+    changeElements(
+      floorElements.map((el) => (el.id === shelfPreview.id ? { ...el, meta: JSON.stringify({ ...meta, levels: clamped }) } : el)),
+      'push',
+      'set shelf rows'
+    );
   };
 
   if (loadError) {
@@ -799,6 +1080,26 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const selected = elements.find((e) => e.id === selectedId) ?? null;
   const placing = placeProductId ? products.find((p) => p.id === placeProductId) : null;
   const shelfPreview = shelfPreviewId ? elements.find((e) => e.id === shelfPreviewId) ?? null : null;
+  // the pin selected on the map (this floor's pin for that product) + its shelf
+  const selectedPin = selectedPinProductId && floor
+    ? locations.find((l) => l.product_id === selectedPinProductId && l.floor_id === floor.id) ?? null
+    : null;
+  const selectedPinShelf = selectedPin && ownerOf(selectedPin)
+    ? floorElements.find((e) => e.id === ownerOf(selectedPin)) ?? null
+    : null;
+  // the selected pin's group: everything pinned to the same shelf, deduped
+  // per product (copies collapse into one chip with a ×count)
+  const selectedPinGroupAll = selectedPin && selectedPinShelf && floor
+    ? locations.filter((l) => l.floor_id === floor.id && ownerOf(l) === selectedPinShelf.id)
+    : [];
+  const groupFacings = selectedPinGroupAll.length;
+  const groupChips = (() => {
+    const counts = new Map<string, number>();
+    for (const l of selectedPinGroupAll) counts.set(l.product_id, (counts.get(l.product_id) ?? 0) + 1);
+    return [...counts.entries()]
+      .map(([pid, facings]) => ({ product: products.find((p) => p.id === pid), facings }))
+      .filter((c): c is { product: Product; facings: number } => !!c.product);
+  })();
 
   return (
     <EditorApiContext.Provider value={apix}>
@@ -1001,6 +1302,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={visibleFloorPins}
               stockPins={visibleFloorPins}
+              pickFilter={pickFilter}
               camera={cam3d}
               onCamera={setCam3d}
               edit
@@ -1013,8 +1315,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onElementDrag={dragElement3d}
               onElementsChange={changeElements}
               onPinClick={(productId) => {
-                setFlashProductId(productId);
-                showTab('products');
+                selectPin(productId);
+                setSelectedId(null);
+                showTab('map');
               }}
               focusElement={focus3d}
               fitSignal={fitSignal}
@@ -1038,7 +1341,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               draftPts={draftPts}
               onSelect={(id) => {
                 setSelectedId(id);
-                if (id) autoShowPanel();
+                if (id) { setSelectedPinProductId(null); autoShowPanel(); }
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
               onElementsChange={changeElements}
@@ -1047,6 +1350,10 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onDraftFinish={finishDraft}
               onDraftCancel={() => setDraftPts([])}
               onPlaceProduct={placeProduct}
+              ownerOfPin={(locId) => {
+                const loc = locations.find((l) => l.id === locId);
+                return loc ? ownerOf(loc) : null;
+              }}
               selectedIds={selectedIds}
               onMultiSelect={(ids) => {
                 setSelectedIds(ids);
@@ -1057,8 +1364,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               pickFilter={pickFilter}
               onPinMove={movePin}
               onPinSelect={(productId) => {
-                setFlashProductId(productId);
-                showTab('products');
+                selectPin(productId);
+                setSelectedId(null);
+                showTab('map');
               }}
               fitSignal={fitSignal}
               zoomCommand={zoomCmd}
@@ -1072,9 +1380,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 key={t.id}
                 className={`tool-btn ${tool === t.id ? 'active' : ''}`}
                 onClick={() => { setTool(t.id); setSelectedId(t.id === 'select' ? selectedId : null); }}
-                disabled={t.id === 'product' && !placeProductId}
-                aria-label={t.id === 'product' ? 'Add item — pick a product in the Products tab first' : t.label}
-                data-tip={t.id === 'product' ? 'Add item (pick one in Products first)' : t.label}
+                aria-label={t.id === 'product' ? 'Add item — click empty space to create an area, hover a group to join it' : t.label}
+                data-tip={t.id === 'product' ? 'Add item (creates its own area, or joins the hovered group)' : t.label}
               >
                 <span aria-hidden>{t.icon}</span>
               </button>
@@ -1116,16 +1423,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 <button
                   className={`tool-btn ${pickFilter === 'all' ? 'active' : ''}`}
                   onClick={() => setPickFilter('all')}
-                  aria-label="Pick fixtures"
-                  data-tip="Pick: fixtures"
+                  aria-label="Select structures"
+                  data-tip="Select: Structures"
                 >
                   <span aria-hidden>▦</span>
                 </button>
                 <button
                   className={`tool-btn ${pickFilter === 'products' ? 'active' : ''}`}
                   onClick={() => setPickFilter('products')}
-                  aria-label="Pick products"
-                  data-tip="Pick: products only"
+                  aria-label="Select items"
+                  data-tip="Select: Items"
                 >
                   <span aria-hidden>◉</span>
                 </button>
@@ -1152,9 +1459,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           >
             {sideOpen ? 'close »' : '« panel'}
           </button>
-          {view3d && floor && (
-            <CameraPad onMove={cam3dMove} />
-          )}
+          {view3d && floor && (camPadOpen ? (
+            <CameraPad onMove={cam3dMove} onClose={() => setCamPadOpen(false)} />
+          ) : (
+            <CameraToggle onOpen={() => setCamPadOpen(true)} />
+          ))}
           <ZoomPad onZoom={(dir) => setZoomCmd((z) => ({ k: dir > 0 ? 1.3 : 0.77, seq: z.seq + 1 }))} />
           <button
             className="btn controls-btn"
@@ -1231,10 +1540,72 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               </button>
             </div>
           )}
+          {newItemAt && floor && (
+            <ProductModal
+              storeId={store.id}
+              categories={categories}
+              product={null}
+              autoPlace={{ floorId: floor.id, x: newItemAt.x, y: newItemAt.y, shelfId: newItemAt.shelfId }}
+              onClose={() => setNewItemAt(null)}
+              onSaved={(p, placed) => {
+                setProducts((prev) => [...prev, p]);
+                if (placed) {
+                  setLocations((prev) => [...prev, placed]);
+                  stampOwner(placed.id, newItemAt.shelfId);
+                }
+                setNewItemAt(null);
+                // land on the new pin: panel shows the item + its group (the
+                // created area stays selectable from the outline)
+                selectPin(p.id);
+                setSelectedId(null);
+                setSideTab('map');
+              }}
+            />
+          )}
+          {pendingPinMove && floor && (() => {
+            const toShelf = floorElements.find((e) => e.id === pendingPinMove.toShelfId);
+            const prod = products.find((p) => p.id === pendingPinMove.productId);
+            return (
+              <Modal title="Add to this group?" onClose={() => resolvePendingPinMove(false)}>
+                <p style={{ margin: '0 0 6px' }}>
+                  Move <b>{prod?.name ?? 'this item'}</b> into the group{' '}
+                  <b>{toShelf?.label || 'shelf'}</b>?
+                </p>
+                <p className="muted" style={{ fontSize: 12.5, margin: '0 0 4px' }}>
+                  No — the move is reversed and the item stays in its current group.
+                </p>
+                <div className="modal-actions">
+                  <button className="btn ghost" onClick={() => resolvePendingPinMove(false)}>No, reverse it</button>
+                  <button className="btn primary" onClick={() => resolvePendingPinMove(true)}>Yes, add to group</button>
+                </div>
+              </Modal>
+            );
+          })()}
+          {pendingShelfMerge && (() => {
+            const moved = floorElements.find((e) => e.id === pendingShelfMerge.movedShelfId);
+            return (
+              <Modal title="Merge these groups?" onClose={() => resolvePendingShelfMerge(false)}>
+                <p style={{ margin: '0 0 6px' }}>
+                  This area was dropped on <b>{pendingShelfMerge.targetLabel}</b>. Make its{' '}
+                  {pendingShelfMerge.facingCount} item{pendingShelfMerge.facingCount === 1 ? '' : 's'} part of that group?
+                </p>
+                {moved && (
+                  <p className="muted" style={{ fontSize: 12.5, margin: '0 0 4px' }}>
+                    {moved.label ? `“${moved.label}”` : 'The area'} stays on the map — only the group membership changes.
+                  </p>
+                )}
+                <div className="modal-actions">
+                  <button className="btn ghost" onClick={() => resolvePendingShelfMerge(false)}>No, undo the move</button>
+                  <button className="btn primary" onClick={() => resolvePendingShelfMerge(true)}>Yes, merge</button>
+                </div>
+              </Modal>
+            );
+          })()}
           {shelfPreview && (
             <ShelfDetail
               shelf={shelfPreview}
               pins={visibleFloorPins}
+              editing
               onClose={() => setShelfPreviewId(null)}
               onEditFacing={(locationId, patch) => {
                 const loc = locations.find((l) => l.id === locationId);
@@ -1255,6 +1626,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 schedulePinSaves([
                   {
                     productId: loc.product_id,
+                    locationId,
                     x: loc.x,
                     y: loc.y,
                     floorId: loc.floor_id,
@@ -1265,6 +1637,18 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 ]);
                 dirtyRef.current = true;
                 setSaveState('dirty');
+              }}
+              onMoveFacing={moveFacing}
+              onAddCopy={addFacingCopy}
+              onRemoveFacing={removeFacing}
+              onShelfResize={resizeShelfArea}
+              onRowsChange={changeShelfRows}
+              onAddAnotherAt={addAnotherItemAt}
+              onAddAnotherItem={() => {
+                if (!shelfPreview || shelfPreview.shape !== 'rect' || !floor) return;
+                const r = shelfPreview.geom as RectGeom;
+                const p = shelfLocalToWorld(r, r.w * 0.5, r.h / 2);
+                setNewItemAt({ x: p.x, y: p.y, shelfId: shelfPreview.id });
               }}
             />
           )}
@@ -1328,6 +1712,27 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                   }}
                   onPreviewShelf={selected.type === 'shelf' && selected.shape === 'rect' ? () => setShelfPreviewId(selected.id) : undefined}
                 />
+              ) : selectedPin ? (
+                <PinPanel
+                  location={selectedPin}
+                  product={products.find((p) => p.id === selectedPin.product_id) ?? null}
+                  ownerShelf={selectedPinShelf}
+                  groupChips={groupChips}
+                  groupFacings={groupFacings}
+                  onSelectMember={(productId) => selectPin(productId)}
+                  onRenameGroup={selectedPinShelf ? (label) => renameGroup(selectedPinShelf.id, label) : undefined}
+                  onSize={(w, h) => setPinSize(selectedPin, w, h)}
+                  onEditPlanogram={selectedPinShelf ? () => setShelfPreviewId(selectedPinShelf.id) : undefined}
+                  onAddAnother={selectedPinShelf ? () => {
+                    // create the next product just right of the selected pin
+                    if (selectedPinShelf.shape !== 'rect') return;
+                    const r = selectedPinShelf.geom as RectGeom;
+                    const curU = Math.min(0.95, Math.max(0.05, worldToShelfLocal(r, selectedPin).x / r.w));
+                    const p = shelfLocalToWorld(r, Math.min(0.95, curU + 0.12) * r.w, r.h / 2);
+                    setNewItemAt({ x: p.x, y: p.y, shelfId: selectedPinShelf.id });
+                  } : undefined}
+                  onClose={() => setSelectedPinProductId(null)}
+                />
               ) : (
                                 <>
                 <FloorPanel
@@ -1355,6 +1760,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                   floor={floor}
                   onSelectEl={(id) => {
                     setSelectedId(id);
+                    setSelectedPinProductId(null);
                     setSelectedIds(new Set());
                   }}
                   onToggleLock={(id, locked) => {
@@ -1392,6 +1798,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 }}
                 placingId={placeProductId}
                 flashId={flashProductId}
+                groupFilter={selectedPin && selectedPinShelf && productsGroupOpen ? {
+                  shelfLabel: selectedPinShelf.label || 'shelf',
+                  memberIds: groupChips.map((c) => c.product.id),
+                } : null}
+                onClearGroup={() => setProductsGroupOpen(false)}
                 onStartPlacing={(id) => { setPinQueue([id]); setPlaceProductId(id); setTool('product'); }}
                 onQueueMany={(ids) => {
                   if (!ids.length) return;
@@ -1995,8 +2406,13 @@ function HistoryPanel({
     setError('');
     try {
       const { snapshot } = await api.floorSnapshot(floorId, id);
-      onRestore(snapshot.elements.map(parseElement));
+      // snapshots written before the floor_id fix may carry rows without it —
+      // re-stamp so the editor's per-floor filter keeps every restored element
+      // (without it the restore "succeeds" but the map shows nothing and the
+      // next autosave would wipe the floor)
+      onRestore(snapshot.elements.map((r) => parseElement({ ...r, floor_id: floorId })));
       setDiffFor(null);
+      load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Restore failed');
     } finally {
@@ -2054,25 +2470,136 @@ function HistoryPanel({
                 <span className="muted" style={{ fontSize: 11.5 }}>
                   {new Date(snap.created_at_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
-                {diffFor?.id === snap.id && (
-                  <span className="muted" style={{ fontSize: 11.5 }}>vs now: {diffFor.summary.join(' · ')}</span>
-                )}
               </div>
-              {diffFor?.id === snap.id ? (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn sm ghost" onClick={() => setDiffFor(null)}>No</button>
-                  <button className="btn sm primary" disabled={busyId === snap.id} onClick={() => restore(snap.id)}>
-                    {busyId === snap.id ? 'Restoring…' : 'Confirm'}
-                  </button>
-                </div>
-              ) : (
-                <button className="btn sm" disabled={busyId === snap.id} onClick={() => previewDiff(snap.id, currentElements)}>
-                  {busyId === snap.id ? 'Loading…' : '↩ Restore'}
-                </button>
-              )}
+              <button className="btn sm" disabled={busyId === snap.id} onClick={() => previewDiff(snap.id, currentElements)}>
+                {busyId === snap.id ? 'Loading…' : '↩ Restore'}
+              </button>
             </div>
           ))
         )}
+      </div>
+      {diffFor && (() => {
+        const snap = snaps?.find((s) => s.id === diffFor.id);
+        return (
+          <Modal title="Restore this snapshot?" onClose={() => setDiffFor(null)}>
+            <p style={{ margin: '0 0 6px' }}>
+              Snapshot from{' '}
+              <b>{snap ? new Date(snap.created_at_ms).toLocaleString() : 'just now'}</b>
+              {snap ? ` — ${snap.element_count} element${snap.element_count === 1 ? '' : 's'}` : ''}
+            </p>
+            <p className="muted" style={{ margin: '0 0 6px' }}>
+              vs now: {diffFor.summary.join(' · ')}
+            </p>
+            <p className="muted" style={{ fontSize: 12.5, margin: '0 0 4px' }}>
+              Your current map will be replaced by this snapshot.
+            </p>
+            <div className="modal-actions">
+              <button className="btn ghost" onClick={() => setDiffFor(null)}>Cancel</button>
+              <button className="btn primary" disabled={busyId === diffFor.id} onClick={() => restore(diffFor.id)}>
+                {busyId === diffFor.id ? 'Restoring…' : 'Restore'}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
+    </div>
+  );
+}
+
+/* ---------------- Selected product pin (map card) ---------------- */
+
+/** Side-panel card for a pin selected on the map: marker size + planogram. */
+function PinPanel({
+  location, product, ownerShelf, groupChips, groupFacings, onSelectMember, onRenameGroup, onSize, onEditPlanogram, onAddAnother, onClose,
+}: {
+  location: ProductLocation;
+  product: Product | null;
+  ownerShelf: MapElement | null;
+  /** Everything on this shelf, one entry per product, copies counted. */
+  groupChips: { product: Product; facings: number }[];
+  groupFacings: number;
+  onSelectMember: (productId: string) => void;
+  onSize: (w: number, h: number) => void;
+  onEditPlanogram?: () => void;
+  /** singular-item shelf: create the next product straight into this area */
+  onAddAnother?: () => void;
+  /** name the group (the owner shelf's label) */
+  onRenameGroup?: (label: string) => void;
+  onClose: () => void;
+}) {
+  let m: Record<string, unknown> = {};
+  try { m = JSON.parse(location.meta || '{}'); } catch { /* keep {} */ }
+  const w = typeof m.pinW === 'number' ? m.pinW : 0.5;
+  const h = typeof m.pinH === 'number' ? m.pinH : 0.2;
+  return (
+    <div className="panel-section">
+      <div className="row-between">
+        <h4>📍 {product?.name ?? 'Product pin'}</h4>
+        <button className="route-badge-x" onClick={onClose} aria-label="Close pin panel">✕</button>
+      </div>
+      {ownerShelf && (
+        <p className="muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>
+          on {ownerShelf.label || 'shelf'}
+        </p>
+      )}
+      {ownerShelf && groupChips.length > 0 && (
+        <div style={{ margin: '0 0 8px' }}>
+          <p className="muted" style={{ fontSize: 11.5, margin: '0 0 4px' }}>
+            Group — {groupFacings} facing{groupFacings === 1 ? '' : 's'} · {groupChips.length} item{groupChips.length === 1 ? '' : 's'} on this shelf
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {groupChips.map(({ product: p, facings }) => (
+              <button
+                key={p.id}
+                className="btn sm ghost"
+                style={{ fontSize: 11.5 }}
+                onClick={() => onSelectMember(p.id)}
+                title={`Select ${p.name} on the map`}
+              >
+                {p.name}{facings > 1 ? ` ×${facings}` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {onAddAnother && (
+        <button className="btn sm" style={{ marginBottom: 8 }} onClick={onAddAnother}>
+          ＋ Add another item to this shelf
+        </button>
+      )}
+      {ownerShelf && onRenameGroup && (
+        <label className="field" style={{ margin: '0 0 8px' }}>
+          <span>Group name</span>
+          <input
+            className="input"
+            value={ownerShelf.label}
+            placeholder="Name this group…"
+            maxLength={80}
+            onChange={(e) => onRenameGroup(e.target.value)}
+          />
+        </label>
+      )}
+      {onEditPlanogram ? (
+        <button className="btn" onClick={onEditPlanogram}>▦ Edit planogram</button>
+      ) : (
+        <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Pin the item to a shelf to edit its planogram placement.
+        </p>
+      )}
+      <p className="muted" style={{ fontSize: 11.5, margin: '10px 0 4px' }}>Size on map (2D &amp; 3D)</p>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          Length
+          <input type="range" min={0.05} max={3} step={0.05} value={w} style={{ flex: 1 }}
+            onChange={(e) => onSize(Number(e.target.value), h)} />
+          <b style={{ minWidth: 48, textAlign: 'right' }}>{w.toFixed(2)} m</b>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          Width
+          <input type="range" min={0.05} max={3} step={0.05} value={h} style={{ flex: 1 }}
+            onChange={(e) => onSize(w, Number(e.target.value))} />
+          <b style={{ minWidth: 48, textAlign: 'right' }}>{h.toFixed(2)} m</b>
+        </label>
       </div>
     </div>
   );
@@ -2182,7 +2709,7 @@ function ElementOutline({
 /* ---------------- Products panel ---------------- */
 
 function ProductsPanel({
-  storeId, entitlements, products, categories, locations, onData, placingId, onStartPlacing, flashId, onQueueMany,
+  storeId, entitlements, products, categories, locations, onData, placingId, onStartPlacing, flashId, onQueueMany, groupFilter, onClearGroup,
 }: {
   storeId: string;
   entitlements: { productImages: boolean };
@@ -2194,6 +2721,10 @@ function ProductsPanel({
   onStartPlacing: (productId: string) => void;
   flashId: string | null;
   onQueueMany: (ids: string[]) => void;
+  /** The selected pin's group: label + the member product ids — filters the
+   *  list to that group while the specific item stays ring-highlighted. */
+  groupFilter?: { shelfLabel: string; memberIds: string[] } | null;
+  onClearGroup?: () => void;
 }) {
   const api = useEditorApi();
   const [q, setQ] = useState('');
@@ -2214,7 +2745,8 @@ function ProductsPanel({
   const filtered = products.filter(
     (p) =>
       `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(q.toLowerCase()) &&
-      (catFilter === 'all' || (catFilter === 'none' ? !p.category_id : p.category_id === catFilter))
+      (catFilter === 'all' || (catFilter === 'none' ? !p.category_id : p.category_id === catFilter)) &&
+      (!groupFilter || groupFilter.memberIds.includes(p.id))
   );
   const countByCat = new Map<string | null, number>();
   for (const p of products) countByCat.set(p.category_id, (countByCat.get(p.category_id) ?? 0) + 1);
@@ -2253,6 +2785,18 @@ function ProductsPanel({
 
   return (
     <div>
+      {groupFilter && (
+        <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="dot" style={{ background: 'var(--green)' }} aria-hidden />
+          <span style={{ fontSize: 12.5 }}>
+            Showing group <b>{groupFilter.shelfLabel}</b> — {groupFilter.memberIds.length} item
+            {groupFilter.memberIds.length === 1 ? '' : 's'} (the selected one is highlighted)
+          </span>
+          <button className="btn sm ghost" style={{ marginLeft: 'auto' }} onClick={() => onClearGroup?.()}>
+            Show all
+          </button>
+        </div>
+      )}
       <div className="panel-section">
         <div className="row-between">
           <h4 style={{ margin: 0 }}>Products</h4>
@@ -2398,14 +2942,16 @@ function ProductsPanel({
 }
 
 function ProductModal({
-  storeId, categories, product, onClose, onSaved, entitlements,
+  storeId, categories, product, onClose, onSaved, entitlements, autoPlace,
 }: {
   storeId: string;
   categories: Category[];
   product: Product | null;
   onClose: () => void;
-  onSaved: (p: Product) => void;
+  onSaved: (p: Product, placed?: ProductLocation) => void;
   entitlements?: { productImages: boolean };
+  /** Create-from-map flow: pin the new product at this spot in the same save. */
+  autoPlace?: { floorId: string; x: number; y: number; shelfId?: string };
 }) {
   const api = useEditorApi();
   const [name, setName] = useState(product?.name ?? '');
@@ -2480,8 +3026,14 @@ function ProductModal({
       const { product: saved } = product
         ? await api.updateProduct(product.id, body)
         : await api.addProduct(storeId, body);
+      let placed: ProductLocation | undefined;
+      if (autoPlace) {
+        placed = (await api.setProductLocation(saved.id, {
+          floor_id: autoPlace.floorId, x: autoPlace.x, y: autoPlace.y, shelfId: autoPlace.shelfId,
+        })).location;
+      }
       const cat = categories.find((c) => c.id === (categoryId || null));
-      onSaved({ ...saved, category_name: cat?.name, category_color: cat?.color });
+      onSaved({ ...saved, category_name: cat?.name, category_color: cat?.color }, placed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {

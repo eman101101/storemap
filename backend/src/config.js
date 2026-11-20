@@ -32,6 +32,14 @@ export const config = {
     keyId: env.APPLE_KEY_ID || '',
     privateKey: (env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   },
+  facebook: {
+    appId: env.FACEBOOK_APP_ID || '',
+    appSecret: env.FACEBOOK_APP_SECRET || '',
+  },
+  // Passwordless email codes: delivered via Resend when the API key is set;
+  // otherwise the code is returned to the login UI (local/self-host mode).
+  resendApiKey: env.RESEND_API_KEY || '',
+  emailFrom: env.EMAIL_FROM || 'StoreMap <onboarding@resend.dev>',
   // Local/demo login without OAuth credentials. Never available in production
   // unless explicitly enabled.
   devLogin: env.ENABLE_DEV_LOGIN === 'true' || (!isProd && env.ENABLE_DEV_LOGIN !== 'false'),
@@ -71,6 +79,9 @@ export function providersConfigured() {
   return {
     google: Boolean(config.google.clientId && config.google.clientSecret),
     apple: Boolean(config.apple.clientId && config.apple.teamId && config.apple.keyId && config.apple.privateKey),
+    facebook: Boolean(config.facebook.appId && config.facebook.appSecret),
+    // email codes always work — no key needed (local mode surfaces the code)
+    email: true,
     dev: config.devLogin,
   };
 }

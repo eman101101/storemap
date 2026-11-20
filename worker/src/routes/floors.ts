@@ -122,6 +122,9 @@ async function maybeSnapshot(env: Env, floorId: string, rows: { id: string; row:
   if (last && Date.now() - Number(last.created_at_ms) < SNAP_MIN_INTERVAL_MS) return;
   const elements = rows.map(({ id, row }) => ({
     id,
+    // floor_id must be in the stored rows — restores re-inflate elements
+    // straight from this JSON and the editor filters by floor_id
+    floor_id: floorId,
     type: row.type,
     shape: row.shape,
     geometry: row.geometry,

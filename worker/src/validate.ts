@@ -66,6 +66,18 @@ export function validateElement(input: any): ElementRow | null {
     geo = geo.map((p: number[]) => [+p[0].toFixed(3), +p[1].toFixed(3)]);
   }
   const color = typeof input.color === 'string' && HEX.test(input.color) ? input.color : '';
+  // meta arrives as a JSON object or a JSON string (the editor sends the
+  // string form) — anything else stays '{}'
+  let meta = '{}';
+  if (input.meta && typeof input.meta === 'object') meta = JSON.stringify(input.meta).slice(0, 2000);
+  else if (typeof input.meta === 'string' && input.meta) {
+    try {
+      const parsed = JSON.parse(input.meta);
+      if (parsed && typeof parsed === 'object') meta = JSON.stringify(parsed).slice(0, 2000);
+    } catch {
+      meta = '{}';
+    }
+  }
   return {
     id: typeof input.id === 'string' && input.id.length <= 64 ? input.id : undefined,
     type,
@@ -73,7 +85,7 @@ export function validateElement(input: any): ElementRow | null {
     geometry: JSON.stringify(geo),
     label: (str(input.label, { max: 80 }) as string) ?? '',
     color,
-    meta: input.meta && typeof input.meta === 'object' ? JSON.stringify(input.meta).slice(0, 2000) : '{}',
+    meta,
     z_index: Number.isFinite(input.z_index) ? Math.trunc(input.z_index) : 0,
   };
 }

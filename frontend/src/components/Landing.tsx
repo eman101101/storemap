@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import Map3D from './Map3D';
 import GridHero, { BlockText } from './GridHero';
-import { PlanogramSvg, type ShelfSide } from './ShelfDetail';
+import { PlanogramSvg } from './ShelfDetail';
 import { compactFilledLayout, computeShelfLayout, type ShelfLayout, type ShelfSlot } from '../lib/shelfLayout';
 import { useAuth } from '../App';
 import type { MapElement, Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
@@ -204,11 +204,7 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
 }
 
 function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
-  const [side, setSide] = useState<ShelfSide>('front');
-  const bothSides =
-    layout.bays.some((b) => b.slots.some((s) => s.side === 'front')) &&
-    layout.bays.some((b) => b.slots.some((s) => s.side === 'back'));
-  const slots = layout.bays.flatMap((b) => b.slots).filter((s) => !bothSides || s.side === side);
+  const slots = layout.bays.flatMap((b) => b.slots);
   const filled = useMemo(() => compactFilledLayout(layout, slots), [layout, slots]);
   const shown = filled.bays.reduce((n, b) => n + b.slots.length, 0);
   const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_url));
@@ -217,22 +213,6 @@ function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
     <div className="planogram-card">
       <div className="planogram-card-head">
         <b>{label} — shelf planogram</b>
-        {bothSides && (
-          <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Shelf side">
-            {(['front', 'back'] as const).map((sd) => (
-              <button
-                key={sd}
-                type="button"
-                className="btn sm"
-                aria-pressed={side === sd}
-                style={side === sd ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
-                onClick={() => setSide(sd)}
-              >
-                {sd === 'front' ? 'Side A' : 'Side B'}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       <div className="planogram-scroll">
         <PlanogramSvg layout={filled} mode={hasImages ? 'photos' : 'diagram'} />

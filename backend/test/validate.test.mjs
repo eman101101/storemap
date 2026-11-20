@@ -12,6 +12,26 @@ test('valid rect shelf normalises rotation into [0,360)', () => {
   assert.equal(row.color, '#aabbcc');
 });
 
+test('element meta survives as a JSON string (the editor\'s form)', () => {
+  // the editor autosaves rows whose meta is a JSON STRING — it used to be
+  // wiped to '{}' here, silently dropping locks + planogram options
+  const row = validateElement({
+    type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 2, h: 0.55, rot: 0 },
+    meta: JSON.stringify({ locked: true, planWidth: 13.3, levels: 4 }),
+  });
+  assert.ok(row);
+  const meta = JSON.parse(row.meta);
+  assert.equal(meta.locked, true);
+  assert.equal(meta.planWidth, 13.3);
+  assert.equal(meta.levels, 4);
+  // object form works too
+  const objRow = validateElement({ type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 1, h: 1, rot: 0 }, meta: { bays: 3 } });
+  assert.equal(JSON.parse(objRow.meta).bays, 3);
+  // unparseable meta falls back to '{}'
+  const junkRow = validateElement({ type: 'shelf', shape: 'rect', geometry: { x: 0, y: 0, w: 1, h: 1, rot: 0 }, meta: 'not-json' });
+  assert.equal(junkRow.meta, '{}');
+});
+
 test('negative rotation wraps', () => {
   const geo = JSON.parse(validateElement({ type: 'wall', shape: 'rect', geometry: { x: 0, y: 0, w: 1, h: 1, rot: -90 } }).geometry);
   assert.equal(geo.rot, 270);

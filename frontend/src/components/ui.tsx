@@ -65,6 +65,13 @@ export const GOOGLE_G = (
   </svg>
 );
 
+/** Facebook "f" glyph (brand blue circle-less, matches the other logos' size). */
+export const FACEBOOK_F = (
+  <svg width="17" height="17" viewBox="0 0 36 36" aria-hidden>
+    <path fill="#1877F2" d="M24 12.6h-3.1c-.5 0-.9.4-.9 1v2.2H24l-.6 4.5h-3.4V36h-4.7V20.3H12v-4.5h3.3v-2.9c0-3.5 2.1-5.9 5.6-5.9H24v5.6z" />
+  </svg>
+);
+
 /**
  * In-app device camera: a live preview via getUserMedia and a Capture button
  * that hands back a JPEG File. Works on desktop webcams and phone cameras
@@ -163,6 +170,36 @@ export const CAMERA_ICON = (
   </svg>
 );
 
+/** Camera with a slash through it — the "controls hidden" toggle state. */
+export const CAMERA_OFF_ICON = (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M23 7l-7 5 7 5V7z" />
+    <rect x="1" y="5" width="15" height="14" rx="2" />
+    <line x1="2" y1="22" x2="22" y2="2" />
+  </svg>
+);
+
+/**
+ * The struck-through camera shown while the camera pad is hidden. One tap
+ * reveals the pad (CameraPad with onClose); the pad's centre camera glyph
+ * hides it again.
+ */
+export function CameraToggle({ onOpen, className = '' }: { onOpen: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      className={`cam-toggle ${className}`}
+      onClick={onOpen}
+      title="Show camera controls"
+      aria-label="Show camera controls"
+      aria-pressed={false}
+    >
+      {CAMERA_OFF_ICON}
+    </button>
+  );
+}
+
 /** Triangular pan arrow for the camera pad (points up; rotated per direction). */
 function PanArrow({ dir }: { dir: 'up' | 'down' | 'left' | 'right' }) {
   const rot = { up: 0, right: 90, down: 180, left: 270 }[dir];
@@ -184,10 +221,12 @@ function PanArrow({ dir }: { dir: 'up' | 'down' | 'left' | 'right' }) {
  * total distance of one tap.
  */
 export function CameraPad({
-  onMove, className = '',
+  onMove, onClose, className = '',
 }: {
   /** dirX/dirY pan direction (-1..1), zoom +1 in / -1 out; dt is the eased progress chunk for this frame. */
   onMove: (dirX: number, dirY: number, zoom: number, dt: number) => void;
+  /** When set, the centre camera glyph becomes the hide-this-pad toggle. */
+  onClose?: () => void;
   className?: string;
 }) {
   const TAP_MS = 450;
@@ -245,9 +284,16 @@ export function CameraPad({
       {btn('Pan camera up', <PanArrow dir="up" />, () => tap(0, 1, 0), 'up')}
       <span aria-hidden />
       {btn('Pan camera left', <PanArrow dir="left" />, () => tap(-1, 0, 0), 'left')}
-      <span className="cam-mid" aria-hidden>
-        {CAMERA_ICON}
-      </span>
+      {onClose ? (
+        <button type="button" className="cam-mid" title="Hide camera controls" aria-label="Hide camera controls"
+          aria-pressed={true} onClick={onClose}>
+          {CAMERA_ICON}
+        </button>
+      ) : (
+        <span className="cam-mid" aria-hidden>
+          {CAMERA_ICON}
+        </span>
+      )}
       {btn('Pan camera right', <PanArrow dir="right" />, () => tap(1, 0, 0), 'right')}
       <span aria-hidden />
       {btn('Pan camera down', <PanArrow dir="down" />, () => tap(0, -1, 0), 'down')}

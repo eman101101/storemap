@@ -5,7 +5,7 @@ import MapCanvas from './MapCanvas';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
 import { BlockText } from './GridHero';
-import { CameraPad, ZoomPad } from './ui';
+import { CameraPad, CameraToggle, ZoomPad } from './ui';
 import type {
   Floor, MapElement, Product, ProductLocation, PublicStorePayload,
 } from '../types';
@@ -50,6 +50,8 @@ export default function ViewerPage() {
   const [shelfPopupId, setShelfPopupId] = useState<string | null>(null);
   // search-result photos: off by default — the 🖼 chip turns them on
   const [showResultImages, setShowResultImages] = useState(false);
+  // the 3D camera pad starts hidden behind the struck-through camera toggle
+  const [camPadOpen, setCamPadOpen] = useState(false);
   const [view3d, setView3d] = useState(() => {
     try {
       return localStorage.getItem('storemap.view') !== '2d'; // default 3D
@@ -461,7 +463,11 @@ export default function ViewerPage() {
             zoomCommand={zoomCmd ?? undefined}
           />
         )}
-        {view3d && <CameraPad onMove={cam3dMove} />}
+        {view3d && (camPadOpen ? (
+          <CameraPad onMove={cam3dMove} onClose={() => setCamPadOpen(false)} />
+        ) : (
+          <CameraToggle onOpen={() => setCamPadOpen(true)} />
+        ))}
         <ZoomPad onZoom={(dir) => setZoomCmd({ k: dir > 0 ? 1.3 : 0.77, seq: (zoomCmd?.seq ?? 0) + 1 })} />
 
         <div className="viewer-ui-top">

@@ -20,7 +20,7 @@ interface AuthCtx extends AuthInfo {
   refresh: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthCtx>({ user: null, providers: { google: false, apple: false, dev: false }, loading: true, refresh: async () => {} });
+const AuthContext = createContext<AuthCtx>({ user: null, providers: { google: false, apple: false, facebook: false, email: true, dev: false }, loading: true, refresh: async () => {} });
 export const useAuth = () => useContext(AuthContext);
 
 interface LoginModalCtrl {
@@ -31,7 +31,7 @@ const LoginModalContext = createContext<LoginModalCtrl>({ openLogin: () => {} })
 export const useLoginModal = () => useContext(LoginModalContext);
 
 export default function App() {
-  const [auth, setAuth] = useState<AuthInfo>({ user: null, providers: { google: false, apple: false, dev: false } });
+  const [auth, setAuth] = useState<AuthInfo>({ user: null, providers: { google: false, apple: false, facebook: false, email: true, dev: false } });
   const [loading, setLoading] = useState(true);
   const [login, setLogin] = useState<{ open: boolean; next?: string; error?: string }>({ open: false });
   const openLogin = (next?: string, error?: string) => setLogin({ open: true, next, error });

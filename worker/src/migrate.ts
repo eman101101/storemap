@@ -8,7 +8,7 @@ import { all, count, first, run } from './db';
 import { randomToken } from './util';
 import { seedDemoMaps } from './seed';
 
-const MIGRATIONS: { name: string; sql: string }[] = [
+const MIGRATIONS: { name: string; sql: string; batch?: boolean }[] = [
   {
     name: '001_initial_schema',
     sql: `
@@ -252,6 +252,43 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         ON products(store_id, sku) WHERE sku IS NOT NULL AND sku != '';
     `,
   },
+  {
+    // Sign in with email (magic codes) + Facebook: widen users.provider. A
+    // CHECK can't be ALTERed in SQLite — rebuild the table with FKs OFF so
+    // the DROP's implicit delete can't cascade into stores/store_members
+    // (verified against remote D1: with FKs on, the naive rebuild wipes
+    // stores). Runs as ONE batch: pragma state does not survive separate
+    // D1 statements.
+    batch: true,
+    name: '011-auth-email-facebook',
+    sql: `
+      PRAGMA foreign_keys=OFF;
+      CREATE TABLE IF NOT EXISTS users_rebuild (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL DEFAULT '',
+        avatar_url TEXT NOT NULL DEFAULT '',
+        provider TEXT NOT NULL CHECK (provider IN ('google','apple','dev','email','facebook')),
+        provider_sub TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users_rebuild (id, email, name, avatar_url, provider, provider_sub, created_at)
+        SELECT id, email, name, avatar_url, provider, provider_sub, created_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_rebuild RENAME TO users;
+      PRAGMA foreign_keys=ON;
+
+      CREATE TABLE IF NOT EXISTS login_tokens (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email);
+    `,
+  },
 ];
 
 /**
@@ -295,9 +332,16 @@ export async function migrate(env: Env): Promise<void> {
       if (applied.has(m.name)) continue;
       // ALTER TABLE can't run inside a D1 batch with other DDL; statements run
       // one by one — each migration is idempotent via IF NOT EXISTS / its guard.
+      // EXCEPT migrations flagged `batch`: they need pragma state (e.g.
+      // foreign_keys=OFF around a table rebuild) to hold across statements,
+      // which only survives within a single batch/transaction.
       try {
-        for (const statement of splitStatements(m.sql)) {
-          await run(env, statement);
+        if (m.batch) {
+          await env.DB.batch(splitStatements(m.sql).map((s) => env.DB.prepare(s)));
+        } else {
+          for (const statement of splitStatements(m.sql)) {
+            await run(env, statement);
+          }
         }
       } catch (err) {
         // 004/005 ALTERs fail if another cold start applied them first — accept.

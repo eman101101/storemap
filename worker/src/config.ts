@@ -16,6 +16,10 @@ export interface Env {
   APPLE_TEAM_ID?: string;
   APPLE_KEY_ID?: string;
   APPLE_PRIVATE_KEY?: string;
+  FACEBOOK_APP_ID?: string;
+  FACEBOOK_APP_SECRET?: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   R2_DAILY_BUDGET?: string;
@@ -33,6 +37,11 @@ export interface Config {
   maxUploadBytes: number;
   google: { clientId: string; clientSecret: string };
   apple: { clientId: string; teamId: string; keyId: string; privateKey: string };
+  facebook: { appId: string; appSecret: string };
+  // passwordless email codes: Resend-delivered when the key is set, otherwise
+  // the code is returned to the login UI (local mode)
+  resendApiKey: string;
+  emailFrom: string;
 }
 
 /** Shared Hono generics: every sub-app sees the same bindings + variables. */
@@ -63,6 +72,12 @@ export function makeConfig(env: Env, origin: string): Config {
       keyId: env.APPLE_KEY_ID || '',
       privateKey: (env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     },
+    facebook: {
+      appId: env.FACEBOOK_APP_ID || '',
+      appSecret: env.FACEBOOK_APP_SECRET || '',
+    },
+    resendApiKey: env.RESEND_API_KEY || '',
+    emailFrom: env.EMAIL_FROM || 'StoreMap <onboarding@resend.dev>',
   };
 }
 
@@ -70,6 +85,9 @@ export function providersConfigured(config: Config) {
   return {
     google: Boolean(config.google.clientId && config.google.clientSecret),
     apple: Boolean(config.apple.clientId && config.apple.teamId && config.apple.keyId && config.apple.privateKey),
+    facebook: Boolean(config.facebook.appId && config.facebook.appSecret),
+    // email codes always work — no key needed (local mode surfaces the code)
+    email: true,
     dev: config.devLogin,
   };
 }

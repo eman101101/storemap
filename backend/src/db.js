@@ -251,6 +251,40 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_invitations_store ON invitations(store_id);
     `,
   },
+  {
+    // Sign in with email (magic codes) + Facebook: widen users.provider. A
+    // CHECK can't be ALTERed in SQLite — rebuild the table with FKs OFF so
+    // the DROP's implicit delete can't cascade into stores/store_members.
+    // The pragma is a no-op inside a transaction, so migrate() runs it
+    // before BEGIN and restores FKs after COMMIT.
+    pragma: 'PRAGMA foreign_keys = OFF;',
+    name: '008-auth-email-facebook',
+    sql: `
+      CREATE TABLE IF NOT EXISTS users_rebuild (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL DEFAULT '',
+        avatar_url TEXT NOT NULL DEFAULT '',
+        provider TEXT NOT NULL CHECK (provider IN ('google','apple','dev','email','facebook')),
+        provider_sub TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users_rebuild (id, email, name, avatar_url, provider, provider_sub, created_at)
+        SELECT id, email, name, avatar_url, provider, provider_sub, created_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_rebuild RENAME TO users;
+
+      CREATE TABLE IF NOT EXISTS login_tokens (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email);
+    `,
+  },
 ];
 
 export function migrate() {
@@ -262,6 +296,9 @@ export function migrate() {
   const applied = new Set(db.prepare('SELECT name FROM migrations').all().map((r) => r.name));
   for (const m of MIGRATIONS) {
     if (applied.has(m.name)) continue;
+    // optional per-migration pragma (e.g. FKs off for a table rebuild) —
+    // pragmas are no-ops inside a transaction, so they run before BEGIN
+    if (m.pragma) db.exec(m.pragma);
     db.exec('BEGIN');
     try {
       db.exec(m.sql);
@@ -270,6 +307,8 @@ export function migrate() {
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
+    } finally {
+      if (m.pragma) db.exec('PRAGMA foreign_keys = ON;');
     }
   }
 }

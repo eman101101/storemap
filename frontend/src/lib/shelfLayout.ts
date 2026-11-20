@@ -22,8 +22,6 @@ export interface ShelfSlot {
   level: number;
   /** horizontal metres the facing occupies (for drawing) */
   facingWidth: number;
-  /** which face of the shelf the pin sits on (front = local y in the near half) */
-  side: 'front' | 'back';
 }
 
 export interface ShelfBay {
@@ -45,7 +43,7 @@ export interface ShelfLayout {
   /** pins belonging to this shelf's floor but geometrically outside the shelf */
   outside: ShelfPin[];
   /** meta the layout was built from */
-  meta: { bays: number; levels: number };
+  meta: { bays: number; levels: number; planWidth: number; planDepth: number };
 }
 
 const DEFAULT_BAY_WIDTH = 1.25; // metres of shelf per bay
@@ -60,7 +58,7 @@ export const DEFAULT_ITEM_W = 0.2;
 const MIN_ITEM = 0.05;
 const MAX_ITEM = 1.2;
 
-function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number; height?: number; itemH?: number; itemW?: number } {
+function shelfMeta(el: MapElement): { bays?: number; levels?: number; facing?: number; height?: number; itemH?: number; itemW?: number; planWidth?: number; planDepth?: number } {
   try {
     const m = JSON.parse(el.meta || '{}');
     return typeof m === 'object' && m !== null ? m : {};
@@ -125,6 +123,18 @@ export function worldToShelfLocal(r: RectGeom, p: { x: number; y: number }): { x
   };
 }
 
+/** Rotate a local shelf point (metres from the rect's top-left corner) back to world space. */
+export function shelfLocalToWorld(r: RectGeom, lx: number, ly: number): { x: number; y: number } {
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const a = (r.rot * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const dx = lx - r.w / 2;
+  const dy = ly - r.h / 2;
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+}
+
 /** Does a pin sit inside this (rotated) rect shelf, within a small tolerance? */
 export function pinInShelf(shelf: MapElement, pin: ShelfPin, tol = 0.35): boolean {
   if (shelf.shape !== 'rect') return false;
@@ -143,8 +153,13 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
   const r = shelf.geom as RectGeom;
   const meta = shelfMeta(shelf);
 
-  const width = Math.max(r.w, 0.1);
-  const depth = Math.max(r.h, 0.1);
+  // The planogram's length/depth are planogram-only options (meta.planWidth /
+  // meta.planDepth) — they never touch the shelf's footprint on the map. The
+  // physical rect width is what pins are positioned against; the planogram
+  // drawing can be wider or narrower than it.
+  const physWidth = Math.max(r.w, 0.1);
+  const width = clampNum(meta.planWidth, 0.3, 60) ?? physWidth;
+  const depth = clampNum(meta.planDepth, 0.1, 20) ?? Math.max(r.h, 0.1);
   const bayCount = clampInt(meta.bays, 1, 40) ?? Math.max(1, Math.round(width / DEFAULT_BAY_WIDTH));
   const levelCount = shelfLevels(shelf);
   const facing = clampNum(meta.facing, 0.05, 3) ?? DEFAULT_FACING;
@@ -155,22 +170,18 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
 
   const slots: ShelfSlot[] = inside.map(({ location, product }) => {
     const local = worldToShelfLocal(r, location);
-    // Deep shelves: a pin's local y maps to a level; shallow shelves: one level.
+    // One shelf face: the persisted planogram row wins; unpinned rows sit on
+    // the bottom board.
     const level =
-      clampInt((location.meta && safeParse(location.meta).shelf_level) as number, 1, levelCount) ??
-      (depth > levelCount * 0.35
-        ? Math.min(levelCount, Math.max(1, levelCount - Math.floor((local.y / depth) * levelCount)))
-        : 1);
+      clampInt((location.meta && safeParse(location.meta).shelf_level) as number, 1, levelCount) ?? 1;
     return {
       product,
       locationId: location.id,
-      u: Math.min(1, Math.max(0, local.x / width)),
+      u: Math.min(1, Math.max(0, local.x / physWidth)),
       level,
       // per-item width (meta.w, set in the planogram editor) wins over the
       // shelf-wide default
       facingWidth: clampNum((location.meta && safeParse(location.meta).w) as number, 0.05, 3) ?? facing,
-      // which face of the shelf the pin sits on (aisle shelves stock both)
-      side: local.y * 2 <= depth ? 'front' : 'back',
     };
   });
 
@@ -194,7 +205,7 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
     levels: levelCount,
     bays,
     outside,
-    meta: { bays: bayCount, levels: levelCount },
+    meta: { bays: bayCount, levels: levelCount, planWidth: width, planDepth: depth },
   };
 }
 
