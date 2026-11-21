@@ -13,4 +13,4 @@ export function groupPrice(name: string, index: number): number {
 }
 
 /** Default facing width (m) used when a group fills a shelf. */
-export const GROUP_FACING_W = 0.32;
+export const GROUP_FACING_W = 1;

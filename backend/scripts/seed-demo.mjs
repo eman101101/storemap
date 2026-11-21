@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 /**
- * Seeds the demo store ("Freshmart Downtown") with a realistic supermarket:
- * perimeter walls with stocked wall shelving around most of the border, a checkout
- * area by the entrance, and central double-sided gondola pairs facing each other
- * across aisles — like a real grocery store. 150 products pinned to the shelf
- * faces (the wall each item is stocked against).
+ * Seeds the demo store ("Freshmart Downtown"): a long single-sided supermarket —
+ * 100 groups in two double-sided rows running the length of a 340 m floor,
+ * 2000 items across 10 departments, one facing per item.
  *
  *   node scripts/seed-demo.mjs            # idempotent — skips if already seeded
  *   node scripts/seed-demo.mjs --reset    # wipe the demo store and rebuild
@@ -25,8 +23,8 @@ migrate();
 
 const reset = process.argv.includes('--reset');
 const tiny = process.argv.includes('--tiny') || process.argv.includes('--profile=tiny');
-const W = 54; // floor size, meters
-const H = 36;
+const W = 120; // floor — the 60′×40′ convenience footprint at 2× (1.5:1)
+const H = 80;
 
 let store = db.prepare("SELECT id FROM stores WHERE slug = 'freshmart-downtown'").get();
 if (!store) {
@@ -43,7 +41,7 @@ if (!store) {
   db.prepare(
     `INSERT INTO stores (id, owner_id, name, slug, address, description, hours, is_public)
      VALUES (?, ?, 'Freshmart Downtown', 'freshmart-downtown', '44 Market St',
-             'Flagship demo: a full supermarket — perimeter shelving, a checkout area and central aisle pairs.',
+             'Convenience-store plan: cold storage, office, break room, 8-door cooler, four centre rows, roller grill, coffee bar and wall shelving — 100 groups, 2000 items.',
              '7am-11pm daily', 1)`
   ).run(sid, owner.id);
   db.prepare('INSERT INTO floors (id, store_id, name, level, width_m, height_m) VALUES (?, ?, ?, 1, ?, ?)').run(
@@ -54,6 +52,7 @@ if (!store) {
 }
 let floor = db.prepare('SELECT id, width_m, height_m FROM floors WHERE store_id = ? ORDER BY level LIMIT 1').get(store.id);
 const shelfCount = db.prepare("SELECT COUNT(*) AS n FROM map_elements WHERE floor_id = ? AND type = 'shelf'").get(floor.id).n;
+const productCount = db.prepare('SELECT COUNT(*) AS n FROM products WHERE store_id = ?').get(store.id).n;
 
 if (reset) {
   db.prepare('DELETE FROM product_locations WHERE floor_id = ?').run(floor.id);
@@ -62,91 +61,127 @@ if (reset) {
   db.prepare('DELETE FROM map_elements WHERE floor_id = ?').run(floor.id);
   db.prepare('UPDATE floors SET width_m = ?, height_m = ? WHERE id = ?').run(W, H, floor.id);
   console.log(`Reset demo store — rebuilding at ${W}×${H} m.`);
-} else if (shelfCount >= 6 && Math.abs(floor.width_m - W) < 0.01) {
+} else if (shelfCount >= 6 && productCount > 0 && Math.abs(floor.width_m - W) < 0.01) {
   console.log('Demo layout already present — skipping (use --reset to rebuild).');
+} else if (shelfCount >= 6) {
+  // spec changed (floor size mismatch): wipe and rebuild like --reset
+  db.prepare('DELETE FROM product_locations WHERE floor_id = ?').run(floor.id);
+  db.prepare('DELETE FROM products WHERE store_id = ?').run(store.id);
+  db.prepare('DELETE FROM categories WHERE store_id = ?').run(store.id);
+  db.prepare('DELETE FROM map_elements WHERE floor_id = ?').run(floor.id);
+  db.prepare('UPDATE floors SET width_m = ?, height_m = ? WHERE id = ?').run(W, H, floor.id);
+  console.log(`Freshmart spec changed — rebuilding at ${W}×${H} m.`);
 }
 // labeled block: "already present" skips only the Freshmart rebuild — the
 // Annex Market section further down still runs
 freshmart: {
-if (!reset && shelfCount >= 6 && Math.abs(floor.width_m - W) < 0.01) break freshmart;
+if (!reset && shelfCount >= 6 && productCount > 0 && Math.abs(floor.width_m - W) < 0.01) break freshmart;
 floor = db.prepare('SELECT id FROM floors WHERE store_id = ? ORDER BY level LIMIT 1').get(store.id);
 
 const insEl = db.prepare(
-  "INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)"
+  "INSERT INTO map_elements (id, floor_id, type, shape, geometry, label, color, meta, z_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 );
 let z = 1;
-const rect = (type, x, y, w, h, label = '') =>
-  insEl.run(randomUUID(), floor.id, type, 'rect', JSON.stringify({ x, y, w, h, rot: 0 }), label, '', z++);
+const rect = (type, x, y, w, h, label = '', meta = '{}') =>
+  insEl.run(randomUUID(), floor.id, type, 'rect', JSON.stringify({ x, y, w, h, rot: 0 }), label, '', meta, z++);
 const point = (type, x, y, label = '') =>
-  insEl.run(randomUUID(), floor.id, type, 'point', JSON.stringify({ x, y }), label, '', z++);
-
-/* ---------- structure: walls, entrance, checkout, POIs ---------- */
-
-rect('wall', 0, 0, W, 0.4);
-rect('wall', 0, H - 0.4, W, 0.4);
-rect('wall', 0, 0, 0.4, H);
-rect('wall', W - 0.4, 0, 0.4, H);
-
-point('entrance', 27, H - 0.9, 'Entrance');
-point('exit', 31, H - 0.9, 'Exit');
-
-rect('zone', 20, 29.6, 14, 3.2, 'Checkout'); // counters are labeled individually
-rect('zone', 2, 2.2, 12, 2.8, 'Bakery'); // baked goods line the north wall here
-for (let i = 0; i < 4; i++) rect('shelf', 21.3 + i * 3.4, 30.3, 2.3, 1.3, `Checkout ${i + 1}`);
-
-point('poi', 48.5, 33.2, 'Customer service');
-point('poi', 2.2, 28.5, 'Restrooms');
-point('poi', 24.5, H - 2.4, 'Cart line');
-point('poi', W - 2.4, H - 2.2, 'Propane exchange');
-
-/* ---------- shelves: stocked border + central facing aisle pairs ---------- */
-
-// wall shelving around most of the border (inner faces hold products).
-// 0.15 m gap from the wall: keeps faces coplanar-free so the 3D depth sort
-// never ties a shelf face against the wall face behind it.
-rect('shelf', 0.55, 2, 1.1, 31.35, 'West wall');
-rect('shelf', 2, 0.55, W - 4.15, 1.1, 'North wall');
-rect('shelf', W - 1.65, 2, 1.1, 31.35, 'East wall');
-rect('shelf', 2, H - 1.65, 17, 1.1, 'South wall');
-rect('shelf', 35, H - 1.65, 17, 1.1, 'South wall');
-
-// central gondola pairs: two rows facing each other across a 1.5 m aisle
-const SEGMENTS = [
-  [6, 19],
-  [28, 19],
-]; // [x, length]
-const faces = []; // product stocking lines: {axis:'h'|'v', line, from, to}
-for (let p = 0; p < 4; p++) {
-  const y0 = 6 + p * 6;
-  const label = `Aisle ${p + 1}`;
-  for (const [x0, len] of SEGMENTS) {
-    rect('shelf', x0, y0, len, 0.7, label); // row A — its north + south faces
-    rect('shelf', x0, y0 + 2.2, len, 0.7, label); // row B — faces the aisle
-    faces.push({ axis: 'h', line: y0, from: x0 + 0.4, to: x0 + len - 0.4 });
-    faces.push({ axis: 'h', line: y0 + 0.7, from: x0 + 0.4, to: x0 + len - 0.4 });
-    faces.push({ axis: 'h', line: y0 + 2.2, from: x0 + 0.4, to: x0 + len - 0.4 });
-    faces.push({ axis: 'h', line: y0 + 2.9, from: x0 + 0.4, to: x0 + len - 0.4 });
-  }
-}
-// aisle label strips in the walkway between each facing pair — the dominant
-// categories stocked along that aisle (matches the pin order below)
-const AISLE_TAGS = ['Dairy', 'Produce · Beverages', 'Snacks · Bakery', 'Frozen · Household'];
+  insEl.run(randomUUID(), floor.id, type, 'point', JSON.stringify({ x, y }), label, '', '{}', z++);
 const poly = (type, pts, label = '') =>
-  insEl.run(randomUUID(), floor.id, type, 'polyline', JSON.stringify(pts), label, '', z++);
-for (let p = 0; p < 4; p++) {
-  const y0 = 6 + p * 6;
-  for (const [x0, len] of SEGMENTS) {
-    poly('aisle', [[x0, y0 + 1.45], [x0 + len, y0 + 1.45]], AISLE_TAGS[p] ?? `Aisle ${p + 1}`);
+  insEl.run(randomUUID(), floor.id, type, 'polyline', JSON.stringify(pts), label, '', '{}', z++);
+
+/* ---------- perimeter (vestibule notch at the bottom entrance) ---------- */
+
+poly('wall', [[1, 1], [119, 1], [119, 79], [70, 79], [70, 74], [50, 74], [50, 79], [1, 79], [1, 1]], 'Outer walls');
+point('entrance', 60, 76.5, 'Entrance');
+point('exit', 66, 78.5, 'Exit');
+
+/* ---------- back rooms: cold storage, office, break / cleaning ---------- */
+
+rect('zone', 25, 2, 62, 12, 'Cold Storage');
+poly('wall', [[24, 1], [24, 15], [60, 15]], 'Cold Storage');
+poly('wall', [[70, 15], [88, 15]], 'Cold Storage');
+rect('zone', 2, 2, 15, 19, 'Office');
+poly('wall', [[18, 1], [18, 22], [10, 22]], 'Office');
+rect('zone', 101, 2, 18, 21, 'Break / Cleaning');
+poly('wall', [[100, 1], [100, 24]], 'Break / Cleaning');
+poly('wall', [[106, 24], [119, 24]], 'Break / Cleaning');
+point('poi', 33, 16.8, 'Restrooms');
+
+/* ---------- fixtures: every shelf is one group (100 total) --------------
+   label + department badge read like the plan; pool = product department */
+
+const FIXTURES = [];
+const fx = (label, pool, x, y, w, h) => FIXTURES.push({ label, pool, x, y, w, h });
+
+fx('8 Door Cooler', 'Dairy', 32, 16.5, 56, 2.4);
+// left wall (top → bottom)
+fx('Beer', 'Beverages', 2, 24, 2.4, 8);
+fx('Frozen Goods', 'Frozen', 2, 33, 2.4, 10);
+fx('Ice', 'Frozen', 2, 44, 2.4, 8);
+fx('Household', 'Household', 2, 53, 2.4, 14);
+// right wall (top → bottom)
+fx('Sandwiches', 'Bakery', 115.6, 24, 2.4, 8);
+fx('Soft Drinks', 'Beverages', 115.6, 34, 2.4, 6);
+fx('Soft Drinks', 'Beverages', 115.6, 42, 2.4, 6);
+fx('Frozen Beverages', 'Frozen', 115.6, 50, 2.4, 10);
+// centre-right service column
+fx('Roller Grill', 'Snacks', 70, 28, 4, 10);
+fx('Hot Food', 'Meat & Seafood', 70, 39, 4, 5);
+fx('POS', 'Snacks', 70, 45, 4, 4);
+fx('Tobacco Products', 'Home & DIY', 88, 28, 3, 30);
+fx('Condiments', 'Home & DIY', 80, 25.5, 6, 2);
+fx('Magazines', 'Home & DIY', 70, 58, 14, 2);
+fx('Coffee Bar', 'Beverages', 94, 40, 10, 14);
+// bottom strip
+fx('ATM', 'Snacks', 3, 74, 2, 2);
+fx('Lotto', 'Snacks', 10, 74, 2.4, 2);
+fx('Seasonal', 'Produce', 22, 74.5, 14, 2);
+fx('News', 'Household', 42, 74.5, 8, 2);
+
+// four centre rows (the plan's four double-sided gondolas), 10 segments each
+const ROWS = [
+  { y: 33, a: 'Specials', b: 'Dry Goods', pa: 'Snacks', pb: 'Bakery' },
+  { y: 41, a: 'Breakfast', b: 'Chips', pa: 'Bakery', pb: 'Snacks' },
+  { y: 49, a: 'Jerky & Nuts', b: 'Candy', pa: 'Snacks', pb: 'Snacks' },
+  { y: 57, a: 'Medical / Health', b: 'Automotive', pa: 'Health & Beauty', pb: 'Home & DIY' },
+];
+for (const { y, a, b, pa, pb } of ROWS) {
+  for (let s = 0; s < 10; s++) {
+    const x0 = 20 + s * 3.4;
+    if (s % 2 === 0) {
+      fx(a, pa, x0, y, 3.2, 0.8);
+      fx(b, pb, x0, y + 0.9, 3.2, 0.8);
+    } else {
+      fx(b, pb, x0, y, 3.2, 0.8);
+      fx(a, pa, x0, y + 0.9, 3.2, 0.8);
+    }
   }
 }
-// border stocking lines (inner faces of the wall shelving)
-faces.push({ axis: 'v', line: 1.65, from: 2.6, to: H - 2.9 });
-faces.push({ axis: 'h', line: 1.65, from: 2.6, to: W - 2.6 });
-faces.push({ axis: 'v', line: W - 1.65, from: 2.6, to: H - 2.9 });
-faces.push({ axis: 'h', line: H - 1.65, from: 2.6, to: 18.8 });
-faces.push({ axis: 'h', line: H - 1.65, from: 35.2, to: W - 2.6 });
 
-/* ---------- categories & 150 products pinned to the shelf faces ---------- */
+for (const f of FIXTURES) {
+  rect('shelf', f.x, f.y, f.w, f.h, f.label, JSON.stringify({ department: f.label }));
+}
+// aisle ribbons down the two main walkways (left block + service column)
+poly('aisle', [[20, 37.2], [54, 37.2]], 'Aisles 1–40 · centre rows');
+poly('aisle', [[20, 45.2], [54, 45.2]], 'Aisles 41–80 · centre rows');
+point('poi', 33, 22.5, 'Cart line');
+
+const FM_DEPTS = [
+  ['Dairy', '#3b6fd4', '🥛', ['Organic Whole Milk 1L', 'Semi-Skimmed Milk 2L', 'Oat Drink Barista 1L', 'Greek Yogurt 500g', 'Natural Yogurt 4-pack', 'Strawberry Yogurt 6-pack', 'Kefir 1L', 'Salted Butter 250g', 'Unsalted Butter 250g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Mozzarella Ball 125g', 'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Cottage Cheese 250g', 'Double Cream 500ml', 'Crème Fraîche 250ml', 'Brie Wheel 200g', 'Gouda Slices 200g', 'Lactose-Free Milk 1L']],
+  ['Produce', '#2f9e44', '🥬', ['Bananas (bunch)', 'Fuji Apples 4-pack', 'Granny Smith Apples 6-pack', 'Navel Oranges 2kg Bag', 'Clementines 1kg', 'Lemons 4-pack', 'Strawberries 400g', 'Blueberries 150g', 'Raspberries 150g', 'Seedless Grapes 500g', 'Avocados (2-pack)', 'Baby Spinach 120g', 'Rocket Salad 100g', 'Roma Tomatoes 500g', 'Cherry Tomatoes 250g', 'Cucumbers (3-pack)', 'Red Bell Peppers (3-pack)', 'Broccoli Head', 'Carrots 1kg Bag', 'Russet Potatoes 2kg Bag']],
+  ['Beverages', '#e4572e', '🧃', ['Orange Juice 1L', 'Apple Juice 1L', 'Sparkling Water 6×500ml', 'Still Water 6×1.5L', 'Cola 2L', 'Lemon-Lime Soda 2L', 'Ginger Beer 4-pack', 'Iced Tea Lemon 1.5L', 'Cold Brew Coffee 1L', 'Ground Coffee 500g', 'Espresso Beans 1kg', 'Green Tea 40 Bags', 'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Energy Drink 4-pack', 'Tonic Water 6-pack', 'Almond Milk 1L', 'Coconut Water 1L', 'Sparkling Lemonade 750ml', 'Green Smoothie 400ml']],
+  ['Snacks', '#d4a017', '🍿', ['Sea Salt Crisps 150g', 'Salt & Vinegar Crisps 150g', 'Tortilla Chips 300g', 'Salsa Dip 300g', 'Salted Peanuts 200g', 'Roasted Cashews 200g', 'Mixed Nuts 300g', 'Sweet Popcorn 100g', 'Milk Chocolate Bar 100g', 'Dark Chocolate 70% 100g', 'Choc Chip Cookies 300g', 'Oat Raisin Cookies 250g', 'Digestive Biscuits 400g', 'Jaffa Cakes 12-pack', 'Cereal Bar 6-pack', 'Salted Pretzels 250g', 'Rice Cakes 150g', 'Gummy Bears 200g', 'Pretzel Sticks 100g', 'Trail Mix 150g']],
+  ['Bakery', '#c47f17', '🥖', ['Sourdough Loaf', 'Wholemeal Loaf 800g', 'Multiseed Bloomer', 'Baguettes (2-pack)', 'Croissants 4-pack', 'Pain au Chocolat 4-pack', 'Blueberry Muffins 4-pack', 'Cinnamon Rolls 4-pack', 'Bagels 6-pack', 'Tortilla Wraps 8-pack', 'Pita Breads 6-pack', 'Garlic Ciabatta', 'Brioche Buns 6-pack', 'Chelsea Buns 6-pack', 'Doughnuts 5-pack', 'Baguette', 'Multiseed Rolls 6-pack', 'Cinnamon Rolls 2-pack', 'Madeleines 6-pack', 'Apple Turnovers 4-pack']],
+  ['Frozen', '#7c3aed', '🧊', ['Frozen Pepperoni Pizza', 'Frozen Margherita Pizza', 'Frozen Berry Mix 500g', 'Garden Peas 1kg', 'Sweetcorn 1kg', 'French Fries 1.5kg', 'Vanilla Ice Cream 1L', 'Chocolate Ice Cream 1L', 'Salted Caramel Ice Cream 500ml', 'Fish Fingers 20-pack', 'King Prawns 400g', 'Frozen Salmon Fillets 2-pack', 'Chicken Nuggets 750g', 'Veg Spring Rolls 8-pack', 'Frozen Waffles 10-pack', 'Ice Lollies 8-pack', 'Frozen Berries 300g', 'Garlic Bread 400g', 'Hash Browns 1kg', 'Onion Rings 750g']],
+  ['Household', '#3a7ca5', '🧻', ['Kitchen Roll 4 Rolls', 'Bath Tissue 9 Rolls', 'Bin Bags 30L 20-pack', 'Washing Up Liquid 500ml', 'Laundry Pods 30-pack', 'Fabric Softener 1.5L', 'Antibacterial Spray 750ml', 'Glass Cleaner 500ml', 'Bleach 750ml', 'Sponges 6-pack', 'Scourer Pads 4-pack', 'Dishwasher Tablets 40-pack', 'Trash Bags 60L 15-pack', 'Aluminum Foil 30m', 'Cling Film 30m', 'Baking Paper 25m', 'Air Freshener 300ml', 'Hand Soap 500ml', 'Shower Cleaner 750ml', 'Furniture Polish 300ml']],
+  ['Meat & Seafood', '#b0413e', '🥩', ['Chicken Breast Fillets 1kg', 'Chicken Thighs 750g', 'Whole Chicken 1.6kg', 'Beef Mince 500g', 'Pork Mince 500g', 'Ribeye Steak 300g', 'Sirloin Steak 300g', 'Lamb Chops 400g', 'Pork Loin Chops 6-pack', 'Bacon Rashers 300g', 'Streaky Bacon 200g', 'Pork Sausages 8-pack', 'Chorizo Ring 250g', 'Honey-Roast Ham 200g', 'Turkey Slices 150g', 'Salmon Fillets 2-pack', 'Cod Fillets 2-pack', 'Tuna Steaks 2-pack', 'Peeled Prawns 200g', 'Smoked Salmon 180g']],
+  ['Home & DIY', '#8a5fd4', '🔧', ['Light Bulbs 4-pack', 'Batteries AA 8-pack', 'Picture Hooks 50-pack', 'Duct Tape 50m', 'Super Glue 3-pack', 'Screwdriver Set 6pc', 'Felt Pads 40-pack', 'Door Stop 2-pack', 'Laundry Rack Foldable', 'Storage Boxes 3-pack', 'Door Mat 60×40', 'Extension Lead 4-way', 'Smoke Alarm', 'Indoor Thermometer', 'Cup Hooks 20-pack', 'Furniture Sliders 8-pack', 'Wall Anchors 100-pack', 'Utility Knife', 'Measuring Tape 5m', 'Spirit Level 60cm']],
+  ['Health & Beauty', '#2f9e6b', '🧼', ['Toothpaste 100ml', 'Shampoo 400ml', 'Conditioner 400ml', 'Shower Gel 500ml', 'Soap Bar 4-pack', 'Hand Cream 75ml', 'Roll-on Deodorant', 'Razor Blades 4pc', 'Cotton Pads 60pc', 'Lip Balm 4-pack', 'Mouthwash 500ml', 'Dental Floss 50m', 'Sun Cream SPF30 200ml', 'Hand Sanitiser 250ml', 'Face Wipes 25pc', 'Bath Salts 900g', 'Body Lotion 400ml', 'Hair Gel 250ml', 'Cotton Buds 200pc', 'Plasters 60-pack']],
+];
+/** 10 pack variants per base — 10 departments × 20 bases × 10 = 2000 items. */
+const FM_VARIANTS = ['', ' Family Pack', ' Value Pack', ' Twin Pack', ' Jumbo', ' Party Size', ' Mini Pack', ' 2-pack', ' 3-pack', ' Multipack'];
+
+/* ---------- catalogue: 10 departments × 200 items = 2000 --------------- */
 
 const insCat = db.prepare('INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)');
 const insProd = db.prepare(
@@ -155,189 +190,72 @@ const insProd = db.prepare(
 const insLoc = db.prepare(
   'INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, 0, ?)'
 );
-
-/**
- * Real product photos for the demo planogram — bundled SPA assets (served
- * from frontend/public/demo-products by both engines, so the URL works on
- * Express and Workers with no storage setup). Downloaded from Open Food
- * Facts; see frontend/public/demo-products/ATTRIBUTION.md (ODbL).
- * Regenerate with: node backend/scripts/fetch-demo-photos.mjs
- * (keep in sync with worker/src/seed.ts PHOTO_URLS)
- */
-const PHOTO_URLS = {
-  'Organic Whole Milk 1L': '/demo-products/organic-whole-milk-1l.jpg',
-  'Oat Drink Barista 1L': '/demo-products/oat-drink-barista-1l.jpg',
-  'Greek Yogurt 500g': '/demo-products/greek-yogurt-500g.jpg',
-  'Mozzarella Ball 125g': '/demo-products/mozzarella-ball-125g.jpg',
-  'Mild Cheddar Block 350g': '/demo-products/mild-cheddar-block-350g.jpg',
-  'Salted Butter 250g': '/demo-products/salted-butter-250g.jpg',
-  'Kefir 1L': '/demo-products/kefir-1l.jpg',
-  'Cream Cheese Tub 300g': '/demo-products/cream-cheese-tub-300g.jpg',
-  'Gouda Slices 200g': '/demo-products/gouda-slices-200g.jpg',
-  'Lactose-Free Milk 1L': '/demo-products/lactose-free-milk-1l.jpg',
-  'Orange Juice 1L': '/demo-products/orange-juice-1l.jpg',
-  'Cola 2L': '/demo-products/cola-2l.jpg',
-  'Ground Coffee 500g': '/demo-products/ground-coffee-500g.jpg',
-  'Espresso Beans 1kg': '/demo-products/espresso-beans-1kg.jpg',
-  'Green Tea 40 Bags': '/demo-products/green-tea-40-bags.jpg',
-  'English Breakfast Tea 80 Bags': '/demo-products/english-breakfast-tea-80-bags.jpg',
-  'Hot Chocolate Mix 400g': '/demo-products/hot-chocolate-mix-400g.jpg',
-  'Cold Brew Coffee 1L': '/demo-products/cold-brew-coffee-1l.jpg',
-  'Almond Milk 1L': '/demo-products/almond-milk-1l.jpg',
-  'Coconut Water 1L': '/demo-products/coconut-water-1l.jpg',
-  'Iced Tea Lemon 1.5L': '/demo-products/iced-tea-lemon-1-5l.jpg',
-  'Lemon-Lime Soda 2L': '/demo-products/lemon-lime-soda-2l.jpg',
-  'Tonic Water 6-pack': '/demo-products/tonic-water-6-pack.jpg',
-  'Energy Drink 4-pack': '/demo-products/energy-drink-4-pack.jpg',
-  'Sea Salt Crisps 150g': '/demo-products/sea-salt-crisps-150g.jpg',
-  'Tortilla Chips 300g': '/demo-products/tortilla-chips-300g.jpg',
-  'Salted Peanuts 200g': '/demo-products/salted-peanuts-200g.jpg',
-  'Mixed Nuts 300g': '/demo-products/mixed-nuts-300g.jpg',
-  'Roasted Cashews 200g': '/demo-products/roasted-cashews-200g.jpg',
-  'Milk Chocolate Bar 100g': '/demo-products/milk-chocolate-bar-100g.jpg',
-  'Dark Chocolate 70% 100g': '/demo-products/dark-chocolate-70-100g.jpg',
-  'Choc Chip Cookies 300g': '/demo-products/choc-chip-cookies-300g.jpg',
-  'Digestive Biscuits 400g': '/demo-products/digestive-biscuits-400g.jpg',
-  'Jaffa Cakes 12-pack': '/demo-products/jaffa-cakes-12-pack.jpg',
-  'Gummy Bears 200g': '/demo-products/gummy-bears-200g.jpg',
-  'Sweet Popcorn 100g': '/demo-products/sweet-popcorn-100g.jpg',
-  'Salted Pretzels 250g': '/demo-products/salted-pretzels-250g.jpg',
-  'Rice Cakes 150g': '/demo-products/rice-cakes-150g.jpg',
-  'Sourdough Loaf': '/demo-products/sourdough-loaf.jpg',
-  'Croissants 4-pack': '/demo-products/croissants-4-pack.jpg',
-  'Bagels 6-pack': '/demo-products/bagels-6-pack.jpg',
-  'Brioche Buns 6-pack': '/demo-products/brioche-buns-6-pack.jpg',
-  'Frozen Pepperoni Pizza': '/demo-products/frozen-pepperoni-pizza.jpg',
-  'Frozen Margherita Pizza': '/demo-products/frozen-margherita-pizza.jpg',
-  'Vanilla Ice Cream 1L': '/demo-products/vanilla-ice-cream-1l.jpg',
-  'Chocolate Ice Cream 1L': '/demo-products/chocolate-ice-cream-1l.jpg',
-  'French Fries 1.5kg': '/demo-products/french-fries-1-5kg.jpg',
-  'Garden Peas 1kg': '/demo-products/garden-peas-1kg.jpg',
-  'Fish Fingers 20-pack': '/demo-products/fish-fingers-20-pack.jpg',
-  'Chicken Nuggets 750g': '/demo-products/chicken-nuggets-750g.jpg',
-  'Washing Up Liquid 500ml': '/demo-products/washing-up-liquid-500ml.jpg',
-  'Hand Soap 500ml': '/demo-products/hand-soap-500ml.jpg',
-  'Antibacterial Spray 750ml': '/demo-products/antibacterial-spray-750ml.jpg',
-  'Bacon Rashers 300g': '/demo-products/bacon-rashers-300g.jpg',
-  'Salmon Fillets 2-pack': '/demo-products/salmon-fillets-2-pack.jpg',
-  'Honey-Roast Ham 200g': '/demo-products/honey-roast-ham-200g.jpg',
-  'Pork Sausages 8-pack': '/demo-products/pork-sausages-8-pack.jpg',
-  'Smoked Salmon 180g': '/demo-products/smoked-salmon-180g.jpg',
-  'Chorizo Ring 250g': '/demo-products/chorizo-ring-250g.jpg',
-};
-
-const CATS = [
-  ['Dairy', '#3b6fd4', '🥛', 20, [
-    'Organic Whole Milk 1L', 'Semi-Skimmed Milk 2L', 'Oat Drink Barista 1L', 'Greek Yogurt 500g',
-    'Natural Yogurt 4-pack', 'Strawberry Yogurt 6-pack', 'Kefir 1L', 'Salted Butter 250g',
-    'Unsalted Butter 250g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Mozzarella Ball 125g',
-    'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Cottage Cheese 250g', 'Double Cream 500ml',
-    'Crème Fraîche 250ml', 'Brie Wheel 200g', 'Gouda Slices 200g', 'Lactose-Free Milk 1L',
-  ]],
-  ['Produce', '#2f9e44', '🥬', 20, [
-    'Bananas (bunch)', 'Fuji Apples 4-pack', 'Granny Smith Apples 6-pack', 'Navel Oranges 2kg Bag',
-    'Clementines 1kg', 'Lemons 4-pack', 'Strawberries 400g', 'Blueberries 150g',
-    'Raspberries 150g', 'Seedless Grapes 500g', 'Avocados (2-pack)', 'Baby Spinach 120g',
-    'Rocket Salad 100g', 'Roma Tomatoes 500g', 'Cherry Tomatoes 250g', 'Cucumbers (3-pack)',
-    'Red Bell Peppers (3-pack)', 'Broccoli Head', 'Carrots 1kg Bag', 'Russet Potatoes 2kg Bag',
-  ]],
-  ['Beverages', '#e4572e', '🧃', 18, [
-    'Orange Juice 1L', 'Apple Juice 1L', 'Sparkling Water 6×500ml', 'Still Water 6×1.5L',
-    'Cola 2L', 'Lemon-Lime Soda 2L', 'Ginger Beer 4-pack', 'Iced Tea Lemon 1.5L',
-    'Cold Brew Coffee 1L', 'Ground Coffee 500g', 'Espresso Beans 1kg', 'Green Tea 40 Bags',
-    'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Energy Drink 4-pack', 'Tonic Water 6-pack',
-    'Almond Milk 1L', 'Coconut Water 1L',
-  ]],
-  ['Snacks', '#d4a017', '🍿', 18, [
-    'Sea Salt Crisps 150g', 'Salt & Vinegar Crisps 150g', 'Tortilla Chips 300g', 'Salsa Dip 300g',
-    'Salted Peanuts 200g', 'Roasted Cashews 200g', 'Mixed Nuts 300g', 'Sweet Popcorn 100g',
-    'Milk Chocolate Bar 100g', 'Dark Chocolate 70% 100g', 'Choc Chip Cookies 300g', 'Oat Raisin Cookies 250g',
-    'Digestive Biscuits 400g', 'Jaffa Cakes 12-pack', 'Cereal Bar 6-pack', 'Salted Pretzels 250g',
-    'Rice Cakes 150g', 'Gummy Bears 200g',
-  ]],
-  ['Bakery', '#c47f17', '🥖', 15, [
-    'Sourdough Loaf', 'Wholemeal Loaf 800g', 'Multiseed Bloomer', 'Baguettes (2-pack)',
-    'Croissants 4-pack', 'Pain au Chocolat 4-pack', 'Blueberry Muffins 4-pack', 'Cinnamon Rolls 4-pack',
-    'Bagels 6-pack', 'Tortilla Wraps 8-pack', 'Pita Breads 6-pack', 'Garlic Ciabatta',
-    'Brioche Buns 6-pack', 'Chelsea Buns 6-pack', 'Doughnuts 5-pack',
-  ]],
-  ['Frozen', '#7c3aed', '🧊', 15, [
-    'Frozen Pepperoni Pizza', 'Frozen Margherita Pizza', 'Frozen Berry Mix 500g', 'Garden Peas 1kg',
-    'Sweetcorn 1kg', 'French Fries 1.5kg', 'Vanilla Ice Cream 1L', 'Chocolate Ice Cream 1L',
-    'Salted Caramel Ice Cream 500ml', 'Fish Fingers 20-pack', 'King Prawns 400g', 'Frozen Salmon Fillets 2-pack',
-    'Chicken Nuggets 750g', 'Veg Spring Rolls 8-pack', 'Frozen Waffles 10-pack',
-  ]],
-  ['Household', '#3a7ca5', '🧻', 22, [
-    'Kitchen Roll 4 Rolls', 'Bath Tissue 9 Rolls', 'Bin Bags 30L 20-pack', 'Washing Up Liquid 500ml',
-    'Laundry Pods 30-pack', 'Fabric Softener 1.5L', 'Antibacterial Spray 750ml', 'Glass Cleaner 500ml',
-    'Bleach 750ml', 'Sponges 6-pack', 'Scourer Pads 4-pack', 'Dishwasher Tablets 40-pack',
-    'Trash Bags 60L 15-pack', 'Aluminum Foil 30m', 'Cling Film 30m', 'Baking Paper 25m',
-    'Air Freshener 300ml', 'Hand Soap 500ml', 'Shower Cleaner 750ml', 'Furniture Polish 300ml',
-    'Light Bulbs 4-pack', 'Batteries AA 8-pack',
-  ]],
-  ['Meat & Seafood', '#b0413e', '🥩', 22, [
-    'Chicken Breast Fillets 1kg', 'Chicken Thighs 750g', 'Whole Chicken 1.6kg', 'Beef Mince 500g',
-    'Pork Mince 500g', 'Ribeye Steak 300g', 'Sirloin Steak 300g', 'Lamb Chops 400g',
-    'Pork Loin Chops 6-pack', 'Bacon Rashers 300g', 'Streaky Bacon 200g', 'Pork Sausages 8-pack',
-    'Chorizo Ring 250g', 'Honey-Roast Ham 200g', 'Turkey Slices 150g', 'Salmon Fillets 2-pack',
-    'Cod Fillets 2-pack', 'Tuna Steaks 2-pack', 'Peeled Prawns 200g', 'Smoked Salmon 180g',
-    'Mackerel Fillets 240g', 'Sea Bass Fillets 2-pack',
-  ]],
-];
-
 const BRANDS = ['Fresh Farm', 'GreenVale', 'Sun Grove', 'Meadow', 'Olympus', 'Stone Oven', 'Napoli', 'Glacier', 'Nord Haus', 'Terra'];
 
 const cat = {};
-const products = [];
-for (const [name, color, icon, , items] of CATS) {
+const pool = {}; // dept name → its 200 products
+for (const [name, color, icon, items] of FM_DEPTS) {
   const existing = db.prepare('SELECT id FROM categories WHERE store_id = ? AND name = ?').get(store.id, name);
   const id = existing?.id ?? randomUUID();
   if (!existing) insCat.run(id, store.id, name, color, icon);
   cat[name] = id;
-  for (const item of items) products.push({ name: item, category: name });
-}
-
-// even slots along every stocking face — every slot gets a facing (facings
-// of the same product repeat in real stores), so shelves render full
-const slots = [];
-for (const f of faces) {
-  const len = f.to - f.from;
-  const n = Math.max(1, Math.floor(len / 2.2));
-  for (let i = 0; i < n; i++) {
-    const at = f.from + ((i + 0.5) * len) / n;
-    slots.push(f.axis === 'h' ? { x: at, y: f.line } : { x: f.line, y: at });
+  pool[name] = [];
+  for (const base of items) {
+    for (const v of FM_VARIANTS) pool[name].push({ name: base + v, category: name, photo: PHOTOS[base] ?? '' });
   }
 }
-const total = slots.length;
-// one catalogue record per SKU…
-const prodIds = [];
-for (let i = 0; i < products.length; i++) {
-  const p = products[i];
+
+const prodIds = []; // index-aligned with `products` flat list below
+const flat = [];
+for (const [name] of FM_DEPTS) for (const p of pool[name]) flat.push({ ...p, dept: name });
+for (let i = 0; i < flat.length; i++) {
+  const p = flat[i];
   const id = randomUUID();
   const price = Math.round((0.79 + ((i * 37) % 920) / 100) * 100) / 100;
-  insProd.run(id, store.id, cat[p.category], p.name, BRANDS[i % BRANDS.length], `${p.category.slice(0, 3).toUpperCase()}-${String(i + 1).padStart(3, '0')}`, '', '', price, PHOTO_URLS[p.name] ?? '');
-  prodIds.push({ id });
+  insProd.run(id, store.id, cat[p.dept], p.name, BRANDS[i % BRANDS.length], `FM-${String(i + 1).padStart(4, '0')}`, '', '', price, p.photo);
+  prodIds.push(id);
 }
-// …then facings cycle the catalogue so every slot is stocked and the
-// planograms render full (same product on several facings, like real stores)
-for (let i = 0; i < total; i++) {
-  const slot = slots[i];
-  const prod = prodIds[i % prodIds.length];
-  // stock planogram rows like a real store: facings cycle the shelf's rows
-  // with a per-item facing width, so the planogram reads as a full gondola
-  const levels = 4;
-  const level = (i % levels) + 1;
-  const facingW = Math.round((0.3 + ((i * 7) % 5) * 0.035) * 100) / 100;
-  insLoc.run(randomUUID(), prod.id, floor.id, slot.x, slot.y, JSON.stringify({ shelf_level: level, w: facingW }));
+const deptStart = {}; // dept → first index in flat
+{
+  let i = 0;
+  for (const [name] of FM_DEPTS) { deptStart[name] = i; i += pool[name].length; }
 }
 
-if (tiny) {
-  // tiny profile: strip to one aisle pair + entrance for docs/GIFs
-  db.prepare("DELETE FROM map_elements WHERE label NOT LIKE 'Aisle 1%' AND type = 'shelf'").run();
-  db.prepare('DELETE FROM product_locations WHERE id NOT IN (SELECT id FROM product_locations LIMIT 12)').run();
-  console.log('Tiny profile applied: single aisle, 12 pins.');
+/* stock: items per shelf proportional to its length, 2000 total — each
+   shelf draws from its department's pool, cycling like a real planogram */
+const totalLen = FIXTURES.reduce((s, f) => s + f.w + f.h, 0);
+const counts = FIXTURES.map((f) => Math.max(4, Math.round((2000 * (f.w + f.h)) / totalLen)));
+let diff = 2000 - counts.reduce((s, n) => s + n, 0);
+const byLen = FIXTURES.map((f, i) => i).sort((a, b) => (FIXTURES[b].w + FIXTURES[b].h) - (FIXTURES[a].w + FIXTURES[a].h));
+for (let i = 0; diff !== 0; i %= byLen.length, i++) {
+  const idx = byLen[i];
+  if (diff > 0) { counts[idx]++; diff--; } else if (counts[idx] > 4) { counts[idx]--; diff++; }
 }
-console.log(`Seeded Freshmart Downtown: ${W}×${H} m, checkout area, border + aisle-pair shelving, ${products.length} SKUs · ${total} facings (shelves full).`);
+const deptCursor = {};
+let pinned = 0;
+for (let fi = 0; fi < FIXTURES.length; fi++) {
+  const f = FIXTURES[fi];
+  const n = counts[fi];
+  const len = f.w + f.h;
+  deptCursor[f.pool] ??= 0;
+  const start = deptStart[f.pool];
+  const poolSize = pool[f.pool].length;
+  for (let k = 0; k < n; k++) {
+    const at = f.w >= f.h
+      ? { x: f.x + ((k + 0.5) * f.w) / n, y: f.y + f.h / 2 }
+      : { x: f.x + f.w / 2, y: f.y + ((k + 0.5) * f.h) / n };
+    const pi = start + ((deptCursor[f.pool] + k) % poolSize);
+    insLoc.run(randomUUID(), prodIds[pi], floor.id, at.x, at.y, JSON.stringify({
+      shelf_level: 1,
+      w: 1,
+      pinW: Math.min(0.3, Math.max(0.14, len / n - 0.06)),
+    }));
+    pinned++;
+  }
+  deptCursor[f.pool] += n;
+}
+
+console.log(`Seeded Freshmart Downtown: ${W}×${H} m floor-plan store, ${FIXTURES.length} groups, ${flat.length} SKUs · ${pinned} facings.`);
 } // end freshmart block
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -508,7 +426,7 @@ const insALoc = db.prepare(
         pid, annex.id, acat[items[i].category], items[i].name, 'Harbour Line',
         `ANN-${String(skuOffset + i + 1).padStart(3, '0')}`, '', '', Math.round((0.95 + ((i * 53) % 1800) / 100) * 100) / 100, ''
       );
-      insALoc.run(randomUUID(), pid, annexFloor.id, slot.x, slot.y, JSON.stringify({ shelf_level: (i % 3) + 1, w: 0.32 }));
+      insALoc.run(randomUUID(), pid, annexFloor.id, slot.x, slot.y, JSON.stringify({ shelf_level: (i % 3) + 1, w: 1 }));
     }
   };
   // skuOffset keeps SKUs unique across the two calls — D1 has a unique
@@ -919,12 +837,12 @@ function seedExample(spec, ownerEmail, ownerName) {
     for (const l of spec.locations) {
       insL.run(randomUUID(), pid[l.product], fl.id, l.x, l.y, JSON.stringify({
         shelf_level: l.level ?? (l.product % 3) + 1,
-        w: l.w ?? 0.3,
+        w: l.w ?? 1,
         ...(l.pinW != null ? { pinW: l.pinW } : {}),
       }));
     }
-    // the example stores' planograms draw 2 m wide (planogram-only option)
-    db.prepare("UPDATE map_elements SET meta = ? WHERE floor_id = ? AND type = 'shelf' AND meta = '{}'").run(JSON.stringify({ planWidth: 2 }), fl.id);
+    // shelves without an explicit planogram length now draw at the 3 m auto
+    // length (see the frontend's computeShelfLayout) — no blanket override
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -956,7 +874,7 @@ const GROUP_GAP_M = 0.2;
  *  (a normal planogram section), with a small gap to the next group; groups
  *  cycle through the pool along the face. Categories with preferred face
  *  labels stock those faces only. Returns locations [{product, x, y, level, w}]. */
-function stockFaces(products, faces, { levels = 4, facingW = 0.3, prefer = {} } = {}) {
+function stockFaces(products, faces, { levels = 4, facingW = 1, prefer = {} } = {}) {
   const catByLabel = {};
   for (const [cat, labels] of Object.entries(prefer)) {
     for (const l of labels) if (!catByLabel[l]) catByLabel[l] = cat;
@@ -1053,7 +971,7 @@ function cornerStoreSpec() {
     for (const item of items) products.push({ name: item, category: name, brand: 'Corner', image: PHOTOS[item] ?? '' });
   }
   const locations = stockFaces(products, faces, {
-    levels: 4, facingW: 0.3,
+    levels: 4, facingW: 1,
     prefer: { 'Dairy & Drinks': ['Coolers'] },
   });
   return {
@@ -1188,7 +1106,7 @@ function grandmartSpec() {
         x: f.axis === 'h' ? at : f.line,
         y: f.axis === 'h' ? f.line : at,
         level: 1,
-        w: 0.3,
+        w: 1,
         pinW: 0.3,
       });
       cursor++;

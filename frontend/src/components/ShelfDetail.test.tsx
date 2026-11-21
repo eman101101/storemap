@@ -118,8 +118,8 @@ describe('ShelfDetail', () => {
     );
     expect(container.querySelectorAll('image')).toHaveLength(0);
     expect(container.querySelector('rect[fill-opacity="0.16"]')).toBeTruthy();
-    // no photos → the view toggle isn't offered at all on this shelf
-    expect(screen.queryByRole('button', { name: 'Image' })).toBeNull();
+    // the Diagram/Image toggle is always offered now (planogram starts on Image)
+    expect(screen.getByRole('button', { name: 'Image' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('draws the pulsing highlight border around the searched facing', () => {
@@ -163,7 +163,7 @@ describe('ShelfDetail', () => {
     expect(stored).toBe('diagram');
   });
 
-  it('defaults to the photo planogram when products carry images', () => {
+  it('defaults to the image planogram when products carry images', () => {
     const shelf = parseElement(row);
     const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
     const pins = [
@@ -175,10 +175,10 @@ describe('ShelfDetail', () => {
     const images = container.querySelectorAll('image');
     expect(images).toHaveLength(1);
     expect(images[0]!.getAttribute('href')).toBe('data:image/png;base64,abc');
-    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMax meet');
+    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMid slice');
     expect(container.textContent).toContain('Rye Bread');
-    // Photos is the active view of the toggle pair
-    expect(screen.getByRole('button', { name: 'Photos' }).getAttribute('aria-pressed')).toBe('true');
+    // Image is the active view of the toggle pair (the planogram starts on Image)
+    expect(screen.getByRole('button', { name: 'Image' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Diagram' }).getAttribute('aria-pressed')).toBe('false');
   });
 

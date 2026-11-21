@@ -731,6 +731,45 @@ export default function MapCanvas(props: Props) {
   );
   const renderedPins = showItems ? shownPins : groupsPins;
 
+  // groups view keeps the shelf's stocked facings visible in 2D — as bare
+  // non-interactive rects (the planogram groups), far cheaper than full pins
+  // (no hit targets, no pulses). Anchors are cached once per pins/elements
+  // change; the viewport filter then runs per pan on plain numbers.
+  const pinAnchors = useMemo(
+    () => new Map(floorPins.map((p) => [p.location.id, shelfAnchor({ x: p.location.x, y: p.location.y }, floorEls)])),
+    [floorPins, floorEls]
+  );
+  const strips = useMemo(() => {
+    if (showItems) return null;
+    const m = 2;
+    const x0 = -viewport.tx / viewport.scale - m;
+    const y0 = -viewport.ty / viewport.scale - m;
+    const x1 = (size.w - viewport.tx) / viewport.scale + m;
+    const y1 = (size.h - viewport.ty) / viewport.scale + m;
+    const out: { key: string; x: number; y: number; w: number; h: number; rot: number; color: string }[] = [];
+    for (const p of floorPins) {
+      const { x, y } = p.location;
+      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      const a = pinAnchors.get(p.location.id);
+      let w = 0.5;
+      let h = 0.2;
+      try {
+        const pm = JSON.parse(p.location.meta || '{}');
+        if (typeof pm.pinW === 'number' && typeof pm.pinH === 'number') { w = pm.pinW; h = pm.pinH; }
+      } catch { /* unparseable meta → default strip size */ }
+      out.push({
+        key: p.location.id,
+        x: a?.x ?? x,
+        y: a?.y ?? y,
+        w,
+        h,
+        rot: a ? (Math.atan2(a.ny, a.nx) * 180) / Math.PI + 90 : 0,
+        color: p.product.category_color || '#2f6f3e',
+      });
+    }
+    return out;
+  }, [showItems, floorPins, pinAnchors, viewport.tx, viewport.ty, viewport.scale, size.w, size.h]);
+
   // department area labels: shelfId → department name. Callers decide when
   // they show — the editor in groups view, the viewer whenever it isn't mid-
   // search (its pins prop is already search-filtered). Double-sided pairs
@@ -976,7 +1015,29 @@ export default function MapCanvas(props: Props) {
           </g>
         )}
 
-        {renderedPins.map(({ location, product }) => (
+        {/* groups view: stocked facings as bare strips (the planogram groups
+            stay visible on the shelf without full pin machinery) */}
+        {strips && (
+          <g pointerEvents="none">
+            {strips.map((st) => (
+              <rect
+                key={st.key}
+                x={st.x - st.w / 2}
+                y={st.y - st.h / 2}
+                width={st.w}
+                height={st.h}
+                rx={0.05}
+                fill={st.color}
+                stroke="#fff"
+                strokeWidth={1.2}
+                vectorEffect="non-scaling-stroke"
+                transform={st.rot ? `rotate(${st.rot} ${st.x} ${st.y})` : undefined}
+              />
+            ))}
+          </g>
+        )}
+
+        {(strips ? groupsPins : renderedPins).map(({ location, product }) => (
           <ProductPin
             key={location.id}
             location={location}
@@ -984,7 +1045,7 @@ export default function MapCanvas(props: Props) {
             scale={scale}
             focused={location.id === focusPinId || (edit && location.id === selectedPinId)}
             clickable={!edit}
-            anchor={shelfAnchor({ x: location.x, y: location.y }, elements)}
+            anchor={pinAnchors.get(location.id) ?? shelfAnchor({ x: location.x, y: location.y }, elements)}
             onClick={() => onPinClick?.(product.id)}
           />
         ))}

@@ -46,9 +46,9 @@ export interface ShelfLayout {
   meta: { bays: number; levels: number; planWidth: number; planDepth: number; rowH: number };
 }
 
-/** How a shelf's planogram is drawn: schematic tiles, photos with a label
- *  strip, or full-bleed image tiles (details live in the selection panel). */
-export type PlanogramView = 'diagram' | 'photos' | 'images';
+/** How a shelf's planogram is drawn: schematic tiles or full-bleed image
+ *  tiles (details live in the selection panel). */
+export type PlanogramView = 'diagram' | 'images';
 
 const DEFAULT_BAY_WIDTH = 1.25; // metres of shelf per bay
 export const DEFAULT_LEVELS = 4;
@@ -56,7 +56,7 @@ export const DEFAULT_ROW_H = 112; // drawn height of one planogram row band (px)
 export const DEFAULT_SHELF_HEIGHT = 1.5; // m — typical grocery gondola (1.2–1.8 m range)
 export const MIN_SHELF_HEIGHT = 0.3;
 export const MAX_SHELF_HEIGHT = 3;
-const DEFAULT_FACING = 0.32; // metres per product facing
+const DEFAULT_FACING = 1; // metres per product facing (planogram W)
 /** Default drawn size of a product facing on a shelf face (m). */
 export const DEFAULT_ITEM_H = 0.24;
 export const DEFAULT_ITEM_W = 0.2;
@@ -92,10 +92,12 @@ export function shelfItemSize(el: MapElement): { h: number; w: number } {
 }
 
 /** The shelf's persisted planogram view mode — meta override, else null so
- *  callers fall back to their auto-detection. */
+ *  callers fall back to their auto-detection. Stored 'photos' (a removed
+ *  mode) migrates forward to 'images'. */
 export function shelfPlanogramView(el: MapElement): PlanogramView | null {
   const v = shelfMeta(el).planogramView;
-  return v === 'diagram' || v === 'photos' || v === 'images' ? v : null;
+  if (v === 'photos') return 'images';
+  return v === 'diagram' || v === 'images' ? v : null;
 }
 
 /**
@@ -168,9 +170,11 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
   // The planogram's length/depth are planogram-only options (meta.planWidth /
   // meta.planDepth) — they never touch the shelf's footprint on the map. The
   // physical rect width is what pins are positioned against; the planogram
-  // drawing can be wider or narrower than it.
+  // drawing can be wider or narrower than it. Auto length (unset) draws at
+  // most 3 m — one average store planogram section — so a long gondola's
+  // planogram stays readable; drag Length in the editor for more.
   const physWidth = Math.max(r.w, 0.1);
-  const width = clampNum(meta.planWidth, 0.3, 60) ?? physWidth;
+  const width = clampNum(meta.planWidth, 0.3, 60) ?? Math.min(physWidth, 3);
   const depth = clampNum(meta.planDepth, 0.1, 20) ?? Math.max(r.h, 0.1);
   const bayCount = clampInt(meta.bays, 1, 40) ?? Math.max(1, Math.round(width / DEFAULT_BAY_WIDTH));
   const levelCount = shelfLevels(shelf);

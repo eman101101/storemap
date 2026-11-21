@@ -22,16 +22,25 @@ function pin(x: number, y: number, productId: string, meta = '{}'): { location: 
 
 describe('computeShelfLayout', () => {
   it('assigns pins to bays by their position along the shelf', () => {
-    const layout = computeShelfLayout(shelf, [pin(0.5, 0.5, 'a'), pin(4.5, 0.5, 'b'), pin(2.5, 0.5, 'c')])!;
+    const s: MapElement = { ...shelf, meta: JSON.stringify({ planWidth: 5 }) };
+    const layout = computeShelfLayout(s, [pin(0.5, 0.5, 'a'), pin(4.5, 0.5, 'b'), pin(2.5, 0.5, 'c')])!;
     expect(layout).not.toBeNull();
-    expect(layout.bays.length).toBe(4); // 5m shelf defaults to 1.25m bays
+    expect(layout.bays.length).toBe(4); // 5m planogram defaults to 1.25m bays
     expect(layout.bays[0].slots.map((s) => s.product.id)).toEqual(['a']);
     expect(layout.bays[2].slots.map((s) => s.product.id)).toEqual(['c']);
     expect(layout.bays[3].slots.map((s) => s.product.id)).toEqual(['b']);
   });
 
+  it('auto length (unset) draws at most 3 m — long shelves stay readable', () => {
+    const layout = computeShelfLayout(shelf, [])!; // 5 m physical shelf
+    expect(layout.width).toBe(3);
+    const tiny = computeShelfLayout({ ...shelf, geom: { x: 0, y: 0, w: 0.7, h: 1, rot: 0 } }, [])!;
+    expect(tiny.width).toBeCloseTo(0.7); // short shelves keep their real width
+  });
+
   it('sorts slots left-to-right inside a bay', () => {
-    const layout = computeShelfLayout(shelf, [pin(2.4, 0.5, 'late'), pin(2.1, 0.5, 'early')])!;
+    const s: MapElement = { ...shelf, meta: JSON.stringify({ planWidth: 5 }) };
+    const layout = computeShelfLayout(s, [pin(2.4, 0.5, 'late'), pin(2.1, 0.5, 'early')])!;
     expect(layout.bays[1].slots.map((s) => s.product.id)).toEqual(['early', 'late']);
   });
 
@@ -77,7 +86,7 @@ describe('computeShelfLayout', () => {
   });
 
   it('handles rotated shelves using their local frame', () => {
-    const rotated: MapElement = { ...shelf, geom: { x: 0, y: 0, w: 5, h: 1, rot: 90 } };
+    const rotated: MapElement = { ...shelf, geom: { x: 0, y: 0, w: 5, h: 1, rot: 90 }, meta: JSON.stringify({ planWidth: 5 }) };
     // rotating 90° around centre (2.5, 0.5): local left end is at world (2.5, -2)
     expect(worldToShelfLocal(rotated.geom as RectGeom, { x: 2.5, y: -2 }).x).toBeCloseTo(0);
     const layout = computeShelfLayout(rotated, [pin(2.5, -2, 'left-end'), pin(2.5, 3, 'right-end')])!;
@@ -149,8 +158,9 @@ describe('shelfPlanogramView (persisted default view mode)', () => {
 
   it('reads a persisted planogramView override', () => {
     expect(shelfPlanogramView(withMeta({ planogramView: 'images' }))).toBe('images');
-    expect(shelfPlanogramView(withMeta({ planogramView: 'photos' }))).toBe('photos');
     expect(shelfPlanogramView(withMeta({ planogramView: 'diagram' }))).toBe('diagram');
+    // the retired 'photos' mode migrates forward to 'images'
+    expect(shelfPlanogramView(withMeta({ planogramView: 'photos' }))).toBe('images');
   });
 
   it('survives corrupt or unknown values', () => {

@@ -219,35 +219,6 @@ export function PlanogramSvg({
             </g>
           );
         }
-        if (mode === 'photos' && productPhoto(s.product)) {
-          return (
-            <g key={key} {...g}>
-              <title>{s.product.name}</title>
-              {selected && <rect x={box.x + FRAME - 3} y={box.y - 3} width={box.w + 6} height={box.h + 6} rx={6} fill="none" stroke="#2f9e44" strokeWidth={2.5} />}
-              <rect x={box.x + FRAME} y={box.y} width={box.w} height={box.h} rx={4} fill={color} fillOpacity={0.1} stroke={color} strokeWidth={1.6} />
-              {/* the photo fills the whole facing box — resizing the facing resizes the image */}
-              <image
-                href={productPhoto(s.product)}
-                x={box.x + FRAME + 2}
-                y={box.y + 2}
-                width={box.w - 4}
-                height={box.h - 4}
-                preserveAspectRatio="xMidYMax meet"
-              />
-              {/* name + price on a translucent strip over the photo's bottom edge */}
-              <rect x={box.x + FRAME + 2} y={box.y + box.h - 18} width={box.w - 4} height={16} rx={3} fill="#f4f1e8" fillOpacity={0.85} />
-              <text x={box.x + FRAME + 5} y={box.y + box.h - 6} fontSize={9.5} fill="#33402e">
-                {truncate(s.product.name, Math.max(3, Math.floor((box.w - (s.product.price != null ? 30 : 8)) / 5.6)))}
-              </text>
-              {s.product.price != null && (
-                <text x={box.x + FRAME + box.w - 5} y={box.y + box.h - 6} textAnchor="end" fontSize={9} fill="#5a6b53">
-                  ${s.product.price.toFixed(2)}
-                </text>
-              )}
-              {halo}
-            </g>
-          );
-        }
         return (
           <g key={key} {...g}>
             <title>{s.product.name}</title>
@@ -328,14 +299,10 @@ export default function ShelfDetail({
     return slots.length ? compactFilledLayout(layout, slots) : layout;
   }, [layout, editing]);
 
-  const hasImages = !!displayLayout?.bays.some((b) => b.slots.some((s) => productPhoto(s.product)));
-  // the persisted per-shelf default (the owner's choice) wins over
-  // auto-detection; photo/image defaults degrade to the diagram when nothing
-  // on the shelf carries a photo
+  // the persisted per-shelf default (the owner's choice) wins; otherwise the
+  // planogram starts on Image — tiles without a photo degrade to diagram
   const storedView = shelfPlanogramView(shelf);
-  const mode: ViewMode =
-    viewOverride ??
-    (storedView && (storedView === 'diagram' || hasImages) ? storedView : hasImages ? 'photos' : 'diagram');
+  const mode: ViewMode = viewOverride ?? storedView ?? 'images';
 
   if (!layout || !displayLayout) {
     return (
@@ -398,22 +365,20 @@ export default function ShelfDetail({
         </div>
       )}
 
-      {(hasImages || editing) && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: -6, marginBottom: 8 }} role="group" aria-label="Planogram view">
-          {(['diagram', 'photos', 'images'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              className="btn sm"
-              aria-pressed={mode === v}
-              style={mode === v ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
-              onClick={() => { setViewOverride(v); onViewModeChange?.(v); }}
-            >
-              {v === 'diagram' ? 'Diagram' : v === 'photos' ? 'Photos' : 'Image'}
-            </button>
-          ))}
-        </div>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: -6, marginBottom: 8 }} role="group" aria-label="Planogram view">
+        {(['diagram', 'images'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            className="btn sm"
+            aria-pressed={mode === v}
+            style={mode === v ? { background: 'var(--green-soft)', borderColor: 'var(--green)' } : undefined}
+            onClick={() => { setViewOverride(v); onViewModeChange?.(v); }}
+          >
+            {v === 'diagram' ? 'Diagram' : 'Image'}
+          </button>
+        ))}
+      </div>
 
       <PlanogramSvg
         layout={displayLayout}

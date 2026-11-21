@@ -1019,7 +1019,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     const r = shelf.geom as RectGeom;
     let smeta: Record<string, unknown> = {};
     try { smeta = JSON.parse(shelf.meta || '{}'); } catch { /* keep {} */ }
-    const facingW = typeof smeta.facing === 'number' ? smeta.facing : 0.32;
+    const facingW = typeof smeta.facing === 'number' ? smeta.facing : 1;
     const placed = locations
       .filter((l) => l.floor_id === floor.id && ownerOf(l) === shelf.id)
       .map((l) => {
@@ -1108,7 +1108,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     const r = shelfPreview.geom as RectGeom;
     let m: Record<string, unknown> = {};
     try { m = JSON.parse(loc.meta || '{}'); } catch { /* keep {} */ }
-    const facingW = typeof m.w === 'number' ? m.w : 0.32;
+    const facingW = typeof m.w === 'number' ? m.w : 1;
     const level = typeof m.shelf_level === 'number' ? m.shelf_level : 1;
     const shelfId = ownerOf(loc) ?? shelfPreview.id;
     const curU = worldToShelfLocal(r, loc).x / r.w;
@@ -1120,7 +1120,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         try { sm = JSON.parse(l.meta || '{}'); } catch { /* keep {} */ }
         return {
           u: worldToShelfLocal(r, l).x / r.w,
-          w: (typeof sm.w === 'number' ? sm.w : 0.32) / r.w,
+          w: (typeof sm.w === 'number' ? sm.w : 1) / r.w,
           level: typeof sm.shelf_level === 'number' ? sm.shelf_level : 1,
         };
       })
@@ -2695,6 +2695,60 @@ function HistoryPanel({
 
 /* ---------------- Selected product pin (map card) ---------------- */
 
+/** Searchable dropdown of the items on a shelf: type to filter, click to
+ *  jump to that item. Native <select> can't be searched, so this is a small
+ *  input + filtered list that reads like one. */
+function ItemsOnShelf({
+  items, onSelect,
+}: {
+  items: { id: string; label: string; hint: string }[];
+  onSelect: (id: string) => void;
+}) {
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? items.filter((it) => `${it.label} ${it.hint}`.toLowerCase().includes(needle))
+    : items;
+  return (
+    <div>
+      <input
+        className="input"
+        placeholder={`Search ${items.length} item${items.length === 1 ? '' : 's'}…`}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label="Search items on this shelf"
+      />
+      <div
+        role="listbox"
+        aria-label="Items on this shelf"
+        style={{ maxHeight: 180, overflowY: 'auto', marginTop: 4, border: '1px solid var(--line)', borderRadius: 8 }}
+      >
+        {filtered.length === 0 ? (
+          <p className="muted" style={{ fontSize: 12.5, margin: '6px 8px' }}>
+            Nothing matches “{q.trim()}”.
+          </p>
+        ) : (
+          filtered.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              role="option"
+              aria-selected={false}
+              className="shelf-picker-row"
+              style={{ fontSize: 12.5, padding: '5px 8px' }}
+              onClick={() => onSelect(it.id)}
+              title={`Select ${it.label} on the map`}
+            >
+              <span className="shelf-picker-name">{it.label}</span>
+              <span className="shelf-picker-go" aria-hidden>◎</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Side-panel card for a pin selected on the map: marker size + planogram. */
 function PinPanel({
   location, product, ownerShelf, groupChips, groupFacings, onSelectMember, onRenameGroup, onSize, onEditPlanogram, onAddAnother, onClose,
@@ -2734,19 +2788,14 @@ function PinPanel({
           <p className="muted" style={{ fontSize: 11.5, margin: '0 0 4px' }}>
             Group — {groupFacings} facing{groupFacings === 1 ? '' : 's'} · {groupChips.length} item{groupChips.length === 1 ? '' : 's'} on this shelf
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {groupChips.map(({ product: p, facings }) => (
-              <button
-                key={p.id}
-                className="btn sm ghost"
-                style={{ fontSize: 11.5 }}
-                onClick={() => onSelectMember(p.id)}
-                title={`Select ${p.name} on the map`}
-              >
-                {p.name}{facings > 1 ? ` ×${facings}` : ''}
-              </button>
-            ))}
-          </div>
+          <ItemsOnShelf
+            items={groupChips.map(({ product: p, facings }) => ({
+              id: p.id,
+              label: `${p.name}${facings > 1 ? ` ×${facings}` : ''}`,
+              hint: p.category_name ?? '',
+            }))}
+            onSelect={(id) => onSelectMember(id)}
+          />
         </div>
       )}
       {onAddAnother && (
