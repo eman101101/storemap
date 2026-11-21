@@ -142,6 +142,30 @@ export interface ProductLocation {
   shelfId?: string | null;
 }
 
+/** Group-model flags on a location's meta — one `groupPin` per shelf group
+ *  (the titled map pin, sized to the group) and `groupOnly` on planogram-only
+ *  facings that never draw as pins. The whole app keys off these two flags. */
+export function locationFlags(l: { meta?: string | null }): { groupPin: boolean; groupOnly: boolean } {
+  try {
+    const m = JSON.parse(l.meta || '{}');
+    return { groupPin: !!m.groupPin, groupOnly: !!m.groupOnly };
+  } catch {
+    return { groupPin: false, groupOnly: false };
+  }
+}
+
+/** A group's display name: the owner shelf can carry a dedicated group name
+ *  (meta.groupName) defined independently of the shelf's own label — renaming
+ *  one never renames the other. Falls back to the shelf label. */
+export function groupDisplayName(shelf: { label: string; meta?: string } | null | undefined): string | null {
+  if (!shelf) return null;
+  try {
+    const m = JSON.parse(shelf.meta || '{}');
+    if (typeof m.groupName === 'string' && m.groupName.trim()) return m.groupName;
+  } catch { /* fall through to the label */ }
+  return shelf.label || null;
+}
+
 export type MemberRole = 'owner' | 'manager' | 'stock' | 'viewer';
 
 export interface StoreMember {

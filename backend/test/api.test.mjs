@@ -389,14 +389,21 @@ test('pin shelfId persists in meta and round-trips through every payload', async
   assert.equal(pub.body.locations[0].shelfId, 'shelf-7');
   assert.ok(pub.body.locations[0].meta);
 
-  // re-pinning with the pin's id updates it in place — no shelfId clears the association
+  // re-pinning with the pin's id updates it in place — no shelfId clears the
+  // association, while the planogram placement MERGES (a plain drag must not
+  // erase the row, facing width, pin size or the group-model flags)
   const cleared = await call(`/api/products/${productId}/locations`, {
     method: 'POST', cookie, body: { floor_id: floorId, locationId: loc.body.location.id, x: 5, y: 6 },
   });
   assert.equal(cleared.status, 201);
   assert.equal(cleared.body.location.id, loc.body.location.id, 'same pin, updated in place');
   assert.equal(cleared.body.location.shelfId, null);
-  assert.equal(cleared.body.location.meta, '{}');
+  const clearedMeta = JSON.parse(cleared.body.location.meta);
+  assert.equal(clearedMeta.shelfId, undefined, 'shelf association cleared');
+  assert.equal(clearedMeta.shelf_level, 2, 'planogram row survives the move');
+  assert.equal(clearedMeta.w, 0.4, 'facing width survives the move');
+  assert.equal(clearedMeta.pinW, 0.8, 'pin length survives the move');
+  assert.equal(clearedMeta.pinH, 0.3, 'pin height survives the move');
   const afterClear = await call(`/api/stores/${storeId}/full`, { cookie });
   assert.equal(afterClear.body.locations[0].shelfId, null);
 });

@@ -247,7 +247,7 @@ export class LocalSession implements EditorApi {
     return { elements };
   }
 
-  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; locationId?: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number }) {
+  async setProductLocation(productId: string, body: { floor_id: string; x: number; y: number; locationId?: string; shelfId?: string; shelfLevel?: number; facingW?: number; pinW?: number; pinH?: number; groupOnly?: boolean; groupPin?: boolean }) {
     // `locationId` MOVES that pin in place (meta merges, so planogram edits
     // survive plain re-pins). WITHOUT one a brand-new facing is inserted — a
     // product can hold several pins per floor, matching the server contract.
@@ -263,6 +263,10 @@ export class LocalSession implements EditorApi {
     if (body.facingW !== undefined) meta.w = body.facingW || undefined;
     if (body.pinW !== undefined) meta.pinW = body.pinW || undefined;
     if (body.pinH !== undefined) meta.pinH = body.pinH || undefined;
+    // group-model flags: `true` stamps them, `false` clears them (undefined
+    // drops the key when the meta is stringified)
+    if (body.groupOnly !== undefined) meta.groupOnly = body.groupOnly || undefined;
+    if (body.groupPin !== undefined) meta.groupPin = body.groupPin || undefined;
     const id = prev?.id ?? uid();
     const location: ProductLocation = {
       id,

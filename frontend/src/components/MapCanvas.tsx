@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement, PointGeom, PolyGeom, Product, RectGeom, ProductLocation } from '../types';
+import { groupDisplayName, locationFlags } from '../types';
 import {
   elementContains, elementPoints, fitViewport, HANDLE_TYPES, handleCursor, polyPoints, polyMidpoint, rectCorners,
   resizeRect, rotateRectTo, shelfAnchor, snap, snapPt, translateElement,
@@ -107,6 +108,10 @@ type Interaction =
   | { kind: 'rotate'; id: string; orig: RectGeom; began: boolean }
   | { kind: 'draw-rect'; anchor: WorldPt }
   | { kind: 'move-pin'; locationId: string; productId: string; moved: boolean; origX: number; origY: number }
+  // split-wall segment handles: drag an endpoint to reshape, drag the
+  // mid-handle to rotate the segment around its centre
+  | { kind: 'move-vertex'; id: string; index: number; moved: boolean; began: boolean }
+  | { kind: 'rotate-poly'; id: string; orig: PolyGeom; center: WorldPt; startAngle: number; moved: boolean; began: boolean }
   | null;
 
 const isTypingTarget = (t: EventTarget | null) =>
@@ -302,6 +307,13 @@ export default function MapCanvas(props: Props) {
 
   const hitElement = (w: WorldPt): MapElement | null => {
     const tol = Math.max(0.25, 7 / viewport.scale);
+    // points (entrances, exits, POIs) are tiny — they win over any large area
+    // drawn above them, or they could never be selected at all
+    for (let i = elements.length - 1; i >= 0; i--) {
+      const el = elements[i];
+      if (isLocked(el) || el.shape !== 'point') continue;
+      if (elementContains(el, w, tol * 2)) return el;
+    }
     for (let i = elements.length - 1; i >= 0; i--) {
       if (isLocked(elements[i])) continue; // B4: locked fixtures aren't selectable on the map
       if (elementContains(elements[i], w, tol)) return elements[i];
@@ -360,6 +372,7 @@ export default function MapCanvas(props: Props) {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     // a press starts a gesture — hide hover cards until the pointer settles again
     setHoverShelf(null);
+    setHoverGroupShelfId(null);
     setHoverAisle(null);
 
     // Two pointers → pinch zoom takes over (viewer and editor).
@@ -378,7 +391,8 @@ export default function MapCanvas(props: Props) {
       const cur = interaction.current;
       if (
         cur &&
-        (cur.kind === 'move' || cur.kind === 'move-many' || cur.kind === 'resize' || cur.kind === 'rotate') &&
+        (cur.kind === 'move' || cur.kind === 'move-many' || cur.kind === 'resize' || cur.kind === 'rotate' ||
+          cur.kind === 'move-vertex' || cur.kind === 'rotate-poly') &&
         cur.began
       ) {
         onElementsChange?.(elements, 'push', cur.kind === 'move-many' ? 'move' : cur.kind);
@@ -400,12 +414,14 @@ export default function MapCanvas(props: Props) {
     const w = toWorld(e);
     const isPanButton = e.button === 1 || e.shiftKey;
 
-    // products pick filter: grab the nearest pin, never the fixtures under it
+    // products pick filter: grab the nearest VISIBLE pin, never the fixtures
+    // under it — and never a hidden groupOnly facing (items have no pins)
     if (edit && tool === 'select' && pickFilter === 'products' && e.button === 0 && !isPanButton) {
       const grabR = Math.max(0.5, 16 / viewport.scale);
       let bestPin: MapPin | null = null;
       let bestD = grabR;
       for (const p of pins) {
+        if (!isPickablePin(p, showItems)) continue;
         const d = Math.hypot(p.location.x - w.x, p.location.y - w.y);
         if (d < bestD) {
           bestD = d;
@@ -437,6 +453,29 @@ export default function MapCanvas(props: Props) {
                 : { kind: 'resize', id: sel.id, handle, orig: sel.geom as RectGeom, began: false };
             return;
           }
+          // split-wall segments: endpoint handles reshape, the mid-handle rotates
+          if (sel?.type === 'wall' && sel.shape === 'polyline') {
+            const pts = (sel.geom as PolyGeom).slice();
+            const handle = handleEl.dataset.handle;
+            if (handle === 'rot') {
+              const center: WorldPt = {
+                x: (pts[0][0] + pts[pts.length - 1][0]) / 2,
+                y: (pts[0][1] + pts[pts.length - 1][1]) / 2,
+              };
+              interaction.current = {
+                kind: 'rotate-poly', id: sel.id, orig: (sel.geom as PolyGeom).slice(), center,
+                startAngle: Math.atan2(w.y - center.y, w.x - center.x), moved: false, began: false,
+              };
+              return;
+            }
+            if (handle === 'p0' || handle === 'p1') {
+              interaction.current = {
+                kind: 'move-vertex', id: sel.id, index: handle === 'p0' ? 0 : pts.length - 1,
+                moved: false, began: false,
+              };
+              return;
+            }
+          }
         }
       }
       if (isPanButton) {
@@ -453,6 +492,9 @@ export default function MapCanvas(props: Props) {
         let bestPin: MapPin | null = null;
         let bestD = grabR;
         for (const p of pins) {
+          // only pins that actually render — a hidden groupOnly facing must
+          // never swallow the click that was meant for the group pin
+          if (!isPickablePin(p, showItems)) continue;
           const d = Math.hypot(p.location.x - w.x, p.location.y - w.y);
           if (d < bestD) { bestD = d; bestPin = p; }
         }
@@ -537,6 +579,7 @@ export default function MapCanvas(props: Props) {
       } else {
         let best: { id: string; d: number } | null = null;
         for (const pin of pins) {
+          if (!isPickablePin(pin, showItems)) continue;
           const d = Math.hypot(pin.location.x - w.x, pin.location.y - w.y);
           if (d < Math.max(0.5, 16 / viewport.scale) && (!best || d < best.d)) best = { id: pin.location.id, d };
         }
@@ -545,6 +588,29 @@ export default function MapCanvas(props: Props) {
       }
     } else if (placeHoverShelfId && tool !== 'product') {
       setPlaceHoverShelfId(null);
+    }
+
+    // group-pin hover preview: outline the shelf the click would select
+    if (edit && tool === 'select' && !interaction.current) {
+      const hov = toWorld(e);
+      const grabR = Math.max(0.5, 12 / viewport.scale);
+      let hitPin: MapPin | null = null;
+      let hitD = grabR;
+      for (const p of pins) {
+        if (!isPickablePin(p, showItems)) continue;
+        const d = Math.hypot(p.location.x - hov.x, p.location.y - hov.y);
+        if (d < hitD) { hitD = d; hitPin = p; }
+      }
+      let nextHover: string | null = null;
+      if (hitPin && locationFlags(hitPin.location).groupPin) {
+        try {
+          const sid = JSON.parse(hitPin.location.meta || '{}').shelfId;
+          if (typeof sid === 'string') nextHover = sid;
+        } catch { /* no owner */ }
+      }
+      if (nextHover !== hoverGroupShelfId) setHoverGroupShelfId(nextHover);
+    } else if (hoverGroupShelfId && (interaction.current || tool !== 'select')) {
+      setHoverGroupShelfId(null);
     }
 
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -637,6 +703,33 @@ export default function MapCanvas(props: Props) {
       if (e.shiftKey) r.rot = Math.round(r.rot / 15) * 15;
       replaceElement({ ...elements.find((el) => el.id === it.id)!, geom: r }, it.began ? 'live' : 'begin');
       it.began = true;
+    } else if (it.kind === 'move-vertex') {
+      it.moved = true;
+      const snapped = snapPt(w, grid);
+      const next = elements.map((el) => {
+        if (el.id !== it.id) return el;
+        const pts = (el.geom as PolyGeom).slice();
+        pts[it.index] = [snapped.x, snapped.y];
+        return { ...el, geom: pts };
+      });
+      onElementsChange?.(next, it.began ? 'live' : 'begin');
+      it.began = true;
+    } else if (it.kind === 'rotate-poly') {
+      it.moved = true;
+      const ang = Math.atan2(w.y - it.center.y, w.x - it.center.x) - it.startAngle;
+      const cos = Math.cos(ang);
+      const sin = Math.sin(ang);
+      const next = elements.map((el) => {
+        if (el.id !== it.id) return el;
+        const pts = (it.orig as PolyGeom).map(([x, y]) => {
+          const dx = x - it.center.x;
+          const dy = y - it.center.y;
+          return [it.center.x + dx * cos - dy * sin, it.center.y + dx * sin + dy * cos] as [number, number];
+        });
+        return { ...el, geom: pts };
+      });
+      onElementsChange?.(next, it.began ? 'live' : 'begin');
+      it.began = true;
     } else if (it.kind === 'draw-rect') {
       const a = it.anchor;
       const b = snapPt(w, grid);
@@ -676,7 +769,8 @@ export default function MapCanvas(props: Props) {
         if (hit) onElementClick?.(hit);
       }
     } else if (
-      (it.kind === 'move' || it.kind === 'move-many' || it.kind === 'resize' || it.kind === 'rotate') &&
+      (it.kind === 'move' || it.kind === 'move-many' || it.kind === 'resize' || it.kind === 'rotate' ||
+        it.kind === 'move-vertex' || it.kind === 'rotate-poly') &&
       it.began
     ) {
       // fixture gestures end with a 'push' of the final state: history entry,
@@ -710,24 +804,46 @@ export default function MapCanvas(props: Props) {
     if (edit && selectedPinId) s.add(selectedPinId);
     return s;
   }, [focusPinId, edit, selectedPinId]);
+  // planogram-only facings (meta.groupOnly) never render as map pins — the
+  // map shows only the group pins (sized to the group's full length)
+  const groupOnlyIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of floorPins) {
+      try {
+        const m = JSON.parse(p.location.meta || '{}');
+        if (m.groupOnly) s.add(p.location.id);
+      } catch { /* no meta */ }
+    }
+    return s;
+  }, [floorPins]);
   const shownPins = useMemo(() => {
-    if (floorPins.length <= 600) return floorPins;
+    const base = floorPins.filter((p) => !groupOnlyIds.has(p.location.id) || alwaysPinIds.has(p.location.id));
+    if (base.length <= 600) return base;
     const m = 2;
     const x0 = -viewport.tx / viewport.scale - m;
     const y0 = -viewport.ty / viewport.scale - m;
     const x1 = (size.w - viewport.tx) / viewport.scale + m;
     const y1 = (size.h - viewport.ty) / viewport.scale + m;
-    const out: typeof floorPins = [];
-    for (const p of floorPins) {
+    const out: typeof base = [];
+    for (const p of base) {
       const { x, y } = p.location;
       if ((x >= x0 && x <= x1 && y >= y0 && y <= y1) || alwaysPinIds.has(p.location.id)) out.push(p);
     }
     return out;
-  }, [floorPins, viewport.tx, viewport.ty, viewport.scale, size.w, size.h, alwaysPinIds]);
-  // groups view: focused pins only
+  }, [floorPins, groupOnlyIds, viewport.tx, viewport.ty, viewport.scale, size.w, size.h, alwaysPinIds]);
+  // groups view: the groups' ONE pin each (groupPin facings — the titled map
+  // pins) plus whatever is focused/selected; item facings stay inside the
+  // planograms
+  const groupPinIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of floorPins) {
+      if (locationFlags(p.location).groupPin) s.add(p.location.id);
+    }
+    return s;
+  }, [floorPins]);
   const groupsPins = useMemo(
-    () => floorPins.filter((p) => alwaysPinIds.has(p.location.id)),
-    [floorPins, alwaysPinIds]
+    () => floorPins.filter((p) => groupPinIds.has(p.location.id) || alwaysPinIds.has(p.location.id)),
+    [floorPins, groupPinIds, alwaysPinIds]
   );
   const renderedPins = showItems ? shownPins : groupsPins;
 
@@ -750,6 +866,9 @@ export default function MapCanvas(props: Props) {
     for (const p of floorPins) {
       const { x, y } = p.location;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      // facings only: groupOnly never draws, and each group's groupPin draws
+      // right below as a real (titled) pin — no double image
+      if (groupOnlyIds.has(p.location.id) || groupPinIds.has(p.location.id)) continue;
       const a = pinAnchors.get(p.location.id);
       let w = 0.5;
       let h = 0.2;
@@ -768,7 +887,7 @@ export default function MapCanvas(props: Props) {
       });
     }
     return out;
-  }, [showItems, floorPins, pinAnchors, viewport.tx, viewport.ty, viewport.scale, size.w, size.h]);
+  }, [showItems, floorPins, groupOnlyIds, groupPinIds, pinAnchors, viewport.tx, viewport.ty, viewport.scale, size.w, size.h]);
 
   // department area labels: shelfId → department name. Callers decide when
   // they show — the editor in groups view, the viewer whenever it isn't mid-
@@ -780,6 +899,28 @@ export default function MapCanvas(props: Props) {
     [showDepartments, floorEls, stockPins, floorPins, ownerOfPin]
   );
   const shelfById = useMemo(() => new Map(floorEls.map((el) => [el.id, el])), [floorEls]);
+  // a group pin's title is its GROUP's name — the owning shelf's label
+  // (resolved from the persisted meta.shelfId); meta.labelHidden on the shelf
+  // hides it (the editor's group panel and element panel both write it)
+  const groupPinTitle = (loc: ProductLocation): string | undefined => {
+    let shelfId: string | null = null;
+    try { shelfId = JSON.parse(loc.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
+    const el = typeof shelfId === 'string' ? shelfById.get(shelfId) : undefined;
+    if (!el) return undefined;
+    try {
+      if (JSON.parse(el.meta || '{}').labelHidden === true) return undefined;
+    } catch { /* visible */ }
+    return groupDisplayName(el) || undefined;
+  };
+  // …and its colour follows the owning shelf's colour when the owner set one
+  const groupPinColor = (loc: ProductLocation): string | undefined => {
+    let shelfId: string | null = null;
+    try { shelfId = JSON.parse(loc.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
+    const el = typeof shelfId === 'string' ? shelfById.get(shelfId) : undefined;
+    return el?.color || undefined;
+  };
+  // hovering a group pin outlines its shelf — the click target preview
+  const [hoverGroupShelfId, setHoverGroupShelfId] = useState<string | null>(null);
   const deptBadgeIds = useMemo(() => {
     if (!departments) return null;
     const skip = new Set<string>();
@@ -799,8 +940,25 @@ export default function MapCanvas(props: Props) {
         }
       }
     }
+    // no duplicate labels: the badge is suppressed when the shelf's own title
+    // already says it, or when a labelled zone carrying the same department
+    // name covers the shelf — that rendered as double/triple text piles
+    const labelledZones = floorEls.filter((e) => e.type === 'zone' && e.shape === 'rect' && e.label);
+    for (const [id] of departments) {
+      const el = shelfById.get(id);
+      if (!el) continue;
+      const dept = departments.get(id)!;
+      if (dept === el.label) { skip.add(id); continue; }
+      if (el.shape !== 'rect') continue;
+      const r = el.geom as RectGeom;
+      const center = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+      for (const z of labelledZones) {
+        if (z.label !== dept) continue;
+        if (elementContains(z, center, 0)) { skip.add(id); break; }
+      }
+    }
     return { map: departments, skip };
-  }, [departments, shelfById]);
+  }, [departments, shelfById, floorEls]);
 
   const sel = selectedId ? floorEls.find((el) => el.id === selectedId) : null;
 
@@ -882,7 +1040,7 @@ export default function MapCanvas(props: Props) {
             el={el}
             scale={scale}
             selected={el.id === selectedId}
-            highlighted={highlightElementIds?.has(el.id)}
+            highlighted={highlightElementIds?.has(el.id) || el.id === hoverGroupShelfId}
             edit={edit}
             showLabels={showLabels}
           />
@@ -1046,12 +1204,18 @@ export default function MapCanvas(props: Props) {
             focused={location.id === focusPinId || (edit && location.id === selectedPinId)}
             clickable={!edit}
             anchor={pinAnchors.get(location.id) ?? shelfAnchor({ x: location.x, y: location.y }, elements)}
+            groupTitle={groupPinIds.has(location.id) ? groupPinTitle(location) : undefined}
+            colorOverride={groupPinIds.has(location.id) ? groupPinColor(location) : undefined}
+            isGroupPin={groupPinIds.has(location.id)}
             onClick={() => onPinClick?.(product.id)}
           />
         ))}
 
         {sel?.shape === 'rect' && edit && (
           <SelectionOverlay r={sel.geom as RectGeom} scale={scale} label={sel.label} />
+        )}
+        {sel?.type === 'wall' && sel.shape === 'polyline' && edit && (
+          <PolyOverlay pts={sel.geom as PolyGeom} scale={scale} />
         )}
 
         {/* product-placement preview: ghost facings where the group or item
@@ -1163,6 +1327,15 @@ export default function MapCanvas(props: Props) {
 
 /* ---------------- rendering helpers ---------------- */
 
+/** Can the pointer grab this pin? Only pins that actually RENDER: planogram-
+ *  only facings (groupOnly) never act as pins, so clicks pass through them to
+ *  the group pin or fixture underneath. */
+function isPickablePin(p: { location: { meta?: string } }, showItems: boolean): boolean {
+  const flags = locationFlags(p.location);
+  if (flags.groupOnly) return false;
+  return showItems || flags.groupPin;
+}
+
 function ElementNode({
   el, scale, selected, highlighted, edit, showLabels = true,
 }: { el: MapElement; scale: number; selected: boolean; highlighted?: boolean; edit: boolean; showLabels?: boolean }) {
@@ -1170,7 +1343,9 @@ function ElementNode({
     el.color || (el.type === 'wall' ? 'var(--el-wall-fill)' : TYPE_COLOR[el.type]);
   const stroke =
     el.color ? shade(el.color, -0.25) : el.type === 'wall' ? 'var(--el-wall-stroke)' : TYPE_STROKE[el.type];
-  const label = el.label;
+  // walls never carry an on-map label — the "Outer walls" text just piled up
+  // over the department names
+  const label = el.type === 'wall' ? '' : el.label;
   let fs = 12.5 / scale;
   let labelHidden = false;
   try {
@@ -1189,9 +1364,9 @@ function ElementNode({
         <rect
           x={r.x} y={r.y} width={r.w} height={r.h}
           fill={fill}
-          fillOpacity={el.type === 'zone' ? (highlighted ? 0.5 : 0.3) : 1}
-          stroke={stroke}
-          strokeWidth={el.type === 'wall' ? 2.4 : 1.4}
+          fillOpacity={el.type === 'zone' ? (highlighted ? 0.45 : 0.3) : 1}
+          stroke={highlighted ? '#e4572e' : stroke}
+          strokeWidth={el.type === 'wall' ? 2.4 : highlighted ? 3 : 1.4}
           strokeDasharray={el.type === 'aisle' ? '7 5' : undefined}
           vectorEffect="non-scaling-stroke"
           rx={el.type === 'shelf' ? 0 : Math.min(0.15, r.w / 4)}
@@ -1291,10 +1466,36 @@ function RectPreview({ r, type }: { r: RectGeom; type: MapElement['type'] }) {
   );
 }
 
+/** Selection overlay for a (split) wall segment: endpoint handles reshape the
+ *  segment, the mid-handle rotates it around its centre — the polyline
+ *  equivalent of the rect resize/rotate handles. */
+function PolyOverlay({ pts, scale }: { pts: PolyGeom; scale: number }) {
+  const hs = 4.5 / scale;
+  const [x0, y0] = pts[0];
+  const [x1, y1] = pts[pts.length - 1];
+  const mx = (x0 + x1) / 2;
+  const my = (y0 + y1) / 2;
+  const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+  const nx = -(y1 - y0) / len;
+  const ny = (x1 - x0) / len;
+  const D = 26 / scale;
+  const rx = mx + nx * D;
+  const ry = my + ny * D;
+  return (
+    <g>
+      <line x1={x0} y1={y0} x2={x1} y2={y1} stroke="#2f6fd4" strokeWidth={1.5} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+      <rect data-handle="p0" x={x0 - hs} y={y0 - hs} width={hs * 2} height={hs * 2} rx={2 / scale} fill="#fff" stroke="#2f6fd4" strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ cursor: 'move' }} />
+      <rect data-handle="p1" x={x1 - hs} y={y1 - hs} width={hs * 2} height={hs * 2} rx={2 / scale} fill="#fff" stroke="#2f6fd4" strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ cursor: 'move' }} />
+      <line x1={mx} y1={my} x2={rx} y2={ry} stroke="#2f6fd4" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <circle data-handle="rot" cx={rx} cy={ry} r={hs * 1.1} fill="#fff" stroke="#2f6fd4" strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ cursor: 'grab' }} />
+    </g>
+  );
+}
+
 function ProductPin({
-  location, product, scale, focused, clickable, anchor, onClick,
-}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: (WorldPt & { nx?: number; ny?: number }) | null; onClick: () => void }) {
-  const color = product.category_color || '#2f6f3e';
+  location, product, scale, focused, clickable, anchor, groupTitle, colorOverride, isGroupPin, onClick,
+}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: (WorldPt & { nx?: number; ny?: number }) | null; groupTitle?: string; colorOverride?: string; isGroupPin?: boolean; onClick: () => void }) {
+  const color = colorOverride || product.category_color || '#2f6f3e';
   // the marker sits on the shelf's outline — the wall the item is stocked against
   const px = anchor?.x ?? location.x;
   const py = anchor?.y ?? location.y;
@@ -1344,7 +1545,10 @@ function ProductPin({
       )}
       {/* invisible fat hit target so the slim bar is still easy to click */}
       <circle cx={px} cy={py} r={0.45} fill="transparent" pointerEvents={clickable ? 'all' : 'none'} />
-      {focused && product.name && (
+      {/* a group pin carries its GROUP's title at all times — it IS the
+          group's map pin, never an item's name (even when focused). Other
+          pins label only while focused. */}
+      {(groupTitle || (!isGroupPin && focused && product.name)) && (
         <text
           x={px}
           y={py - 0.85}
@@ -1356,7 +1560,7 @@ function ProductPin({
           paintOrder="stroke"
           fontWeight={700}
         >
-          {product.name}
+          {groupTitle ?? product.name}
         </text>
       )}
     </g>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import MapCanvas from './MapCanvas';
+import { shelfContaining } from '../lib/departments';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
 import { BlockText } from './GridHero';
@@ -9,7 +10,7 @@ import { CameraPad, CameraToggle, ZoomPad } from './ui';
 import type {
   Floor, MapElement, Product, ProductLocation, PublicStorePayload,
 } from '../types';
-import { parseElement } from '../types';
+import { parseElement, groupDisplayName, locationFlags } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
 import { shelfDirectory } from '../lib/aisleInfo';
@@ -42,6 +43,9 @@ export default function ViewerPage() {
   const searchRef = useRef<HTMLDivElement>(null);
   const [activeFloorId, setActiveFloorId] = useState('');
   const [focusPinLocationId, setFocusPinLocationId] = useState<string | null>(null);
+  // the ITEM facing to ring inside the planogram (the map focus lands on the
+  // group's pin, the highlight stays on the searched item)
+  const [highlightFacingId, setHighlightFacingId] = useState<string | null>(null);
   const [focusCmd, setFocusCmd] = useState<{ x: number; y: number; seq: number } | null>(null);
   /** the deferred 2D zoom-to-pin from focusResult — cleared on unmount */
   const focusTimer = useRef<number>(0);
@@ -223,12 +227,25 @@ export default function ViewerPage() {
             ? new Set(tripIds)
             : null;
     if (!wanted) return [];
-    return data.locations
-      .filter((l) => l.floor_id === floor.id && wanted.has(l.product_id))
-      .map((location) => {
-        const product = data.products.find((p) => p.id === location.product_id)!;
-        return { location, product };
+    // a match shows up as its GROUP's pin: the groupPin facing of each shelf
+    // stocking it — item facings never draw as pins. Legacy shelves without a
+    // group pin fall back to their plain facings (old maps keep working); a
+    // pin-less all-groupOnly product stays hidden (it lives inside the group
+    // planogram) until it is focused directly.
+    const floorLocs = data.locations.filter((l) => l.floor_id === floor.id);
+    const out: Pin[] = [];
+    for (const productId of wanted) {
+      const facings = floorLocs.filter((l) => l.product_id === productId);
+      const groupPins = facings.filter((l) => locationFlags(l).groupPin);
+      const plain = facings.filter((l) => {
+        const f = locationFlags(l);
+        return !f.groupOnly && !f.groupPin;
       });
+      const product = data.products.find((p) => p.id === productId);
+      if (!product) continue;
+      for (const l of groupPins.length ? groupPins : plain) out.push({ location: l, product });
+    }
+    return out;
   }, [data, floor?.id, productIds, catProductIds, hasSearch, focusedProductId, trip]);
 
   // All pins on the current floor (unfiltered) — used to draw the shelf layout.
@@ -336,7 +353,45 @@ export default function ViewerPage() {
   // can call it on a render that returned early (e.g. a floor-less store)
   const focusResult = (product: Product) => {
     if (!data) return;
-    const loc = data.locations.find((l) => l.product_id === product.id);
+    // an item can sit in several groups: head to the closest one — the
+    // current 3D camera target when viewing in 3D, the map centre in 2D
+    const facings = data.locations.filter((l) => l.product_id === product.id);
+    const camTarget = view3d && cam3d ? { x: cam3d.tx, y: cam3d.ty } : null;
+    const mapEl = document.querySelector('.viewer-map');
+    const mrect = mapEl?.getBoundingClientRect();
+    const ref = camTarget ?? (mrect && viewport.scale
+      ? { x: (mrect.width / 2 - viewport.tx) / viewport.scale, y: (mrect.height / 2 - viewport.ty) / viewport.scale }
+      : null);
+    let loc = (ref
+      ? facings.reduce<ProductLocation | null>(
+          (best, l) =>
+            !best || Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best,
+          null
+        )
+      : facings[0]) ?? facings[0];
+    // the planogram rings the item's own facing — the map focus below may
+    // hop to the group's pin, the highlight stays on the searched item
+    setHighlightFacingId(loc?.id ?? null);
+    // a planogram-only facing (groupOnly) has no map pin — head to its
+    // group's pin instead (the closest non-groupOnly facing in that shelf)
+    let gm: Record<string, unknown> = {};
+    try { gm = JSON.parse(loc.meta || '{}'); } catch { /* no meta */ }
+    if (gm.groupOnly) {
+      const floorEls = elements.filter((e) => e.floor_id === loc.floor_id);
+      const shelfId = shelfContaining(loc.x, loc.y, floorEls);
+      const inShelf = facings.filter((l) => {
+        if (l.id === loc.id) return false;
+        let mm: Record<string, unknown> = {};
+        try { mm = JSON.parse(l.meta || '{}'); } catch { return false; }
+        if (mm.groupOnly) return false;
+        return shelfContaining(l.x, l.y, floorEls) === shelfId;
+      });
+      if (inShelf.length) {
+        loc = ref
+          ? inShelf.reduce((best, l) => (Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best))
+          : inShelf[0];
+      }
+    }
     setQ('');
     setSearchOpen(false);
     setSheetProduct(product);
@@ -384,6 +439,7 @@ export default function ViewerPage() {
   const clearRoute = () => {
     setRoute(null);
     setFocusPinLocationId(null);
+    setHighlightFacingId(null);
     setSheetProduct(null);
   };
 
@@ -443,6 +499,17 @@ export default function ViewerPage() {
               zoomCommand={zoomCmd ?? undefined}
               onElementClick={(el) => el.type === 'shelf' && setShelfPopupId(el.id)}
               onPinClick={(productId) => {
+                // a group pin opens its shelf's planogram — same contract as
+                // the 2D map; plain (legacy) pins focus the item as usual
+                const pin = pins.find((x) => x.product.id === productId);
+                if (pin && locationFlags(pin.location).groupPin) {
+                  let shelfId: string | null = null;
+                  try { shelfId = JSON.parse(pin.location.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
+                  if (typeof shelfId === 'string') {
+                    setShelfPopupId(shelfId);
+                    return;
+                  }
+                }
                 const p = data.products.find((pr) => pr.id === productId);
                 if (p) focusResult(p);
               }}
@@ -461,6 +528,21 @@ export default function ViewerPage() {
             route={tripLegsFlat ?? activeRoute?.points ?? null}
             tripStops={tripResult ? tripResult.tour.order : undefined}
             onElementClick={(el) => el.type === 'shelf' && setShelfPopupId(el.id)}
+            onPinClick={(productId) => {
+              // a group pin opens its shelf's planogram; a plain (legacy) pin
+              // focuses the item as usual
+              const pin = pins.find((x) => x.product.id === productId);
+              if (pin && locationFlags(pin.location).groupPin) {
+                let shelfId: string | null = null;
+                try { shelfId = JSON.parse(pin.location.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
+                if (typeof shelfId === 'string') {
+                  setShelfPopupId(shelfId);
+                  return;
+                }
+              }
+              const p = data.products.find((pr) => pr.id === productId);
+              if (p) focusResult(p);
+            }}
             zoomCommand={zoomCmd ?? undefined}
           />
         )}
@@ -534,11 +616,34 @@ export default function ViewerPage() {
                   <div className="no-results">{search ? `Nothing found for “${q.trim()}”.` : 'Start typing to find an item.'}</div>
                 ) : (
                   results.map((p, idx) => {
-                    const loc = data.locations.find((l) => l.product_id === p.id);
+                    // a map pin = the item's non-groupOnly facing; pin-less
+                    // items name the GROUP they sit in, and items in no group
+                    // at all list as out of stock
+                    const locs = data.locations.filter((l) => l.product_id === p.id);
+                    const loc = locs.find((l) => !locationFlags(l).groupOnly) ?? null;
+                    const groupLabel = loc
+                      ? null
+                      : (() => {
+                          const floorEls = elements.filter((e) => e.type === 'shelf' && e.shape === 'rect');
+                          for (const l of locs) {
+                            let shelfId: string | null = null;
+                            try { shelfId = JSON.parse(l.meta || '{}').shelfId ?? null; } catch { /* no meta */ }
+                            const el = typeof shelfId === 'string' ? floorEls.find((e) => e.id === shelfId) : undefined;
+                            const name = groupDisplayName(el);
+                            if (name) return name;
+                          }
+                          for (const l of locs) {
+                            const shelfId = shelfContaining(l.x, l.y, floorEls);
+                            const el = shelfId ? floorEls.find((e) => e.id === shelfId) : undefined;
+                            const name = groupDisplayName(el);
+                            if (name) return name;
+                          }
+                          return null;
+                        })();
                     const active = idx === activeIdx;
                     const rowClass = `result-item ${active ? 'kbd-active' : ''} ${loc && loc.id === focusPinLocationId ? 'selected' : ''}`;
                     const name = highlight(p.name, search);
-                    return loc ? (
+                    return loc || groupLabel ? (
                       <button
                         key={p.id}
                         role="option"
@@ -556,9 +661,11 @@ export default function ViewerPage() {
                         <span className="rname">
                           <b>{name}</b>
                           <span>
-                            {[p.brand, p.price != null ? `$${p.price.toFixed(2)}` : '', floorName(data.floors, loc.floor_id)]
-                              .filter(Boolean)
-                              .join(' · ')}
+                            {loc
+                              ? [p.brand, p.price != null ? `$${p.price.toFixed(2)}` : '', floorName(data.floors, loc.floor_id)]
+                                .filter(Boolean)
+                                .join(' · ')
+                              : [p.brand, `in ${groupLabel}`].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                         <span className="rgo" aria-hidden>🧭</span>
@@ -570,7 +677,7 @@ export default function ViewerPage() {
                         )}
                         <span className="rname">
                           <b>{name}</b>
-                          <span>{[p.brand, 'no map pin yet'].filter(Boolean).join(' · ')}</span>
+                          <span>{[p.brand, 'out of stock'].filter(Boolean).join(' · ')}</span>
                         </span>
                         {!p.image_url && <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />}
                       </div>
@@ -618,7 +725,7 @@ export default function ViewerPage() {
                 <button
                   key={f.id}
                   className={`floor-tab ${f.id === floor.id ? 'active' : ''}`}
-                  onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); }}
+                  onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); setHighlightFacingId(null); }}
                 >
                   {f.name}
                 </button>
@@ -765,7 +872,7 @@ export default function ViewerPage() {
           <ShelfDetail
             shelf={selectedShelf}
             pins={floorPins}
-            highlightLocationId={focusPinLocationId}
+            highlightLocationId={highlightFacingId ?? focusPinLocationId}
             onClose={() => setShelfPopupId(null)}
             onAddToList={addToTrip}
             onPickProduct={(p) => {

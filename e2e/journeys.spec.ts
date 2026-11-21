@@ -162,10 +162,11 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   await expandOutline();
   await expect(page.locator('.outline-row')).toHaveCount(4, { timeout: 10_000 });
 
-  // Add-item from the map: the 📍 tool works with nothing pre-selected —
-  // clicking empty space creates the item's own AREA (a 5th element), opens
-  // the product form, and saving pins the item into it in one step
-  await page.getByRole('button', { name: /Add item/ }).click();
+  // Add-item from the map: the product tool now opens in Group mode by
+  // default — switch to 📍 Single, then clicking empty space opens the
+  // product form anchored at that spot (a free pin, no auto-created area)
+  await page.getByRole('button', { name: /Add item group/ }).click();
+  await page.getByRole('button', { name: '📍 Single' }).click();
   // mid-map empty space: clear of the shelves, the left tool rail and the
   // open side-panel drawer that overlays the right edge
   await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.28);
@@ -173,10 +174,11 @@ test('editor: opens, outline lists elements, history snapshots', async ({ page }
   await expect(form).toBeVisible();
   await form.getByLabel('Name').fill('Map Made Cola');
   await form.getByRole('button', { name: 'Save product' }).click();
-  // the pin panel opens on the new item, showing its (new) area group
+  // the pin panel opens on the new item (a free pin — the outline keeps its
+  // four elements, single placement never auto-creates an area)
   await expect(page.locator('.panel-section', { hasText: '📍 Map Made Cola' })).toBeVisible({ timeout: 10_000 });
-  // close the pin card to bring the outline back — the new area is element #5
+  // close the pin card to bring the outline back
   await page.getByRole('button', { name: 'Close pin panel' }).click();
   await expandOutline();
-  await expect(page.locator('.outline-row')).toHaveCount(5, { timeout: 10_000 });
+  await expect(page.locator('.outline-row')).toHaveCount(4, { timeout: 10_000 });
 });

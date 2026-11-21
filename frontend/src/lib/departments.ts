@@ -67,6 +67,13 @@ export function shelfDepartments(elements: MapElement[], pins: MapPin[], ownerOf
   return out;
 }
 
+/** Which rect shelf contains this world point (rotation aware)? Null when
+ *  the point sits outside every shelf. Exported for focus/search flows that
+ *  need to resolve a facing to its group's shelf. */
+export function shelfContaining(x: number, y: number, elements: MapElement[]): string | null {
+  return shelfAtPoint(x, y, elements);
+}
+
 function shelfAtPoint(x: number, y: number, elements: MapElement[]): string | null {
   let best: string | null = null;
   let bestD = Infinity;

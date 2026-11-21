@@ -10,9 +10,9 @@ import ShelfItemPicker from './ShelfItemPicker';
 import CropModal from './CropModal';
 import GroupCreatorModal, { type GroupItemDraft } from './GroupCreatorModal';
 import type {
-  Category, Floor, MapElement, Product, ProductLocation, RectGeom, Store,
+  Category, Floor, MapElement, PolyGeom, Product, ProductLocation, RectGeom, Store,
 } from '../types';
-import { elementToRow, parseElement } from '../types';
+import { elementToRow, groupDisplayName, locationFlags, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
 import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useTheme } from '../theme';
@@ -145,6 +145,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // 3D edit view: same elements/selection/undo pipeline, different viewport.
   // The editor always opens in 2D — that's where objects are placed.
   const [view3d, setView3d] = useState(false);
+  // 3D transform mode: rotate/resize the selected fixture from the card
+  // (dragging in 3D keeps its move behaviour)
+  const [transform3d, setTransform3d] = useState(false);
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   const [focus3d, setFocus3d] = useState<{ id: string; seq: number } | null>(null);
   const [showControls, setShowControls] = useState(false);
@@ -193,6 +196,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     setFlashProductId(productId);
     setSelectedPinProductId(productId);
     setProductsGroupOpen(true);
+    setSelectedId(null); // the pin card wins over any selected fixture
   };
   // shelves mid-gesture: their owned pins hide while the shelf moves and
   // reappear (re-homed) when the gesture ends — no pins floating mid-drag
@@ -303,6 +307,20 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         .filter(Boolean) as { location: ProductLocation; product: Product }[],
     [locations, products]
   );
+
+  // which group (shelf label) an item lives in — its group pin's owning shelf
+  const groupLabelOfProduct = useCallback(
+    (productId: string): string | null => {
+      const locs = locations.filter((l) => l.product_id === productId && l.floor_id === floor?.id);
+      const pin = locs.find((l) => {
+        try { return !JSON.parse(l.meta || '{}').groupOnly; } catch { return true; }
+      }) ?? locs[0];
+      if (!pin) return null;
+      const shelfId = ownerOf(pin);
+      return groupDisplayName(floorElements.find((e) => e.id === shelfId));
+    },
+    [locations, floor?.id, floorElements, /* ownerOf is a stable ref reader */]
+  );
   // pins the map renders: owned pins of a shelf mid-gesture are hidden until
   // the move settles (they jump with the shelf at release)
   const visibleFloorPins = useMemo(
@@ -314,28 +332,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   );
 
   // ---- items / groups visibility ----
-  // Groups view (items hidden) is the default for real stores: the map shows
-  // fixtures + department area labels and only the focused/selected pins —
-  // items are never individually selectable there. null = no explicit choice
-  // yet; floors with more than 25 shelves (real stores) default to groups.
-  const [itemsPref, setItemsPref] = useState<boolean | null>(() => {
-    try {
-      const v = localStorage.getItem('storemap.showItems');
-      return v == null ? null : v === '1';
-    } catch {
-      return null; // private mode — fall back to the shelf-count heuristic
-    }
-  });
-  const GROUPS_HEAVY = 25;
-  const shelfCount = floorElements.filter((e) => e.type === 'shelf').length;
-  const showItems = itemsPref ?? shelfCount <= GROUPS_HEAVY;
-  const toggleShowItems = () => {
-    setItemsPref((cur) => {
-      const next = !(cur ?? shelfCount <= GROUPS_HEAVY);
-      try { localStorage.setItem('storemap.showItems', next ? '1' : '0'); } catch { /* private mode */ }
-      return next;
-    });
-  };
+  // Groups view is THE view: every shelf group shows ONE titled pin on the
+  // map (its groupPin facing) and the items live only inside the group's
+  // planogram — items are never individually editable map objects. Preview
+  // search still overlays the resolved pins while a query is active.
+  const showItems = false;
 
   // ---- preview mode: the map as shoppers see it (non-editing) ----
   const [preview, setPreview] = useState(false);
@@ -343,7 +344,11 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const [mapToolsOpen, setMapToolsOpen] = useState(false);
   // preview carries its own shopper-style search so the flow is testable
   const [previewQuery, setPreviewQuery] = useState('');
-  // typing in preview shows only the matching facings (null = normal map)
+  // the planogram editor's "Edit item" — opens the same product menu as the Items tab
+  const [planogramEditProduct, setPlanogramEditProduct] = useState<Product | null>(null);
+  // typing in preview leads to the item's GROUP: one facing per product —
+  // when the same item sits in several groups the closest one to the current
+  // view wins (null = normal map)
   const previewMatches = useMemo(() => {
     if (!preview) return null;
     const needle = previewQuery.trim().toLowerCase();
@@ -353,9 +358,32 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         .filter((p) => `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(needle))
         .map((p) => p.id)
     );
-    const hits = visibleFloorPins.filter((p) => ids.has(p.location.product_id));
+    const cx = (window.innerWidth - (sideOpen ? 340 : 0)) / 2;
+    const cy = window.innerHeight / 2;
+    const dist = (p: { location: { x: number; y: number } }) =>
+      Math.hypot(p.location.x - cx, p.location.y - cy);
+    const byProduct = new Map<string, typeof visibleFloorPins[number]>();
+    for (const p of visibleFloorPins) {
+      if (!ids.has(p.location.product_id)) continue;
+      const cur = byProduct.get(p.location.product_id);
+      if (!cur || dist(p) < dist(cur)) byProduct.set(p.location.product_id, p);
+    }
+    // a planogram-only facing (groupOnly) resolves to its group's map pin —
+    // the non-groupOnly location on the same shelf
+    const resolve = (p: (typeof visibleFloorPins)[number]) => {
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(p.location.meta || '{}'); } catch { /* no meta */ }
+      if (!m.groupOnly) return p;
+      const shelfId = shelfIdAtPoint({ x: p.location.x, y: p.location.y }, floorElements);
+      const gp = visibleFloorPins.find((q) => {
+        if (ownerOf(q.location) !== shelfId) return false;
+        try { return !JSON.parse(q.location.meta || '{}').groupOnly; } catch { return true; }
+      });
+      return gp ?? p;
+    };
+    const hits = [...byProduct.values()].map(resolve);
     return hits.length ? hits : null; // nothing found → keep the normal map
-  }, [preview, previewQuery, products, visibleFloorPins]);
+  }, [preview, previewQuery, products, visibleFloorPins, sideOpen]);
   const togglePreview = () => {
     setPreview((v) => {
       if (!v) {
@@ -387,6 +415,54 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       return ownerOf(l);
     }
   }, []);
+
+  /** Does this shelf already carry its group's ONE map pin (a groupPin
+   *  facing)? Anything placed after it must be planogram-only. */
+  const shelfHasGroupPin = useCallback(
+    (shelfId: string): boolean =>
+      !!floor && locations.some((l) => l.floor_id === floor.id && ownerOf(l) === shelfId && locationFlags(l).groupPin),
+    [floor, locations, /* ownerOf is a stable ref reader */]
+  );
+
+  /** A group keeps exactly one map pin: when its groupPin facing goes away
+   *  (facing removed, product deleted) the shelf's first remaining facing is
+   *  promoted in its place — same bar size, so the pin doesn't jump. */
+  const promoteGroupPin = useCallback((pinLoc: ProductLocation) => {
+    const shelfId = ownerOf(pinLoc) ?? metaOwnerOf(pinLoc);
+    if (!shelfId) return;
+    const heir = locations.find((l) =>
+      l.id !== pinLoc.id && l.floor_id === pinLoc.floor_id && ownerOf(l) === shelfId && !locationFlags(l).groupPin
+    );
+    if (!heir) return; // the group died with its last item
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(pinLoc.meta || '{}'); } catch { /* defaults below */ }
+    apix.setProductLocation(heir.product_id, {
+      floor_id: heir.floor_id, locationId: heir.id, x: heir.x, y: heir.y, shelfId,
+      groupPin: true, groupOnly: false,
+      pinW: typeof m.pinW === 'number' ? m.pinW : 3,
+      pinH: typeof m.pinH === 'number' ? m.pinH : 0.3,
+    })
+      .then(({ location }) => setLocations((prev) => prev.map((l) => (l.id === location.id ? location : l))))
+      .catch(() => { /* surface via save state */ });
+  }, [locations, apix, metaOwnerOf, /* ownerOf is a stable ref reader */]);
+
+  /** The product modal inserts a plain facing — settle its group role after:
+   *  the shelf's first facing becomes the group pin, later ones are
+   *  planogram-only. (One extra API call, only when flags are missing.) */
+  const settleGroupFlags = useCallback((loc: ProductLocation, shelfId: string | null) => {
+    if (!shelfId) return;
+    const isGroupPin = !shelfHasGroupPin(shelfId);
+    apix.setProductLocation(loc.product_id, {
+      floor_id: loc.floor_id, locationId: loc.id, x: loc.x, y: loc.y, shelfId,
+      ...(isGroupPin
+        ? { groupPin: true, groupOnly: false, pinW: 3, pinH: 0.3 }
+        : { groupOnly: true, groupPin: false }),
+    })
+      .then(({ location: updated }) =>
+        setLocations((prev) => prev.map((l) => (l.id === updated.id ? updated : l))))
+      .catch(() => { /* keep the plain facing; a re-edit settles it */ });
+  }, [apix, shelfHasGroupPin]);
+
 
   /** Queue pin-position saves (debounced, mirroring the elements autosave). */
   const schedulePinSaves = useCallback(
@@ -621,9 +697,12 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     },
   ], [tryMode, switchView3d]);
 
-  // a selection made anywhere (outline, panel, 3D click) aims the 3D camera
+  // a selection made anywhere (outline, panel, 3D click) aims the 3D camera —
+  // except programmatic picks like Duplicate, which must not move the camera
+  const skipFocus = useRef(false);
   useEffect(() => {
     if (!selectedId) return;
+    if (skipFocus.current) { skipFocus.current = false; return; }
     setFocus3d((f) => ({ id: selectedId, seq: (f?.seq ?? 0) + 1 }));
   }, [selectedId]);
 
@@ -844,9 +923,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     if (tryMode) session?.logAction('pin product');
     try {
       // re-placing an item MOVES its existing pin (products can hold several
-      // facings — the planogram's Add copy makes new ones)
+      // facings — the planogram's Add copy makes new ones). A NEW facing on a
+      // shelf takes its group role: the shelf's first facing is its group pin,
+      // later ones are planogram-only; free pins (no shelf) stay plain.
       const existing = locations.find((l) => l.product_id === placeProductId && l.floor_id === floor.id);
-      const { location } = await apix.setProductLocation(placeProductId, { floor_id: floor.id, x: p.x, y: p.y, locationId: existing?.id, shelfId: shelfId ?? undefined });
+      const isGroupPin = !existing && !!shelfId && !shelfHasGroupPin(shelfId);
+      const { location } = await apix.setProductLocation(placeProductId, {
+        floor_id: floor.id, x: p.x, y: p.y, locationId: existing?.id, shelfId: shelfId ?? undefined,
+        ...(shelfId ? (isGroupPin ? { groupPin: true, pinW: 3, pinH: 0.3 } : { groupOnly: true }) : {}),
+      });
       stampOwner(location.id, shelfId);
       setLocations((prev) => [
         ...prev.filter((l) => !(l.product_id === placeProductId && l.floor_id === floor.id && l.id !== location.id)),
@@ -942,15 +1027,22 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       placed.push({ u, w: facingW / r.w });
       spots.push(u);
     }
-    // 3) place the facings
+    // 3) place the facings — the FIRST facing doubles as the group's ONE map
+    //    pin (titled with the shelf's label, drawn as a bar spanning the
+    //    group's plan length); every following facing is planogram-only
+    //    (groupOnly) and never draws as a pin. This is the same shape the
+    //    demo seed writes: 1 groupPin + groupOnly facings per group.
     const facings: ProductLocation[] = [];
     for (let i = 0; i < spots.length; i += 6) {
       const made = await Promise.all(spots.slice(i, i + 6).map(async (u, k) => {
         const product = withCat[i + k];
         const pt = shelfLocalToWorld(r, u * r.w, r.h / 2);
+        const isGroupPin = i + k === 0;
         try {
           const { location } = await apix.setProductLocation(product.id, {
-            floor_id: floor.id, x: pt.x, y: pt.y, shelfId: shelf.id, shelfLevel: 1, facingW,
+            floor_id: floor.id, x: pt.x, y: pt.y, shelfId: shelf.id,
+            shelfLevel: isGroupPin ? 2 : 1, facingW,
+            ...(isGroupPin ? { groupPin: true, pinW: 3, pinH: 0.3 } : { groupOnly: true }),
           });
           stampOwner(location.id, shelf.id);
           return location;
@@ -961,7 +1053,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       for (const l of made) if (l) facings.push(l);
     }
     setLocations((prev) => [...prev, ...facings]);
-    // the group's name is the shelf's label (groups are named by their owner shelf)
+    // a new group's planogram starts at 3.00 m
+    const smeta2: Record<string, unknown> = { ...smeta, planWidth: 3 };
+    changeElements(
+      floorElements.map((el) => (el.id === shelf.id ? { ...el, meta: JSON.stringify(smeta2) } : el)),
+      'push',
+      'set group length'
+    );
+    // the group's name starts identical to the shelf's label — but the two
+    // are defined separately (label + meta.groupName), so renaming one later
+    // never renames the other
     if (name !== shelf.label) {
       changeElements(
         floorElements.map((el) => (el.id === shelf.id ? { ...el, label: name.slice(0, 80) } : el)),
@@ -969,7 +1070,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         'rename group'
       );
     }
-    flashHint(`Added ${facings.length} item${facings.length === 1 ? '' : 's'} to “${name}” — one facing each; stock more from the planogram`);
+    changeElements(
+      floorElements.map((el) =>
+        el.id === shelf.id
+          ? { ...el, meta: JSON.stringify({ ...parseMeta(el.meta), groupName: name.slice(0, 80) }) }
+          : el
+      ),
+      'push',
+      'name group'
+    );
+    flashHint(`Added ${facings.length} item${facings.length === 1 ? '' : 's'} to “${name}” — the group shows as one pin; stock more from the planogram`);
   };
 
   /** B3: align / distribute the multi-selection (one undo step). */
@@ -1035,10 +1145,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     }
   };
 
-  /** Rename a group (the owner shelf's label). */
-  const renameGroup = (shelfId: string, label: string) => {
+  /** Rename a group: the group's own display name (meta.groupName), defined
+   *  independently of the shelf's label — renaming one never renames the
+   *  other. */
+  const renameGroup = (shelfId: string, name: string) => {
     changeElements(
-      floorElements.map((el) => (el.id === shelfId ? { ...el, label: label.slice(0, 80) } : el)),
+      floorElements.map((el) =>
+        el.id === shelfId
+          ? { ...el, meta: JSON.stringify({ ...parseMeta(el.meta), groupName: name.slice(0, 80) }) }
+          : el
+      ),
       'push',
       'rename group'
     );
@@ -1074,8 +1190,13 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       .filter((p) => p.level === 1);
     const u = findFreeFacingU(placed, 0.5, facingW / r.w);
     const p = shelfLocalToWorld(r, u * r.w, r.h / 2);
+    // the group's ONE pin: the shelf's first facing becomes it, everything
+    // after is a planogram-only facing (items never draw as pins)
+    const isGroupPin = !shelfHasGroupPin(shelf.id);
     apix.setProductLocation(productId, {
-      floor_id: floor.id, x: p.x, y: p.y, shelfId: shelf.id, shelfLevel: 1, facingW,
+      floor_id: floor.id, x: p.x, y: p.y, shelfId: shelf.id,
+      shelfLevel: isGroupPin ? 2 : 1, facingW,
+      ...(isGroupPin ? { groupPin: true, pinW: 3, pinH: 0.3 } : { groupOnly: true }),
     })
       .then(({ location }) => {
         setLocations((prev) => [...prev, location]);
@@ -1171,8 +1292,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       floor_id: floor.id, x: p.x, y: p.y, shelfId,
       ...(typeof m.shelf_level === 'number' ? { shelfLevel: m.shelf_level } : {}),
       ...(typeof m.w === 'number' ? { facingW: m.w } : {}),
-      ...(typeof m.pinW === 'number' ? { pinW: m.pinW } : {}),
-      ...(typeof m.pinH === 'number' ? { pinH: m.pinH } : {}),
+      groupOnly: true, // copies are extra planogram facings — never pins
     })
       .then(({ location }) => {
         setLocations((prev) => [...prev, location]);
@@ -1182,9 +1302,13 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   };
 
   const removeFacing = (locationId: string) => {
+    const loc = locations.find((l) => l.id === locationId) ?? null;
     apix.deleteLocation(locationId).catch(() => { /* keep locally on failure */ });
     setLocations((prev) => prev.filter((l) => l.id !== locationId));
     shelfOwner.current.delete(locationId);
+    // a group must keep exactly ONE pin: if this facing was its groupPin,
+    // promote the shelf's first remaining facing in its place
+    if (loc && locationFlags(loc).groupPin) promoteGroupPin(loc);
     if (selectedPinProductId) {
       const stillHasPin = locations.some((l) => l.product_id === selectedPinProductId && l.id !== locationId);
       if (!stillHasPin) setSelectedPinProductId(null);
@@ -1268,8 +1392,14 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   const placing = placeProductId ? products.find((p) => p.id === placeProductId) : null;
   const shelfPreview = shelfPreviewId ? elements.find((e) => e.id === shelfPreviewId) ?? null : null;
   // the pin selected on the map (this floor's pin for that product) + its shelf
+  // a product's map pin is its GROUP pin (Length = the group's length) —
+  // planogram-only facings (groupOnly) never represent it on the map
   const selectedPin = selectedPinProductId && floor
-    ? locations.find((l) => l.product_id === selectedPinProductId && l.floor_id === floor.id) ?? null
+    ? locations
+        .filter((l) => l.product_id === selectedPinProductId && l.floor_id === floor.id)
+        .find((l) => {
+          try { return !JSON.parse(l.meta || '{}').groupOnly; } catch { return true; }
+        }) ?? null
     : null;
   const selectedPinShelf = selectedPin && ownerOf(selectedPin)
     ? floorElements.find((e) => e.id === ownerOf(selectedPin)) ?? null
@@ -1336,7 +1466,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               geom: shiftGeom(selected.geom),
               z_index: Math.max(...floorElements.map((e) => e.z_index), 0) + 1,
             };
-            changeElements([...floorElements, copy], 'push');
+            changeElements([...floorElements, copy], 'push', 'duplicate');
+            skipFocus.current = true; // duplicating must not fly the camera
             setSelectedId(copy.id);
           }}
         >
@@ -1416,53 +1547,12 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           <div className="map-ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} role="menu">
             <button
               role="menuitem"
-              disabled={!selected}
-              onClick={() => {
-                if (selected) {
-                  changeElements(floorElements.filter((e) => e.id !== selected.id), 'push');
-                  setSelectedId(null);
-                }
-                setCtxMenu(null);
-              }}
-            >
-              🗑 Delete selected
-            </button>
-            <button
-              role="menuitem"
-              disabled={!selected}
-              onClick={() => {
-                if (selected) {
-                  const copy: MapElement = {
-                    ...selected,
-                    id: crypto.randomUUID(),
-                    geom: shiftGeom(selected.geom),
-                    z_index: Math.max(...floorElements.map((e) => e.z_index), 0) + 1,
-                  };
-                  changeElements([...floorElements, copy], 'push');
-                  setSelectedId(copy.id);
-                }
-                setCtxMenu(null);
-              }}
-            >
-              ⧉ Duplicate selected
-            </button>
-            <button
-              role="menuitem"
               onClick={() => {
                 setLocked((v) => !v);
                 setCtxMenu(null);
               }}
             >
               {locked ? '🔓 Unlock items' : '🔒 Lock items'}
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => {
-                setFitSignal((n) => n + 1);
-                setCtxMenu(null);
-              }}
-            >
-              ⤢ Re center
             </button>
           </div>
         </>
@@ -1478,7 +1568,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={previewMatches ?? visibleFloorPins}
               stockPins={previewMatches ?? visibleFloorPins}
-              showItems={previewMatches ? true : showItems}
+              showItems={!!previewMatches}
               pickFilter={pickFilter}
               camera={cam3d}
               onCamera={setCam3d}
@@ -1509,8 +1599,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               elements={floorElements}
               pins={previewMatches ?? visibleFloorPins}
               showLabels={!hideLabels}
-              showItems={previewMatches ? true : showItems}
-              showDepartments={preview ? !previewMatches : (!hideLabels && !showItems)}
+              showItems={!!previewMatches}
+              showDepartments={preview ? !previewMatches : !hideLabels}
               locked={preview ? true : locked}
               grid={preview ? null : 0.25}
               edit={!preview}
@@ -1570,6 +1660,18 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 <RailIcon id={t.id} />
               </button>
             ))}
+            {view3d && (
+              <button
+                className={`tool-btn ${transform3d ? 'active' : ''}`}
+                aria-pressed={transform3d}
+                disabled={!selected}
+                aria-label="Transform — rotate and resize the selected fixture"
+                data-tip="Transform: rotate & resize selection"
+                onClick={() => setTransform3d((v) => !v)}
+              >
+                <span aria-hidden>⤢</span>
+              </button>
+            )}
             <span className="rail-sep" aria-hidden />
             <button
               className="tool-btn danger"
@@ -1601,15 +1703,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onClick={() => setLocked((v) => !v)}
             >
               <Icon name={locked ? 'lock' : 'unlock'} />
-            </button>
-            <button
-              className={`tool-btn ${!showItems ? 'active' : ''}`}
-              aria-pressed={!showItems}
-              aria-label={showItems ? 'Hide item pins — show department groups' : 'Show item pins'}
-              data-tip={showItems ? 'Hide items — groups + departments only' : 'Show items'}
-              onClick={toggleShowItems}
-            >
-              <Icon name={showItems ? 'basket' : 'groups'} />
             </button>
             {tool === 'select' && (
               <>
@@ -1765,6 +1858,54 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               Click to select · drag a fixture to move · drag empty space to orbit · middle-drag pans · R rotates · Del deletes
             </div>
           )}
+          {/* 3D transform card: rotate & resize the selected fixture (the
+              ⤢ rail toggle below Select turns the card on) */}
+          {view3d && transform3d && !preview && selected?.shape === 'rect' && (() => {
+            const g = selected.geom as RectGeom;
+            const deg = Math.round(((g.rot % 360) + 360) % 360);
+            const setRot = (rot: number) =>
+              changeElements(
+                floorElements.map((e) => (e.id === selected.id ? { ...e, geom: { ...g, rot: ((Math.round(rot) % 360) + 360) % 360 } } : e)),
+                'push',
+                'rotate'
+              );
+            const setSize = (w: number, d: number) =>
+              changeElements(
+                floorElements.map((e) => (e.id === selected.id ? { ...e, geom: { x: g.x - (w - g.w) / 2, y: g.y - (d - g.h) / 2, w, h: d, rot: g.rot } } : e)),
+                'push',
+                'resize'
+              );
+            return (
+              <div
+                className="transform-card"
+                style={{
+                  position: 'absolute', left: 12, bottom: 12, zIndex: 6, minWidth: 230,
+                  background: 'var(--card, #fff)', border: '1px solid var(--line)', borderRadius: 12,
+                  padding: 12, boxShadow: 'var(--shadow)', display: 'grid', gap: 8,
+                }}
+              >
+                <b style={{ fontSize: 12.5 }}>Transform · {selected.label || selected.type}</b>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  Rotate
+                  <input type="range" min={0} max={359} step={5} value={deg} style={{ flex: 1 }} onChange={(e) => setRot(Number(e.target.value))} />
+                  <b style={{ minWidth: 36, textAlign: 'right' }}>{deg}°</b>
+                  <button className="btn sm" title="Rotate 90° counter-clockwise" onClick={() => setRot(g.rot - 90)}>↺</button>
+                  <button className="btn sm" title="Rotate 90° clockwise" onClick={() => setRot(g.rot + 90)}>↻</button>
+                </label>
+                <div className="field-row">
+                  <Field label="Width (m)">
+                    <input className="input" type="number" step={0.25} min={0.2} value={Math.round(g.w * 100) / 100}
+                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0.1) setSize(v, g.h); }} />
+                  </Field>
+                  <Field label="Depth (m)">
+                    <input className="input" type="number" step={0.25} min={0.2} value={Math.round(g.h * 100) / 100}
+                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0.1) setSize(g.w, v); }} />
+                  </Field>
+                </div>
+                <span className="muted" style={{ fontSize: 11.5 }}>Dragging still moves the fixture — rotate &amp; resize here.</span>
+              </div>
+            );
+          })()}
           {view3d && tool !== 'select' && (
             <div className="map-hint warn-note" style={{ left: '50%', transform: 'translateX(-50%)', bottom: 48, pointerEvents: 'auto' }}>
               Drawing is 2D-only — switch to 2D to draw.
@@ -1835,6 +1976,23 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               onRowsChange={changeShelfRows}
               onAddItem={() => setItemPickerFor(shelfPreview.id)}
               onAddAnotherItem={() => openNewItemFor(shelfPreview)}
+              onEditItem={(productId) => {
+                const p = products.find((x) => x.id === productId) ?? null;
+                if (p) setPlanogramEditProduct(p);
+              }}
+            />
+          )}
+          {planogramEditProduct && (
+            <ProductModal
+              onCategoryAdded={(c) => setCategories((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]))}
+              storeId={store.id}
+              categories={categories}
+              product={planogramEditProduct}
+              onClose={() => setPlanogramEditProduct(null)}
+              onSaved={(p) => {
+                setProducts((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+                setPlanogramEditProduct(null);
+              }}
             />
           )}
           {itemPickerFor && floor && (() => {
@@ -1873,6 +2031,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 if (placed) {
                   setLocations((prev) => [...prev, placed]);
                   stampOwner(placed.id, newItemAt.shelfId ?? null);
+                  // the modal inserts a plain facing — settle its group role
+                  // (the shelf's first facing becomes the group's one pin)
+                  settleGroupFlags(placed, newItemAt.shelfId ?? null);
                 }
                 setNewItemAt(null);
                 // land on the new pin: panel shows the item + its group (the
@@ -1957,6 +2118,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                       z_index: Math.max(...floorElements.map((e) => e.z_index), 0) + 1,
                     };
                     changeElements([...floorElements, copy], 'push');
+                    skipFocus.current = true; // duplicating must not fly the camera
                     setSelectedId(copy.id);
                   }}
                 />
@@ -1969,6 +2131,20 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                   groupFacings={groupFacings}
                   onSelectMember={(productId) => selectPin(productId)}
                   onRenameGroup={selectedPinShelf ? (label) => renameGroup(selectedPinShelf.id, label) : undefined}
+                  onHideLabel={selectedPinShelf ? () => {
+                    // the group's name label on the map lives on the owner shelf
+                    const m = (() => { try { return JSON.parse(selectedPinShelf.meta || '{}') as Record<string, unknown>; } catch { return {}; } })();
+                    changeElements(
+                      floorElements.map((e) => (e.id === selectedPinShelf.id ? { ...e, meta: JSON.stringify({ ...m, labelHidden: !m.labelHidden }) } : e)),
+                      'push',
+                      'hide group label'
+                    );
+                  } : undefined}
+                  onGroupColor={selectedPinShelf ? (color) => changeElements(
+                    floorElements.map((e) => (e.id === selectedPinShelf.id ? { ...e, color } : e)),
+                    'push',
+                    'group colour'
+                  ) : undefined}
                   onSize={(w, h) => setPinSize(selectedPin, w, h)}
                   onEditPlanogram={selectedPinShelf ? () => setShelfPreviewId(selectedPinShelf.id) : undefined}
                   onAddAnother={selectedPinShelf ? () => {
@@ -2051,6 +2227,8 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                   memberIds: groupChips.map((c) => c.product.id),
                 } : null}
                 onClearGroup={() => setProductsGroupOpen(false)}
+                groupOfProduct={groupLabelOfProduct}
+                onSelectProduct={(id) => selectPin(id)}
                 onStartPlacing={(id) => { setPinQueue([id]); setPlaceProductId(id); setTool('product'); }}
                 onQueueMany={(ids) => {
                   if (!ids.length) return;
@@ -2196,6 +2374,24 @@ function ElementPanel({
   })();
   const shelfItems = el.type === 'shelf' && items ? items : null;
   const shelfMeta = el.type === 'shelf' && el.shape === 'rect' ? parseMeta(el.meta) : null;
+  // nudge arrows: press-and-hold keeps stepping until release
+  const holdTimer = useRef<number | null>(null);
+  const holdAcc = useRef({ x: 0, y: 0 });
+  useEffect(() => () => { if (holdTimer.current) window.clearInterval(holdTimer.current); }, []);
+  const startNudge = (dx: number, dy: number) => {
+    holdAcc.current = { x: 0, y: 0 };
+    const step = () => {
+      holdAcc.current.x += dx;
+      holdAcc.current.y += dy;
+      patch(translateElement(el, holdAcc.current.x, holdAcc.current.y));
+    };
+    step();
+    if (holdTimer.current) window.clearInterval(holdTimer.current);
+    holdTimer.current = window.setInterval(step, 130);
+  };
+  const stopNudge = () => {
+    if (holdTimer.current) { window.clearInterval(holdTimer.current); holdTimer.current = null; }
+  };
   const patchMeta = (fields: Record<string, unknown>) => {
     if (!shelfMeta) return;
     patch({ meta: JSON.stringify({ ...shelfMeta, ...fields }) });
@@ -2280,15 +2476,15 @@ function ElementPanel({
       <div className="panel-section">
         <h4>Position</h4>
         <div className="move-row">
-          <div className="move-pad" role="group" aria-label="Nudge position">
+          <div className="move-pad" role="group" aria-label="Nudge position — press and hold to keep moving">
             <span />
-            <button onClick={() => patch(translateElement(el, 0, -0.25))} title="Nudge up">↑</button>
+            <button onPointerDown={() => startNudge(0, -0.25)} onPointerUp={stopNudge} onPointerLeave={stopNudge} title="Nudge up — hold to keep moving">↑</button>
             <span />
-            <button onClick={() => patch(translateElement(el, -0.25, 0))} title="Nudge left">←</button>
+            <button onPointerDown={() => startNudge(-0.25, 0)} onPointerUp={stopNudge} onPointerLeave={stopNudge} title="Nudge left — hold to keep moving">←</button>
             <span className="move-dot" />
-            <button onClick={() => patch(translateElement(el, 0.25, 0))} title="Nudge right">→</button>
+            <button onPointerDown={() => startNudge(0.25, 0)} onPointerUp={stopNudge} onPointerLeave={stopNudge} title="Nudge right — hold to keep moving">→</button>
             <span />
-            <button onClick={() => patch(translateElement(el, 0, 0.25))} title="Nudge down">↓</button>
+            <button onPointerDown={() => startNudge(0, 0.25)} onPointerUp={stopNudge} onPointerLeave={stopNudge} title="Nudge down — hold to keep moving">↓</button>
             <span />
           </div>
           <div style={{ flex: 1 }}>
@@ -2331,6 +2527,42 @@ function ElementPanel({
           </div>
         </div>
       </div>
+      {el.type === 'wall' && el.shape === 'polyline' && (() => {
+        // Split-at-the-joints: the wall stays exactly where it is, but every
+        // vertex-to-vertex piece becomes its own wall that can then be moved,
+        // reshaped or deleted alone
+        const pts = elementPoints(el);
+        const pieces = Math.max(1, pts.length - 1);
+        const canSplit = pts.length >= 3;
+        return (
+          <div className="panel-section">
+            <h4>Split wall</h4>
+            <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
+              {canSplit
+                ? `Cut this wall at its ${pts.length - 1} joints into ${pieces} segments — nothing moves; each piece can then be moved or reshaped on its own.`
+                : 'This wall is a single straight segment — nothing to split.'}
+            </p>
+            <button
+              type="button"
+              className="btn sm"
+              disabled={!canSplit}
+              title="Divide the wall into per-segment walls, exactly in place"
+              onClick={() => {
+                const segs = pts.slice(0, -1).map((p, i) => [[p.x, p.y], [pts[i + 1].x, pts[i + 1].y]] as PolyGeom);
+                const copies: MapElement[] = segs.map((seg, i) => ({
+                  ...el,
+                  id: crypto.randomUUID(),
+                  geom: seg,
+                  label: el.label ? `${el.label} · ${i + 1}` : '',
+                }));
+                onChange([...elements.filter((e) => e.id !== el.id), ...copies]);
+              }}
+            >
+              ✂ Split into {pieces} wall{pieces === 1 ? '' : 's'}
+            </button>
+          </div>
+        );
+      })()}
       {shelfMeta && (
         <div className="panel-section">
           <h4>Shelf layout</h4>
@@ -2855,7 +3087,7 @@ function ItemsOnShelf({
 
 /** Side-panel card for a pin selected on the map: marker size + planogram. */
 function PinPanel({
-  location, product, ownerShelf, groupChips, groupFacings, onSelectMember, onRenameGroup, onSize, onEditPlanogram, onAddAnother, onClose,
+  location, product, ownerShelf, groupChips, groupFacings, onSelectMember, onRenameGroup, onHideLabel, onGroupColor, onSize, onEditPlanogram, onAddAnother, onClose,
 }: {
   location: ProductLocation;
   product: Product | null;
@@ -2864,25 +3096,38 @@ function PinPanel({
   groupChips: { product: Product; facings: number }[];
   groupFacings: number;
   onSelectMember: (productId: string) => void;
+  onRenameGroup?: (label: string) => void;
+  /** hide / show the group's name label on the map (owner-shelf meta) */
+  onHideLabel?: () => void;
+  /** recolour the shelf — the group pin follows the same colour */
+  onGroupColor?: (color: string) => void;
   onSize: (w: number, h: number) => void;
   onEditPlanogram?: () => void;
   /** singular-item shelf: create the next product straight into this area */
   onAddAnother?: () => void;
-  /** name the group (the owner shelf's label) */
-  onRenameGroup?: (label: string) => void;
   onClose: () => void;
 }) {
   let m: Record<string, unknown> = {};
   try { m = JSON.parse(location.meta || '{}'); } catch { /* keep {} */ }
   const w = typeof m.pinW === 'number' ? m.pinW : 0.5;
   const h = typeof m.pinH === 'number' ? m.pinH : 0.2;
+  // a group pin represents its group: the heading is the GROUP (the user-
+  // named shelf label) and the items — including the product behind the pin —
+  // live in the searchable list below
+  const isGroupPin = (() => {
+    try { return !!JSON.parse(location.meta || '{}').groupPin; } catch { return false; }
+  })();
+  let labelHidden = false;
+  if (ownerShelf) {
+    try { labelHidden = JSON.parse(ownerShelf.meta || '{}').labelHidden === true; } catch { /* default */ }
+  }
   return (
     <div className="panel-section">
       <div className="row-between">
-        <h4>📍 {product?.name ?? 'Product pin'}</h4>
+        <h4>{isGroupPin && ownerShelf ? `🗂 ${groupDisplayName(ownerShelf) || 'Group'}` : `📍 ${product?.name ?? 'Product pin'}`}</h4>
         <button className="route-badge-x" onClick={onClose} aria-label="Close pin panel">✕</button>
       </div>
-      {ownerShelf && (
+      {ownerShelf && !isGroupPin && (
         <p className="muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>
           on {ownerShelf.label || 'shelf'}
         </p>
@@ -2912,12 +3157,42 @@ function PinPanel({
           <span>Group name</span>
           <input
             className="input"
-            value={ownerShelf.label}
+            value={groupDisplayName(ownerShelf) ?? ''}
             placeholder="Name this group…"
             maxLength={80}
             onChange={(e) => onRenameGroup(e.target.value)}
           />
         </label>
+      )}
+      {isGroupPin && ownerShelf && (onGroupColor || onHideLabel) && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 8px' }}>
+          {onGroupColor && (
+            <>
+              <input
+                type="color"
+                aria-label="Group colour"
+                value={ownerShelf.color || '#e7d5a8'}
+                onChange={(e) => onGroupColor(e.target.value)}
+                style={{ width: 44, height: 32, border: '1px solid var(--line)', borderRadius: 8, background: '#fff', padding: 0 }}
+              />
+              {ownerShelf.color && (
+                <button className="btn sm" onClick={() => onGroupColor('')} title="Back to the default shelf colour">Reset</button>
+              )}
+              <span className="muted" style={{ fontSize: 12 }}>shelf &amp; pin colour</span>
+            </>
+          )}
+          {onHideLabel && (
+            <button
+              type="button"
+              className={`btn sm ${labelHidden ? 'active' : ''}`}
+              aria-pressed={labelHidden}
+              title="Hide or show this group's name label on the map"
+              onClick={onHideLabel}
+            >
+              {labelHidden ? '👁 Show label on map' : '🚫 Hide label on map'}
+            </button>
+          )}
+        </div>
       )}
       {onEditPlanogram ? (
         <button className="btn" onClick={onEditPlanogram}>▦ Edit planogram</button>
@@ -3050,6 +3325,7 @@ function ElementOutline({
 
 function ProductsPanel({
   storeId, entitlements, products, categories, locations, onData, placingId, onStartPlacing, flashId, onQueueMany, groupFilter, onClearGroup,
+  groupOfProduct, onSelectProduct,
 }: {
   storeId: string;
   entitlements: { productImages: boolean };
@@ -3061,6 +3337,10 @@ function ProductsPanel({
   onStartPlacing: (productId: string) => void;
   flashId: string | null;
   onQueueMany: (ids: string[]) => void;
+  /** the group (shelf label) an item lives in — items are group members, not map pins */
+  groupOfProduct?: (productId: string) => string | null;
+  /** selecting an item shows its group (the group pin + panel) */
+  onSelectProduct?: (productId: string) => void;
   /** The selected pin's group: label + the member product ids — filters the
    *  list to that group while the specific item stays ring-highlighted. */
   groupFilter?: { shelfLabel: string; memberIds: string[] } | null;
@@ -3108,7 +3388,32 @@ function ProductsPanel({
     onData({ categories: categories.filter((c) => c.id !== id) });
   };
 
+  /** A group keeps exactly ONE map pin: when a deleted product owned it, the
+   *  shelf's first remaining facing (matched via persisted meta.shelfId — this
+   *  panel has no live owner map) is promoted in its place. */
+  const promoteGroupPinHere = async (pin: ProductLocation) => {
+    let shelfId: string | null = null;
+    try { shelfId = JSON.parse(pin.meta || '{}').shelfId ?? null; } catch { /* no persisted owner */ }
+    if (typeof shelfId !== 'string') return;
+    const heir = locations.find((l) => {
+      if (l.product_id === pin.product_id || l.floor_id !== pin.floor_id) return false;
+      try { return JSON.parse(l.meta || '{}').shelfId === shelfId; } catch { return false; }
+    });
+    if (!heir) return; // the group died with its last item
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(pin.meta || '{}'); } catch { /* defaults below */ }
+    await api.setProductLocation(heir.product_id, {
+      floor_id: heir.floor_id, locationId: heir.id, x: heir.x, y: heir.y, shelfId,
+      groupPin: true, groupOnly: false,
+      pinW: typeof m.pinW === 'number' ? m.pinW : 3,
+      pinH: typeof m.pinH === 'number' ? m.pinH : 0.3,
+    }).catch(() => { /* the panel refetches on next open */ });
+  };
+
   const removeProduct = async (id: string) => {
+    for (const pin of locations.filter((l) => l.product_id === id && locationFlags(l).groupPin)) {
+      await promoteGroupPinHere(pin);
+    }
     await api.deleteProduct(id);
     onData({
       products: products.filter((p) => p.id !== id),
@@ -3119,6 +3424,7 @@ function ProductsPanel({
   const unpin = async (productId: string) => {
     const loc = locations.find((l) => l.product_id === productId);
     if (!loc) return;
+    if (locationFlags(loc).groupPin) await promoteGroupPinHere(loc);
     await api.deleteLocation(loc.id);
     onData({ locations: locations.filter((l) => l.id !== loc.id) });
   };
@@ -3225,7 +3531,21 @@ function ProductsPanel({
                 <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />
                 <div className="name">
                   <b title={p.name}>{p.name}</b>
-                  <span>{[p.brand, p.price != null ? `$${p.price.toFixed(2)}` : ''].filter(Boolean).join(' · ')}</span>
+                  <span>
+                    {[
+                      p.brand,
+                      p.price != null ? `$${p.price.toFixed(2)}` : '',
+                      groupOfProduct?.(p.id) ? `🗂 ${groupOfProduct(p.id)}` : '',
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </div>
+                <div
+                  className="name"
+                  style={{ cursor: 'pointer' }}
+                  title="Select — shows the group this item is in"
+                  onClick={() => onSelectProduct?.(p.id)}
+                >
+                  <b>{p.name}</b>
                 </div>
                 <div className="product-actions">
                   {loc ? (
@@ -3418,6 +3738,7 @@ function ProductModal({
       sku,
       price: price === '' ? null : Number(price),
       category_id: categoryId === '__new' ? null : categoryId || null,
+      image_url: imageUrl || '',
     };
     try {
       const { product: saved } = product
@@ -3498,60 +3819,72 @@ function ProductModal({
           </div>
         )}
         <Field label="Photo">
-          {entitlements?.productImages ? (
-            product ? (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {imageUrl ? (
-                  <img src={cropUrl || imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)', background: 'var(--chip)' }} />
-                ) : (
-                  <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
-                )}
-                <button
-                  type="button"
-                  className="btn sm"
-                  title="Open the device camera"
-                  onClick={() => setCameraOpen(true)}
-                >
-                  📷 Take photo
+          {product ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {imageUrl ? (
+                <img src={cropUrl || imageUrl} alt="" width={54} height={54} style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--line)', background: 'var(--chip)' }} />
+              ) : (
+                <div style={{ width: 54, height: 54, borderRadius: 8, border: '1px dashed var(--line)', display: 'grid', placeItems: 'center', color: 'var(--ink-soft)', fontSize: 18 }}>?</div>
+              )}
+              <button
+                type="button"
+                className="btn sm"
+                disabled={!entitlements?.productImages || imgBusy}
+                title={entitlements?.productImages ? 'Open the device camera' : 'Photos are limited by your account plan'}
+                onClick={() => setCameraOpen(true)}
+              >
+                📷 Take photo
+              </button>
+              <label
+                className="btn sm"
+                title={entitlements?.productImages ? 'Choose an image file' : 'Photos are limited by your account plan'}
+                style={entitlements?.productImages ? undefined : { opacity: 0.5 }}
+              >
+                🖼 Upload
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  hidden
+                  disabled={!entitlements?.productImages}
+                  onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }}
+                />
+              </label>
+              {imageUrl && (
+                <button type="button" className="btn sm" disabled={imgBusy} onClick={() => setCropOpen(true)} title="Drag a box around the product — planogram tiles show the cropped photo">
+                  ⛶ Crop
                 </button>
-                <label className="btn sm" title="Choose an image file">
-                  🖼 Upload
-                  <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
-                </label>
-                {imageUrl && (
-                  <button type="button" className="btn sm" disabled={imgBusy} onClick={() => setCropOpen(true)} title="Drag a box around the product — planogram tiles show the cropped photo">
-                    ⛶ Crop
-                  </button>
-                )}
-                {imageUrl && (
-                  <button type="button" className="btn sm" disabled={imgBusy} onClick={removeBg} title="Cut the studio background out right in this browser">
-                    ✂ Remove background
-                  </button>
-                )}
-                {cropUrl && (
-                  <button type="button" className="btn sm" disabled={imgBusy} onClick={clearCrop} title="Delete the cropped variant — planogram tiles fall back to the full photo">
-                    Remove crop
-                  </button>
-                )}
-                {imageUrl && <button type="button" className="btn sm danger" disabled={imgBusy} onClick={clearImage}>Remove</button>}
-                {imgBusy && <span className="muted" style={{ fontSize: 12 }}>Working…</span>}
-              </div>
-            ) : (
-              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Save the product first, then add its photo.</p>
-            )
-          ) : (
-            <div className="photo-info">
-              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
-                <b>Add photos in three ways:</b> 📷 take a photo with your camera, 🖼 upload an image,
-                or paste an image URL when editing a product. Photos show in shopper search, on the
-                map and in the shelf planogram — ✂ Remove background makes cut-outs that stand out
-                on shelves.
-              </p>
-              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-                Photos are part of the paid plan — <b>$1/month</b> adds them to every map you own.
-                Self-hosting? Local mode includes them free.
-              </p>
+              )}
+              {imageUrl && (
+                <button type="button" className="btn sm" disabled={imgBusy} onClick={removeBg} title="Cut the studio background out right in this browser">
+                  ✂ Remove background
+                </button>
+              )}
+              {cropUrl && (
+                <button type="button" className="btn sm" disabled={imgBusy} onClick={clearCrop} title="Delete the cropped variant — planogram tiles fall back to the full photo">
+                  Remove crop
+                </button>
+              )}
+              {imageUrl && <button type="button" className="btn sm danger" disabled={imgBusy} onClick={clearImage}>Remove</button>}
+              {imgBusy && <span className="muted" style={{ fontSize: 12 }}>Working…</span>}
             </div>
+          ) : (
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Save the product first to take or upload a photo — or paste an image URL below.</p>
+          )}
+          {/* paste an image URL: new products save it in one step, edited
+              products persist it on Save (the PATCH carries image_url) */}
+          <input
+            className="input"
+            style={{ marginTop: 6 }}
+            type="url"
+            placeholder="Paste an image URL…"
+            aria-label="Image URL"
+            value={imageUrl}
+            disabled={!entitlements?.productImages}
+            title={entitlements?.productImages ? undefined : 'Photos are limited by your account plan'}
+            onChange={(e) => setImageUrl(e.target.value)}
+          />
+          {!entitlements?.productImages && (
+            <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>Photos are limited by your account plan.</p>
           )}
         </Field>
         {error && <div className="error-note">{error}</div>}

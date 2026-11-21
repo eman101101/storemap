@@ -216,7 +216,7 @@ function NotFound() {
         <p style={{ margin: '0 0 16px' }}>The page you're after doesn't exist — but every store is one tap away.</p>
         <div className="hero-actions" style={{ justifyContent: 'center' }}>
           <Link to="/" className="btn primary">Browse stores</Link>
-          <Link to="/s/freshmart-downtown" className="btn">See the demo</Link>
+          <Link to="/s/walmart-example" className="btn">See the demo</Link>
         </div>
       </div>
     </div>

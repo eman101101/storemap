@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Floor, MapElement } from '../types';
+import { groupDisplayName, locationFlags } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler,
   renderScene, screenToWorldFloor, pickFixture, scaleColor, routeFaces, stockFaces as buildStockFaces, MODERN_THEME,
@@ -469,16 +470,40 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // every stocked product is tappable in 3D, not just the focused subset —
     // one hit target per facing level so the whole stack is clickable, not a
-    // single point at its top. Groups view keeps hit targets for the focused
-    // pins only (the floor renders as clean fixtures).
+    // single point at its top. groupOnly facings stock the shelves but are
+    // never tappable; groups view keeps targets for the groups' ONE pin each
+    // (groupPin) plus the focused pins.
     const focusSet = focusPinIds?.length ? new Set(focusPinIds) : null;
     const isFocusPin = (id: string) => id === focusPinId || (focusSet?.has(id) ?? false);
     const allPins = stockPins.length ? stockPins : pins;
-    const hitPins = showItems ? allPins : allPins.filter((p) => isFocusPin(p.location.id));
+    const hitPins = allPins.filter((p) => {
+      if (isFocusPin(p.location.id)) return true;
+      const flags = locationFlags(p.location);
+      if (flags.groupOnly) return false;
+      return showItems || flags.groupPin;
+    });
+    // a focused group pin floats its GROUP's title (the shelf label) — the
+    // shopper lands on the group, not on one item's name
+    const groupTitleOf = (loc: { meta?: string }): string | undefined => {
+      try {
+        const m = JSON.parse(loc.meta || '{}');
+        if (typeof m.shelfId === 'string') {
+          const el = elements.find((e) => e.id === m.shelfId);
+          if (!el) return undefined;
+          // the shelf's labelHidden hides the group's map label in 3D too
+          let sm: Record<string, unknown> = {};
+          try { sm = JSON.parse(el.meta || '{}'); } catch { /* no meta */ }
+          if (sm.labelHidden === true) return undefined;
+          return groupDisplayName(el) ?? undefined;
+        }
+      } catch { /* no meta */ }
+      return undefined;
+    };
     const pins3d: Pin3D[] = [];
     for (const p of hitPins) {
       const anchor = shelfAnchor({ x: p.location.x, y: p.location.y }, elements);
       const focused = p.location.id === focusPinId || (focusSet?.has(p.location.id) ?? false);
+      const pinFlags = locationFlags(p.location);
       const base = {
         productId: p.location.product_id,
         locId: p.location.id,
@@ -488,7 +513,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
         focused,
       };
       if (!anchor) {
-        pins3d.push({ ...base, label: p.location.id === focusPinId ? p.product.name : undefined });
+        pins3d.push({ ...base, label: p.location.id === focusPinId ? (pinFlags.groupPin ? groupTitleOf(p.location) ?? p.product.name : p.product.name) : undefined });
         continue;
       }
       const stand = shelfBoardZs(anchor.el);
@@ -501,7 +526,9 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
         pins3d.push({
           ...base,
           // label floats at the top of the stack only
-          label: last && p.location.id === focusPinId ? p.product.name : undefined,
+          label: last && p.location.id === focusPinId
+            ? (pinFlags.groupPin ? groupTitleOf(p.location) ?? p.product.name : p.product.name)
+            : undefined,
           ax: anchor.x,
           ay: anchor.y,
           az: z + itemH / 2,

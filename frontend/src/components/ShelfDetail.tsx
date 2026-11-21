@@ -247,7 +247,7 @@ export function PlanogramSvg({
 }
 
 export default function ShelfDetail({
-  shelf, pins, onClose, onPickProduct, editing, onEditFacing, onMoveFacing, onAddCopy, onRemoveFacing, onShelfResize, onRowHeightChange, onRowsChange, onAddAnotherItem, onAddItem, highlightLocationId, onViewModeChange, onAddToList,
+  shelf, pins, onClose, onPickProduct, editing, onEditFacing, onMoveFacing, onAddCopy, onRemoveFacing, onShelfResize, onRowHeightChange, onRowsChange, onAddAnotherItem, onAddItem, onEditItem, highlightLocationId, onViewModeChange, onAddToList,
 }: {
   shelf: MapElement;
   pins: ShelfPin[];
@@ -277,6 +277,8 @@ export default function ShelfDetail({
   onRowsChange?: (levels: number) => void;
   /** open a picker of store products to place onto this shelf */
   onAddItem?: () => void;
+  /** open the product edit menu for a facing's item */
+  onEditItem?: (productId: string) => void;
   /** create a brand-new product straight into this area */
   onAddAnotherItem?: () => void;
 }) {
@@ -454,6 +456,11 @@ export default function ShelfDetail({
                 <button type="button" className="btn sm" onClick={() => onAddCopy?.(selectedSlot.s.locationId)}>
                   ＋ Add copy
                 </button>
+                {onEditItem && (
+                  <button type="button" className="btn sm" onClick={() => onEditItem(selectedSlot.s.product.id)}>
+                    ✎ Edit item
+                  </button>
+                )}
                 <button type="button" className="btn sm" style={{ borderColor: '#b0413e', color: '#b0413e' }} onClick={() => { onRemoveFacing?.(selectedSlot.s.locationId); setSelectedId(null); }}>
                   Remove
                 </button>

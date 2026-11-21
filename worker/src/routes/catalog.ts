@@ -351,8 +351,9 @@ app.delete('/products/:id', requireAuth, async (c) => {
 /**
  * Location meta JSON, in one place so the Workers and Express engines persist
  * the same fields: the owning shelf, the planogram placement (row + facing
- * width) and the pin's own marker size. Undefined fields are omitted, pin
- * sizes clamp to 0.05–3 m.
+ * width), the pin's own marker size and the group-model flags (groupPin = the
+ * group's one map pin, groupOnly = a planogram-only facing that never draws
+ * as a pin). Undefined fields are omitted, pin sizes clamp to 0.05–3 m.
  */
 export function pinMetaJson(fields: {
   shelfId?: string | null;
@@ -360,14 +361,18 @@ export function pinMetaJson(fields: {
   facingW?: number;
   pinW?: number;
   pinH?: number;
+  groupOnly?: boolean;
+  groupPin?: boolean;
 }): string {
-  const { shelfId, shelfLevel, facingW, pinW, pinH } = fields;
+  const { shelfId, shelfLevel, facingW, pinW, pinH, groupOnly, groupPin } = fields;
   return JSON.stringify({
     ...(shelfId ? { shelfId } : {}),
     ...(shelfLevel !== undefined ? { shelf_level: shelfLevel } : {}),
     ...(facingW !== undefined ? { w: facingW } : {}),
     ...(pinW !== undefined ? { pinW: Math.min(3, Math.max(0.05, pinW)) } : {}),
     ...(pinH !== undefined ? { pinH: Math.min(3, Math.max(0.05, pinH)) } : {}),
+    ...(groupOnly ? { groupOnly: 1 } : {}),
+    ...(groupPin ? { groupPin: 1 } : {}),
   });
 }
 
@@ -393,15 +398,28 @@ app.post('/products/:id/locations', requireAuth, async (c) => {
     facingW: num(body?.facingW),
     pinW: num(body?.pinW),
     pinH: num(body?.pinH),
+    groupOnly: body?.groupOnly === true,
+    groupPin: body?.groupPin === true,
   });
   // A product can have several pins per floor (facings of the same item on a
   // shelf). With `locationId` the call MOVES that pin; without one it inserts
   // a new facing. (Parity with backend/src/routes/catalog.js.)
   const relocateId = typeof body?.locationId === 'string' ? body.locationId : null;
   if (relocateId) {
-    const owned = await first(env, 'SELECT id FROM product_locations WHERE id = ? AND product_id = ?', relocateId, product.id);
+    const owned = await first(env, 'SELECT meta FROM product_locations WHERE id = ? AND product_id = ?', relocateId, product.id);
     if (owned) {
-      await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?', x, y, rot, meta, relocateId);
+      // a move MERGES the sent fields over the pin's stored meta (matching the
+      // sandbox) — a plain drag keeps its planogram row, size and group flags.
+      // The shelf association stays REPLACE semantics: an absent shelfId
+      // clears it (a pin dragged onto empty floor), `groupOnly: false` /
+      // `groupPin: false` explicitly clear those flags.
+      let merged: Record<string, unknown> = {};
+      try { merged = JSON.parse(String(owned.meta || '{}')); } catch { /* fresh meta */ }
+      Object.assign(merged, JSON.parse(meta) as Record<string, unknown>);
+      if (!shelfId) delete merged.shelfId;
+      if (body?.groupOnly === false) delete merged.groupOnly;
+      if (body?.groupPin === false) delete merged.groupPin;
+      await run(env, 'UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?', x, y, rot, JSON.stringify(merged), relocateId);
       return json(c, 201, { location: locationJson((await first(env, 'SELECT * FROM product_locations WHERE id = ?', relocateId))!) });
     }
   }

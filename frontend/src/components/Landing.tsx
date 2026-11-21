@@ -15,12 +15,10 @@ import { computeRoute } from '../lib/navgrid';
 import PricingModal from './PricingModal';
 import { useTheme } from '../theme';
 
-/** The rotating hero examples — each opens as a no-account sandbox copy.
- *  Megamart Central stays seeded and viewable (files/DB), just not showcased. */
+/** The homepage example — the one seeded demo store, opened as a no-account
+ *  sandbox copy from the hero. */
 const EXAMPLES = [
-  { slug: 'freshmart-downtown', name: 'Freshmart Downtown', kind: 'Supermarket' },
-  { slug: 'harbor-warehouse', name: 'Harbor Warehouse', kind: 'Warehouse' },
-  { slug: 'maple-corner', name: 'Maple Corner Store', kind: 'Convenience' },
+  { slug: 'walmart-example', name: 'Walmart Example', kind: 'Supercenter' },
 ];
 
 /** The hero's settle-in motion: a slow, decelerating swing (~29°) that glides
@@ -48,19 +46,27 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
     loc: ProductLocation;
     product: Product;
   } | null>(null);
+  // hero search: a visitor can look up a real item instead of waiting for the
+  // rotating demo — the found item holds the map until the query is cleared
+  const [query, setQuery] = useState('');
+  const [miss, setMiss] = useState(false);
+  const [missMsg, setMissMsg] = useState('');
+  const searchHold = useRef(false);
 
   const floor = data.floors[0] ?? null;
   const { resolved } = useTheme();
   const sceneTheme = resolved === 'dark' ? DARK_THEME : MODERN_THEME;
   const elements = useMemo(() => data.elements.map(parseElement), [data]);
 
-  // every few seconds: route a shopper from the entrance to a random item
+  // every few seconds: route a shopper from the entrance to a random item —
+  // paused while a searched item holds the map
   useEffect(() => {
     if (!floor) return;
     let live = true;
     const floorEls = elements.filter((e) => e.floor_id === floor.id);
     const locs = data.locations.filter((l) => l.floor_id === floor.id);
     const pick = () => {
+      if (searchHold.current) return;
       const loc = locs[Math.floor(Math.random() * locs.length)];
       const product = data.products.find((p) => p.id === loc.product_id);
       if (!product) return;
@@ -95,6 +101,66 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
       window.clearInterval(t);
     };
   }, [data, floor, elements]);
+
+  const findItem = () => {
+    const needle = query.trim().toLowerCase();
+    if (!floor || !needle) {
+      searchHold.current = false;
+      setMiss(false);
+      return;
+    }
+    // a stocked match wins — the demo routes to where the item actually sits
+    const matches = data.products.filter((p) =>
+      `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(needle)
+    );
+    if (!matches.length) {
+      searchHold.current = true;
+      setMiss(true);
+      setMissMsg(`Nothing matches “${query.trim()}” — try “milk” or “crisps”.`);
+      setDemo(null);
+      return;
+    }
+    const product =
+      matches.find((p) => data.locations.some((l) => l.product_id === p.id)) ?? matches[0];
+    // prefer the item's group pin; a planogram-only facing still routes fine
+    const loc =
+      data.locations.find((l) => {
+        if (l.product_id !== product.id) return false;
+        try { return !JSON.parse(l.meta || '{}').groupOnly; } catch { return true; }
+      }) ?? data.locations.find((l) => l.product_id === product.id);
+    if (!loc) {
+      searchHold.current = true;
+      setMiss(true);
+      setMissMsg(`${product.name} matches, but it isn't stocked on this map.`);
+      setDemo(null);
+      return;
+    }
+    searchHold.current = true;
+    setMiss(false);
+    const floorEls = elements.filter((e) => e.floor_id === floor.id);
+    const r = computeRoute(floor, floorEls, { x: loc.x, y: loc.y });
+    let where = '';
+    let best = 8;
+    for (const el of floorEls) {
+      if (el.type !== 'shelf' || !el.label) continue;
+      const g = el.geom as RectGeom;
+      const d = Math.hypot(g.x + g.w / 2 - loc.x, g.y + g.h / 2 - loc.y);
+      if (d < best) {
+        best = d;
+        where = el.label.split('·')[0].trim();
+      }
+    }
+    setDemo({
+      name: product.name,
+      where: where || floor.name,
+      dist: r ? Math.round(r.distanceM) : 0,
+      points: r?.points ?? null,
+      loc,
+      product,
+    });
+    // lean the camera toward the found aisle
+    setCam((c) => (c ? { ...c, tx: loc.x, ty: loc.y, dist: Math.max(8, Math.min(c.dist, 20)) } : c));
+  };
 
   // start a bit closer than a full-floor fit, then swing slowly to a stop —
   // still for visitors who prefer reduced motion; a user gesture ends it early
@@ -137,6 +203,37 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
           wheelZoom="ctrl"
           touchAction="pan-y"
         />
+        {/* hero search: find a real item on the demo map — the route and the
+            chip follow the search until it is cleared */}
+        <div className="hero-search">
+          <input
+            className="input"
+            placeholder={`Find an item in ${data.store.name}…`}
+            aria-label={`Find an item in ${data.store.name}`}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              if (!e.target.value.trim()) {
+                searchHold.current = false;
+                setMiss(false);
+                setMissMsg('');
+              }
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') findItem(); }}
+          />
+          <button type="button" className="btn primary sm" onClick={findItem}>Find</button>
+          {query.trim() && (
+            <button
+              type="button"
+              className="route-badge-x"
+              aria-label="Clear search"
+              onClick={() => { setQuery(''); searchHold.current = false; setMiss(false); }}
+            >
+              ✕
+            </button>
+          )}
+          {miss && <span className="hero-search-miss">{missMsg || 'Not found on this map.'}</span>}
+        </div>
       </div>
       {demo && (
         <div className="hero-demo-chip">

@@ -355,27 +355,44 @@ router.post('/products/:id/locations', requireAuth, handler(async (req, res) => 
   const shelfLevel = num(req.body?.shelfLevel);
   const facingW = num(req.body?.facingW);
   // the pin's own marker size on the map (metres), so owners can lengthen or
-  // widen an individual pin from the editor's pin panel
+  // widen an individual pin from the editor's pin panel. groupPin/groupOnly
+  // are the group-model flags: one groupPin per shelf group, planogram-only
+  // facings carry groupOnly (parity with the worker's pinMetaJson).
   const pinW = num(req.body?.pinW);
   const pinH = num(req.body?.pinH);
-  const meta = JSON.stringify({
+  const metaFields = {
     ...(shelfId ? { shelfId } : {}),
     ...(shelfLevel !== undefined ? { shelf_level: shelfLevel } : {}),
     ...(facingW !== undefined ? { w: facingW } : {}),
     ...(pinW !== undefined ? { pinW: Math.min(3, Math.max(0.05, pinW)) } : {}),
     ...(pinH !== undefined ? { pinH: Math.min(3, Math.max(0.05, pinH)) } : {}),
-  });
+    ...(req.body?.groupOnly === true ? { groupOnly: 1 } : {}),
+    ...(req.body?.groupPin === true ? { groupPin: 1 } : {}),
+  };
   // A product can have several pins per floor (facings of the same item on a
   // shelf). With `locationId` the call MOVES that pin; without one it inserts
   // a new facing.
   const relocateId = typeof req.body?.locationId === 'string' ? req.body.locationId : null;
   if (relocateId) {
-    const owned = db.prepare('SELECT id FROM product_locations WHERE id = ? AND product_id = ?').get(relocateId, product.id);
+    const owned = db.prepare('SELECT meta FROM product_locations WHERE id = ? AND product_id = ?').get(relocateId, product.id);
     if (owned) {
+      // a move MERGES the sent fields over the pin's stored meta (matching the
+      // sandbox) — a plain drag keeps its planogram row, size and group flags.
+      // The shelf association stays REPLACE semantics: an absent shelfId
+      // clears it (a pin dragged onto empty floor), `groupOnly: false` /
+      // `groupPin: false` explicitly clear those flags.
+      let merged = {};
+      try { merged = JSON.parse(String(owned.meta || '{}')); } catch { /* fresh meta */ }
+      Object.assign(merged, metaFields);
+      if (!shelfId) delete merged.shelfId;
+      if (req.body?.groupOnly === false) delete merged.groupOnly;
+      if (req.body?.groupPin === false) delete merged.groupPin;
+      const meta = JSON.stringify(merged);
       db.prepare('UPDATE product_locations SET x = ?, y = ?, rot = ?, meta = ? WHERE id = ?').run(x, y, rot, meta, relocateId);
       return sendJson(res, 201, { location: locationJson(db.prepare('SELECT * FROM product_locations WHERE id = ?').get(relocateId)) });
     }
   }
+  const meta = JSON.stringify(metaFields);
   const id = newId();
   db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
     id, product.id, floor.id, x, y, rot, meta
