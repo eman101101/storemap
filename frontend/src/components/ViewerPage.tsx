@@ -591,7 +591,7 @@ export default function ViewerPage() {
           <ThemeSettings />
         </div>
 
-        {activeRoute && (
+        {activeRoute && !hasSearch && (
           <div className="route-badge">
             <span className="route-badge-dot" aria-hidden />
             <button className="route-badge-x" onClick={clearRoute} aria-label="Clear route">
@@ -627,17 +627,8 @@ export default function ViewerPage() {
           </div>
         )}
 
-        {/* pre-search browsing: the store's aisle directory (touch-friendly
-            alternative to hovering a shelf) */}
-        {!trip.length && (
-          <button
-            className="dir-btn"
-            aria-expanded={dirOpen}
-            onClick={() => setDirOpen((o) => !o)}
-          >
-            🗺 What's where
-          </button>
-        )}
+        {/* the aisle directory button was removed — dirOpen stays false and
+            the panel below is kept for the data it renders */}
         {dirOpen && (
           <div className="dir-panel card" role="dialog" aria-label="Aisle directory">
             <div className="row-between" style={{ marginBottom: 4 }}>

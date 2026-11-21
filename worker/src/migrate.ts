@@ -304,6 +304,16 @@ const MIGRATIONS: { name: string; sql: string; batch?: boolean }[] = [
       ALTER TABLE users ADD COLUMN photo_credits INTEGER NOT NULL DEFAULT 1000;
     `,
   },
+  {
+    // size-based photo charging (replaces credits): usage accrues by the
+    // byte count of stored images against the account's quota — free quota
+    // ≈ 1000 photos at ~200 KB (200 MB); packs extend it
+    name: '014-user-photo-storage',
+    sql: `
+      ALTER TABLE users ADD COLUMN photo_bytes_used INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN photo_bytes_quota INTEGER NOT NULL DEFAULT 209715200;
+    `,
+  },
 ];
 
 /**

@@ -34,6 +34,18 @@ raw.exec(`
     name TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE
   );
+  CREATE TABLE products (
+    id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    category_id TEXT,
+    name TEXT NOT NULL,
+    brand TEXT NOT NULL DEFAULT '',
+    sku TEXT NOT NULL DEFAULT '',
+    barcode TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    price REAL,
+    image_url TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -42,6 +54,9 @@ raw.exec(`
 `);
 raw.prepare("INSERT INTO users (id, email, provider, provider_sub) VALUES ('u1', 'owner@example.com', 'google', 'g1')").run();
 raw.prepare("INSERT INTO stores (id, owner_id, name, slug) VALUES ('s1', 'u1', 'Old Store', 'old-store')").run();
+// a live product row: later ALTER TABLE migrations (009 image_crop, and the
+// products table itself) must apply against real data without losing it
+raw.prepare("INSERT INTO products (id, store_id, name, price) VALUES ('p1', 's1', 'Old Oat Milk', 2.49)").run();
 for (const name of [
   '001_initial_schema', '002_stock_tracking_and_integrations', '003-floor-snapshots',
   '004-store-geo-views', '005-store-plan', '006-product-search-fts', '007-store-members',
@@ -73,6 +88,12 @@ test('008 rebuild keeps data and widens the provider CHECK', () => {
   // login_tokens landed and the migration was recorded
   assert.ok(db.prepare("SELECT name FROM migrations WHERE name = '008-auth-email-facebook'").get());
   db.prepare("INSERT INTO login_tokens (id, email, code_hash, expires_at) VALUES ('t1', 'e@example.com', 'h', '2030-01-01')").run();
+
+  // the pre-008 product row survived, and the 009 crop column landed
+  const product = db.prepare("SELECT name, price, image_crop_url FROM products WHERE id = 'p1'").get();
+  assert.equal(product?.name, 'Old Oat Milk');
+  assert.equal(product?.price, 2.49);
+  assert.equal(product?.image_crop_url, '');
 
   // FKs are enforced again after the pragma restore
   assert.throws(() =>

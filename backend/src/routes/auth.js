@@ -197,26 +197,26 @@ router.get('/me', (req, res) => {
   sendJson(res, 200, {
     user: u ? {
       id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider,
-      photo_credits: u.photo_credits ?? 1000,
+      photo_bytes_used: u.photo_bytes_used ?? 0,
+      photo_bytes_quota: u.photo_bytes_quota ?? 209715200,
     } : null,
     providers: providersConfigured(),
   });
 });
 
-/** Credit packs for the pay-as-you-go photo plan — 1 credit = 1 photo
- *  upload. Prices track the underlying Cloudflare R2 cost (storage
- *  $0.015/GB·mo, Class A $4.50/M, Class B $0.36/M — a ~200 KB photo costs
- *  well under a cent a YEAR), rounded to friendly amounts. Billing itself is
- *  not wired (self-host reality); hosted installs hook their PSP here. */
-const CREDIT_PACKS = { small: 1000, medium: 5000, large: 20000 };
+/** Pay-as-you-go photo storage — like filling up a car: pick an amount, it
+ *  lands on the account. Charged by the SIZE of the images stored (MB used),
+ *  tracked against the free quota (≈ 1000 photos at ~200 KB = 200 MB) at the
+ *  underlying Cloudflare R2 cost ($0.015/GB·mo + ops). Billing itself is not
+ *  wired (self-host reality); hosted installs hook their PSP here. */
+const MB = 1048576;
 
-router.post('/credits', requireAuth, handler(async (req, res) => {
-  const pack = String(req.body?.pack ?? '');
-  const amount = CREDIT_PACKS[pack];
-  if (!amount) return badRequest(res, 'Unknown credit pack');
-  db.prepare('UPDATE users SET photo_credits = photo_credits + ? WHERE id = ?').run(amount, req.user.id);
-  const row = db.prepare('SELECT photo_credits FROM users WHERE id = ?').get(req.user.id);
-  sendJson(res, 200, { photo_credits: row.photo_credits, added: amount });
+router.post('/storage', requireAuth, handler(async (req, res) => {
+  const mb = Math.round(Number(req.body?.mb ?? 0));
+  if (!Number.isFinite(mb) || mb < 10 || mb > 10240) return badRequest(res, 'Amount must be 10–10240 MB');
+  db.prepare('UPDATE users SET photo_bytes_quota = photo_bytes_quota + ? WHERE id = ?').run(mb * MB, req.user.id);
+  const row = db.prepare('SELECT photo_bytes_used, photo_bytes_quota FROM users WHERE id = ?').get(req.user.id);
+  sendJson(res, 200, { photo_bytes_used: row.photo_bytes_used, photo_bytes_quota: row.photo_bytes_quota, added: mb * MB });
 }));
 
 router.post('/logout', (_req, res) => {

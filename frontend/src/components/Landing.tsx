@@ -12,6 +12,7 @@ import type { WorldPt } from '../lib/geometry';
 import type { Camera3D } from '../lib/render3d';
 import { fitCamera, MODERN_THEME, DARK_THEME } from '../lib/render3d';
 import { computeRoute } from '../lib/navgrid';
+import PricingModal from './PricingModal';
 import { useTheme } from '../theme';
 
 /** The rotating hero examples — each opens as a no-account sandbox copy.
@@ -19,7 +20,6 @@ import { useTheme } from '../theme';
 const EXAMPLES = [
   { slug: 'freshmart-downtown', name: 'Freshmart Downtown', kind: 'Supermarket' },
   { slug: 'harbor-warehouse', name: 'Harbor Warehouse', kind: 'Warehouse' },
-  { slug: 'grand-mart', name: 'Grand Mart', kind: '400 groups · 3000 items' },
   { slug: 'maple-corner', name: 'Maple Corner Store', kind: 'Convenience' },
 ];
 
@@ -151,13 +151,15 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
   );
 }
 
-/** Two real demo shelves of different sizes, rendered as filled planograms —
- *  tap a side (A/B) on a card to view that face. Hidden when the payloads
- *  have no usable shelf. */
+/** The homepage Planograms band. Auto-picks the two best demo shelves, and
+ *  lets the visitor customize it: choose a store, then any eligible shelf of
+ *  that store, and the band renders that planogram instead. Hidden when the
+ *  payloads have no usable shelf. */
 function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePayload | null> }) {
-  const picks = useMemo(() => {
-    const all: { layout: ShelfLayout; label: string; score: number }[] = [];
-    for (const { slug } of EXAMPLES) {
+  // every eligible shelf of every example store, scored by photo count + fill
+  const byStore = useMemo(() => {
+    const map: Record<string, { layout: ShelfLayout; label: string; score: number }[]> = {};
+    for (const { slug, name } of EXAMPLES) {
       const data = payloads[slug];
       if (!data || !data.floors[0]) continue;
       const elements = data.elements.map(parseElement);
@@ -166,6 +168,7 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
         .filter((l) => l.floor_id === floor.id)
         .map((l) => ({ location: l, product: data.products.find((p) => p.id === l.product_id) }))
         .filter((x): x is { location: ProductLocation; product: Product } => !!x.product);
+      const list: { layout: ShelfLayout; label: string; score: number }[] = [];
       for (const el of elements) {
         if (el.floor_id !== floor.id || el.type !== 'shelf' || el.shape !== 'rect') continue;
         const g = el.geom as RectGeom;
@@ -178,11 +181,19 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
           0
         );
         if (withImgs === 0 || total < 3) continue;
-        all.push({ layout, label: el.label, score: withImgs * 3 + total });
+        list.push({ layout, label: el.label, score: withImgs * 3 + total });
+      }
+      if (list.length) {
+        list.sort((x, y) => y.score - x.score);
+        map[slug] = list;
       }
     }
-    all.sort((a, b) => b.score - a.score);
-    // two cards, different shelf sizes
+    return map;
+  }, [payloads]);
+
+  // the auto picks: the two best shelves of different sizes (previous behavior)
+  const picks = useMemo(() => {
+    const all = Object.values(byStore).flat();
     const out: typeof all = [];
     const seenW = new Set<number>();
     for (const cand of all) {
@@ -193,7 +204,7 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
       if (out.length >= 2) break;
     }
     return out;
-  }, [payloads]);
+  }, [byStore]);
 
   if (picks.length === 0) return null;
   return (
@@ -205,24 +216,105 @@ function HeroPlanogram({ payloads }: { payloads: Record<string, PublicStorePaylo
   );
 }
 
-function ShelfCard({ layout, label }: { layout: ShelfLayout; label: string }) {
-  const slots = layout.bays.flatMap((b) => b.slots);
-  const filled = useMemo(() => compactFilledLayout(layout, slots), [layout, slots]);
-  const shown = filled.bays.reduce((n, b) => n + b.slots.length, 0);
-  const hasImages = filled.bays.some((b) => b.slots.some((s) => s.product.image_crop_url || s.product.image_url));
+
+function ShelfCard({ layout: initial, label }: { layout: ShelfLayout; label: string }) {
+  // the homepage planogram is a live sandbox: Edit-planogram keeps the layout
+  // exactly as shown and unlocks free dragging, row add/remove, length and
+  // per-item resize — purely local, nothing is saved.
+  const [layout, setLayout] = useState(() =>
+    compactFilledLayout(initial, initial.bays.flatMap((b) => b.slots))
+  );
+  const [editing, setEditing] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const hasImages = layout.bays.some((b) => b.slots.some((s) => s.product.image_crop_url || s.product.image_url));
+  const shownCount = layout.bays.reduce((n, b) => n + b.slots.length, 0);
+
+  const patchSlots = (fn: (s: ShelfSlot) => ShelfSlot) =>
+    setLayout((prev) => {
+      const bays = prev.bays.map((b) => ({ ...b, slots: b.slots.map(fn) }));
+      for (const b of bays) b.slots.sort((x, y) => x.u - y.u);
+      return { ...prev, bays };
+    });
+  const moveFacing = (locationId: string, u: number, level: number) =>
+    patchSlots((s) =>
+      s.locationId === locationId
+        ? { ...s, u: Math.min(1, Math.max(0, u)), level: Math.min(layout.levels, Math.max(1, level)) }
+        : s
+    );
+  const resizeFacing = (locationId: string, w: number) =>
+    patchSlots((s) =>
+      s.locationId === locationId ? { ...s, facingWidth: Math.min(3, Math.max(0.05, w)) } : s
+    );
+  const setRows = (levels: number) => {
+    const next = Math.min(8, Math.max(1, levels));
+    setLayout((prev) => ({
+      ...prev,
+      levels: next,
+      bays: prev.bays.map((b) => ({
+        ...b,
+        slots: b.slots.map((s) => ({ ...s, level: Math.min(s.level, next) })),
+      })),
+    }));
+  };
+  const setLength = (w: number) =>
+    setLayout((prev) => ({ ...prev, width: w, meta: { ...prev.meta, planWidth: w } }));
+
+  const allSlots = layout.bays.flatMap((b) => b.slots);
+  const selected = selectedId ? allSlots.find((s) => s.locationId === selectedId) ?? null : null;
 
   return (
     <div className="planogram-card">
       <div className="planogram-card-head">
         <b>{label} — shelf planogram</b>
+        <button
+          type="button"
+          className={`btn sm ${editing ? 'primary' : ''}`}
+          onClick={() => { setEditing((v) => !v); setSelectedId(null); }}
+          title="Rearrange, resize, add/remove rows and change length — a local test, nothing is saved"
+        >
+          {editing ? '✓ Done' : '✎ Edit planogram'}
+        </button>
       </div>
       <div className="planogram-scroll">
-        <PlanogramSvg layout={filled} mode={hasImages ? 'images' : 'diagram'} />
+        <PlanogramSvg
+          layout={layout}
+          mode={hasImages ? 'images' : 'diagram'}
+          editing={editing}
+          selectedId={selectedId}
+          onSelectFacing={editing ? setSelectedId : undefined}
+          onMoveFacing={editing ? moveFacing : undefined}
+        />
       </div>
-      <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>
-        {shown} product{shown === 1 ? '' : 's'} · {filled.levels} row{filled.levels === 1 ? '' : 's'} ·{' '}
-        {filled.width.toFixed(1)} m — tap a shelf on any map to see its planogram.
-      </p>
+      {editing && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', fontSize: 12.5, margin: '8px 4px 0' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <b>Rows</b>
+            <button type="button" className="btn sm" aria-label="Remove a row" disabled={layout.levels <= 1} onClick={() => setRows(layout.levels - 1)}>−</button>
+            <span style={{ minWidth: 16, textAlign: 'center' }}>{layout.levels}</span>
+            <button type="button" className="btn sm" aria-label="Add a row" disabled={layout.levels >= 8} onClick={() => setRows(layout.levels + 1)}>＋</button>
+          </span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            Length
+            <input type="range" min={0.5} max={12} step={0.1} value={layout.width} style={{ width: 110 }}
+              onChange={(e) => setLength(Number(e.target.value))} />
+            <b style={{ minWidth: 44 }}>{layout.width.toFixed(1)} m</b>
+          </label>
+          {selected && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              Photo W
+              <input type="range" min={0.05} max={3} step={0.05} value={selected.facingWidth} style={{ width: 90 }}
+                onChange={(e) => resizeFacing(selected.locationId, Number(e.target.value))} />
+              <b style={{ minWidth: 44 }}>{selected.facingWidth.toFixed(2)} m</b>
+            </label>
+          )}
+          <span className="muted">drag items · tap a photo to resize — nothing is saved</span>
+        </div>
+      )}
+      {!editing && (
+        <p className="muted" style={{ fontSize: 12.5, margin: '8px 4px 0' }}>
+          {shownCount} products · {layout.levels} rows · {layout.width.toFixed(1)} m
+        </p>
+      )}
     </div>
   );
 }
@@ -293,6 +385,7 @@ function HeroCarousel({ payloads }: { payloads: Record<string, PublicStorePayloa
 
 export default function Landing() {
   const { user } = useAuth();
+  const [pricingOpen, setPricingOpen] = useState(false);
   const [payloads, setPayloads] = useState<Record<string, PublicStorePayload | null>>({});
 
   // the example stores, fetched once for the carousel and the planogram band
@@ -319,6 +412,13 @@ export default function Landing() {
           <Link to={user ? '/dashboard' : '/try/blank'} className="btn primary" aria-label="Create a Map">
             <BlockText text="Create a Map" cell={4} />
           </Link>
+          <button
+            className="btn"
+            title="Free plan: maps with up to 1000 product photos per account · photo storage beyond that charged by MB used"
+            onClick={() => setPricingOpen(true)}
+          >
+            Free w/ 1000 Photos
+          </button>
         </div>
       </section>
 
@@ -327,6 +427,7 @@ export default function Landing() {
         <HeroPlanogram payloads={payloads} />
       </section>
 
+      {pricingOpen && <PricingModal onClose={() => setPricingOpen(false)} />}
       <footer className="footer">item.place - <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Host your own maps</a></footer>
     </main>
   );

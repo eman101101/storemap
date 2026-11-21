@@ -7,13 +7,16 @@ describe('grid wordmark', () => {
     for (const ch of WORD) expect(GRID_GLYPHS[ch]).toBeTruthy();
   });
 
-  it('the p stem rises above the bowl (longer at the top) on the same baseline', () => {
-    // pinned: the stem extends UP from the bowl — the glyph is not shifted
+  it('the p is a descender: bowl at x-height, stem running to the bottom row', () => {
+    // pinned: the bowl closes (top, right wall, bottom) and the stem drops
+    // below the bowl to the baseline row — a proper lowercase p, not a 'b'
     expect(GRID_GLYPHS.p[0]).toBe('.....');
-    expect(GRID_GLYPHS.p[1]).toBe('#....');
-    expect(GRID_GLYPHS.p[2]).toBe('#....');
-    expect(GRID_GLYPHS.p[3]).toBe('####.');
-    expect(GRID_GLYPHS.p[6]).toBe('#....'); // baseline row, like x-height letters
+    expect(GRID_GLYPHS.p[1]).toBe('.....');
+    expect(GRID_GLYPHS.p[2]).toBe('.###.');
+    expect(GRID_GLYPHS.p[3]).toBe('#...#');
+    expect(GRID_GLYPHS.p[4]).toBe('####.');
+    expect(GRID_GLYPHS.p[5]).toBe('#....');
+    expect(GRID_GLYPHS.p[6]).toBe('#....');
   });
 
   it('lays the word out on the padded board', () => {

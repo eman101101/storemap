@@ -14,17 +14,17 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 export const WORD = 'item.place';
 
 /* 5×7 grid font ('#' = cell on). Lowercase sits on rows 2–6 like a real
-   bitmap font; the p keeps that baseline but its stem rises a row above the
-   bowl — longer at the top, not shifted up. The l is a plain straight stem
-   and the c is a clean open curve. Covers the wordmark plus the block-text
-   labels ("Create a Map"), which also need r, M and C. */
+   bitmap font; the p keeps that baseline but its stem descends to the last
+   row (a proper descender). The l is a plain straight stem and the c is a
+   clean open curve. Covers the wordmark plus the block-text labels
+   ("Create a Map"), which also need r, M and C. */
 export const GRID_GLYPHS: Record<string, string[]> = {
   i: ['..#..', '.....', '..#..', '..#..', '..#..', '..#..', '..#..'],
   t: ['.#...', '.#...', '###..', '.#...', '.#...', '.#...', '..#..'],
   e: ['.....', '.....', '.###.', '#...#', '#####', '#....', '.###.'],
   m: ['.....', '.....', '##.#.', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
-  p: ['.....', '#....', '#....', '####.', '#..#.', '####.', '#....'],
+  p: ['.....', '.....', '.###.', '#...#', '####.', '#....', '#....'],
   l: ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
   a: ['.....', '.....', '.###.', '....#', '.####', '#...#', '.####'],
   c: ['.....', '.....', '.###.', '#....', '#....', '#....', '.###.'],
@@ -377,9 +377,21 @@ export default function GridHero({ text = WORD }: { text?: string }) {
   }, [canAnimate, waveKey, pts, routeLen, ti, board, targets]);
 
   const dots: { c: number; r: number }[] = [];
+  // quiet zone: no floor dot within two cells of a letter (incl. diagonals) —
+  // stray dots hugging a glyph read as stray glyph marks (e.g. above the p)
+  const quiet = new Uint8Array(board.cols * board.rows);
   for (let r = 0; r < board.rows; r++)
     for (let c = 0; c < board.cols; c++)
-      if (!board.blocked[r * board.cols + c]) dots.push({ c, r });
+      if (board.blocked[r * board.cols + c])
+        for (let dr = -2; dr <= 2; dr++)
+          for (let dc = -2; dc <= 2; dc++) {
+            const rr = r + dr;
+            const cc = c + dc;
+            if (rr >= 0 && rr < board.rows && cc >= 0 && cc < board.cols) quiet[rr * board.cols + cc] = 1;
+          }
+  for (let r = 0; r < board.rows; r++)
+    for (let c = 0; c < board.cols; c++)
+      if (!board.blocked[r * board.cols + c] && !quiet[r * board.cols + c]) dots.push({ c, r });
 
   const cell = (p: Pt) => ({ x: (p.c + 0.5) * CS, y: (p.r + 0.5) * CS });
   const entrance = cell(board.entrance);

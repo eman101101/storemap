@@ -15,20 +15,19 @@ const router = Router();
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/** Pay-as-you-go photo accounting: each product photo upload spends one
- *  credit from the uploader's account (1 credit = 1 photo). Self-hosted
+/** Pay-as-you-go photo accounting: charged by the SIZE of the images stored
+ *  (MB used), accrued per upload against the account's quota. Self-hosted
  *  (local mode) instances include photos and skip the meter entirely. */
-function photoCreditsLeft(req) {
-  const row = db.prepare('SELECT photo_credits FROM users WHERE id = ?').get(req.user.id);
-  return row?.photo_credits ?? 0;
+function photoBytes(req) {
+  const row = db.prepare('SELECT photo_bytes_used, photo_bytes_quota FROM users WHERE id = ?').get(req.user.id);
+  return { used: row?.photo_bytes_used ?? 0, quota: row?.photo_bytes_quota ?? 209715200 };
 }
-function spendPhotoCredit(req) {
+function chargePhotoBytes(req, bytes) {
   if (config.selfHosted) return;
-  db.prepare('UPDATE users SET photo_credits = photo_credits - 1 WHERE id = ? AND photo_credits > 0')
-    .run(req.user.id);
+  db.prepare('UPDATE users SET photo_bytes_used = photo_bytes_used + ? WHERE id = ?').run(bytes, req.user.id);
 }
 const OUT_OF_CREDITS = {
-  error: 'Out of photo credits — your free plan includes 1000. Add more any time from Plan & credits.',
+  error: 'Out of photo storage — the free plan includes 200 MB (≈1000 photos). Add more any time from Plan & credits.',
   upgrade: true,
 };
 
@@ -208,7 +207,8 @@ router.post(
         upgrade: true,
       });
     }
-    if (!config.selfHosted && photoCreditsLeft(req) <= 0) return sendJson(res, 402, OUT_OF_CREDITS);
+    const mb = photoBytes(req);
+    if (!config.selfHosted && mb.used >= mb.quota) return sendJson(res, 402, OUT_OF_CREDITS);
     const type = String(req.headers['content-type'] || '').split(';')[0].trim();
     const spec = IMAGE_TYPES[type];
     if (!spec) return badRequest(res, 'Only PNG, JPEG or WebP images are accepted');
@@ -218,7 +218,7 @@ router.post(
     if (!spec.magic(buf)) return badRequest(res, 'File content does not match its image type');
 
     const { url } = await saveImage(buf, spec.ext);
-    spendPhotoCredit(req);
+    chargePhotoBytes(req, buf.length);
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(url, product.id);
     touchStore(product.store_id);
     sendJson(res, 200, { url, product: productJson(db.prepare(PRODUCT_JOIN).get(product.id)) });
@@ -256,7 +256,8 @@ router.post(
         upgrade: true,
       });
     }
-    if (!config.selfHosted && photoCreditsLeft(req) <= 0) return sendJson(res, 402, OUT_OF_CREDITS);
+    const mb = photoBytes(req);
+    if (!config.selfHosted && mb.used >= mb.quota) return sendJson(res, 402, OUT_OF_CREDITS);
     const type = String(req.headers['content-type'] || '').split(';')[0].trim();
     const spec = IMAGE_TYPES[type];
     if (!spec) return badRequest(res, 'Only PNG, JPEG or WebP images are accepted');
@@ -266,7 +267,7 @@ router.post(
     if (!spec.magic(buf)) return badRequest(res, 'File content does not match its image type');
 
     const { url } = await saveImage(buf, spec.ext);
-    spendPhotoCredit(req);
+    chargePhotoBytes(req, buf.length);
     db.prepare('UPDATE products SET image_crop_url = ? WHERE id = ?').run(url, product.id);
     touchStore(product.store_id);
     sendJson(res, 200, { url, product: productJson(db.prepare(PRODUCT_JOIN).get(product.id)) });

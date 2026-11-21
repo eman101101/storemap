@@ -43,7 +43,7 @@ export async function userFromAccess(c: Context, env: Env): Promise<UserRow | nu
   if (!claims) return null;
   const email = String(claims.email || '').toLowerCase();
   if (!email) return null; // Access policy didn't include an email claim
-  const existing = (await first(env, 'SELECT id, email, name, avatar_url, provider, photo_credits FROM users WHERE email = ?', email)) as UserRow | null;
+  const existing = (await first(env, 'SELECT id, email, name, avatar_url, provider, photo_bytes_used, photo_bytes_quota FROM users WHERE email = ?', email)) as UserRow | null;
   if (existing) return existing;
   return upsertUser(env, {
     provider: 'dev', // reuses the schema's passwordless identity class

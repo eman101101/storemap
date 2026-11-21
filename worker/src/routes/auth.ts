@@ -360,29 +360,30 @@ app.get('/me', async (c) => {
   return json(c, 200, {
     user: u ? {
       id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, provider: u.provider,
-      photo_credits: (u as Record<string, unknown>).photo_credits ?? 1000,
+      photo_bytes_used: (u as Record<string, unknown>).photo_bytes_used ?? 0,
+      photo_bytes_quota: (u as Record<string, unknown>).photo_bytes_quota ?? 209715200,
     } : null,
     providers: providersConfigured(c.get('config')),
     selfHosted: c.get('config').selfHosted,
   });
 });
 
-/** Credit packs for the pay-as-you-go photo plan — 1 credit = 1 photo
- *  upload. Prices track the underlying Cloudflare R2 cost (storage
- *  $0.015/GB·mo, Class A $4.50/M, Class B $0.36/M — a ~200 KB photo costs
- *  well under a cent a YEAR), rounded to friendly amounts. Billing itself is
- *  not wired (self-host reality); hosted installs hook their PSP here. */
-const CREDIT_PACKS: Record<string, number> = { small: 1000, medium: 5000, large: 20000 };
+/** Pay-as-you-go photo storage — like filling up a car: pick an amount, it
+ *  lands on the account. Charged by the SIZE of the images stored (MB used),
+ *  tracked against the free quota (≈ 1000 photos at ~200 KB = 200 MB) at the
+ *  underlying Cloudflare R2 cost ($0.015/GB·mo + ops). Billing itself is not
+ *  wired (self-host reality); hosted installs hook their PSP here. */
+const MB = 1048576;
 
-app.post('/credits', rateLimit({ windowMs: 60_000, max: 20 }), async (c) => {
+app.post('/storage', rateLimit({ windowMs: 60_000, max: 20 }), async (c) => {
   const u = await currentUser(c, c.env);
   if (!u) return json(c, 401, { error: 'Authentication required' });
-  const body = await c.req.json<{ pack?: string }>().catch(() => ({}) as { pack?: string });
-  const amount = CREDIT_PACKS[String(body?.pack ?? '')];
-  if (!amount) return json(c, 400, { error: 'Unknown credit pack' });
-  await c.env.DB.prepare('UPDATE users SET photo_credits = photo_credits + ? WHERE id = ?').bind(amount, u.id).run();
-  const row = await first(c.env, 'SELECT photo_credits FROM users WHERE id = ?', u.id) as { photo_credits?: number } | null;
-  return json(c, 200, { photo_credits: row?.photo_credits ?? 0, added: amount });
+  const body = await c.req.json<{ mb?: number }>().catch(() => ({}) as { mb?: number });
+  const mb = Math.round(Number(body?.mb ?? 0));
+  if (!Number.isFinite(mb) || mb < 10 || mb > 10240) return json(c, 400, { error: 'Amount must be 10–10240 MB' });
+  await c.env.DB.prepare('UPDATE users SET photo_bytes_quota = photo_bytes_quota + ? WHERE id = ?').bind(mb * MB, u.id).run();
+  const row = await first(c.env, 'SELECT photo_bytes_used, photo_bytes_quota FROM users WHERE id = ?', u.id) as { photo_bytes_used?: number; photo_bytes_quota?: number } | null;
+  return json(c, 200, { photo_bytes_used: row?.photo_bytes_used ?? 0, photo_bytes_quota: row?.photo_bytes_quota ?? 0, added: mb * MB });
 });
 
 app.post('/logout', (c) => {

@@ -169,7 +169,7 @@ function TopNav() {
                   setPricingOpen(true);
                 }}
               >
-                Plan & credits{user.photo_credits != null ? ` · ${(user.photo_credits ?? 0).toLocaleString()} 📷` : ''}
+                Plan & credits · {(((user.photo_bytes_quota ?? 0) - (user.photo_bytes_used ?? 0)) / 1048576).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB free
               </button>
               <button
                 role="menuitem"
@@ -185,13 +185,6 @@ function TopNav() {
         </div>
       ) : (
         <div className="nav-user">
-          <button
-            className="btn sm"
-            title="Free plan: maps with up to 1000 product photos per account · pay-as-you-go photo credits beyond that"
-            onClick={() => setPricingOpen(true)}
-          >
-            Free w/ 1000 Photos
-          </button>
           <button className="btn sm" onClick={() => openLogin()}>
             Sign in
           </button>

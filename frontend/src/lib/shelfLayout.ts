@@ -171,10 +171,10 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
   // meta.planDepth) — they never touch the shelf's footprint on the map. The
   // physical rect width is what pins are positioned against; the planogram
   // drawing can be wider or narrower than it. Auto length (unset) draws at
-  // most 3 m — one average store planogram section — so a long gondola's
+  // most 2 m — one average store planogram section — so a long gondola's
   // planogram stays readable; drag Length in the editor for more.
   const physWidth = Math.max(r.w, 0.1);
-  const width = clampNum(meta.planWidth, 0.3, 60) ?? Math.min(physWidth, 3);
+  const width = clampNum(meta.planWidth, 0.3, 60) ?? Math.min(physWidth, 2);
   const depth = clampNum(meta.planDepth, 0.1, 20) ?? Math.max(r.h, 0.1);
   const bayCount = clampInt(meta.bays, 1, 40) ?? Math.max(1, Math.round(width / DEFAULT_BAY_WIDTH));
   const levelCount = shelfLevels(shelf);

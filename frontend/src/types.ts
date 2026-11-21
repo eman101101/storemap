@@ -6,9 +6,10 @@ export interface User {
   name: string;
   avatar_url: string;
   provider: string;
-  /** Pay-as-you-go photo credits (1 credit = 1 photo upload). Every account
-   *  starts with the free plan's 1000. */
-  photo_credits?: number;
+  /** Pay-as-you-go photo storage: bytes used vs quota (charged by the MBs
+   *  of images stored). The free plan includes ≈ 1000 photos (~200 MB). */
+  photo_bytes_used?: number;
+  photo_bytes_quota?: number;
 }
 
 export interface AuthInfo {

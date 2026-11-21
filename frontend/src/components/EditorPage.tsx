@@ -314,26 +314,66 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   );
 
   // ---- items / groups visibility ----
-  // Groups view (items hidden) is the perf mode for heavy floors: the map
-  // shows fixtures + department area labels and only the focused/selected
-  // pins. null = no explicit choice yet — heavy floors default to groups.
+  // Groups view (items hidden) is the default for real stores: the map shows
+  // fixtures + department area labels and only the focused/selected pins —
+  // items are never individually selectable there. null = no explicit choice
+  // yet; floors with more than 25 shelves (real stores) default to groups.
   const [itemsPref, setItemsPref] = useState<boolean | null>(() => {
     try {
       const v = localStorage.getItem('storemap.showItems');
       return v == null ? null : v === '1';
     } catch {
-      return null; // private mode — fall back to the pin-count heuristic
+      return null; // private mode — fall back to the shelf-count heuristic
     }
   });
-  const ITEMS_HEAVY = 800;
-  const showItems = itemsPref ?? visibleFloorPins.length <= ITEMS_HEAVY;
+  const GROUPS_HEAVY = 25;
+  const shelfCount = floorElements.filter((e) => e.type === 'shelf').length;
+  const showItems = itemsPref ?? shelfCount <= GROUPS_HEAVY;
   const toggleShowItems = () => {
     setItemsPref((cur) => {
-      const next = !(cur ?? visibleFloorPins.length <= ITEMS_HEAVY);
+      const next = !(cur ?? shelfCount <= GROUPS_HEAVY);
       try { localStorage.setItem('storemap.showItems', next ? '1' : '0'); } catch { /* private mode */ }
       return next;
     });
   };
+
+  // ---- preview mode: the map as shoppers see it (non-editing) ----
+  const [preview, setPreview] = useState(false);
+  // mobile: the map tools (duplicate / re-center / edit) start hidden
+  const [mapToolsOpen, setMapToolsOpen] = useState(false);
+  // preview carries its own shopper-style search so the flow is testable
+  const [previewQuery, setPreviewQuery] = useState('');
+  // typing in preview shows only the matching facings (null = normal map)
+  const previewMatches = useMemo(() => {
+    if (!preview) return null;
+    const needle = previewQuery.trim().toLowerCase();
+    if (!needle) return null;
+    const ids = new Set(
+      products
+        .filter((p) => `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(needle))
+        .map((p) => p.id)
+    );
+    const hits = visibleFloorPins.filter((p) => ids.has(p.location.product_id));
+    return hits.length ? hits : null; // nothing found → keep the normal map
+  }, [preview, previewQuery, products, visibleFloorPins]);
+  const togglePreview = () => {
+    setPreview((v) => {
+      if (!v) {
+        // entering preview clears any editing selection; the map re-renders
+        // shopper-style (no edit chrome, departments visible, pans only)
+        setSelectedId(null);
+        setSelectedIds(new Set());
+        setSelectedPinProductId(null);
+        setTool('select');
+        setGroupCreatorFor(null);
+        setItemPickerFor(null);
+        setNewItemAt(null);
+        setDraftPts([]);
+      }
+      return !v;
+    });
+  };
+
 
 
   /** Owner shelf id persisted on a location — top-level `shelfId` first, then
@@ -1252,7 +1292,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
     <EditorApiContext.Provider value={apix}>
     <div className="editor">
       <div className="editor-top">
-        <Link to={tryMode ? '/' : '/dashboard'} className="btn ghost sm">{tryMode ? '← Home' : '← Stores'}</Link>
         <span className="store-name">
           {store.name}
           {tryMode && <span className="try-chip" title="No account — your map is saved on this device only">sandbox</span>}
@@ -1276,6 +1315,16 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         </button>
         <button className="btn sm" disabled={historyLen.future === 0} onClick={redo}>↪ Redo</button>
         <button
+          className="btn sm map-tools-toggle"
+          aria-expanded={mapToolsOpen}
+          aria-label={mapToolsOpen ? 'Hide map tools' : 'Show map tools'}
+          title={mapToolsOpen ? 'Hide map tools' : 'Show map tools'}
+          onClick={() => setMapToolsOpen((v) => !v)}
+        >
+          <Icon name="tools" />
+        </button>
+        <div className={`map-tools ${mapToolsOpen ? 'open' : ''}`}>
+        <button
           className="btn sm"
           disabled={!selected}
           title="Duplicate the selected element (offset copy)"
@@ -1294,68 +1343,48 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           ⧉ Duplicate
         </button>
         <button className="btn sm" onClick={() => setFitSignal((n) => n + 1)} title="Re-center the map on screen">⤢ Re center</button>
-        <button className="btn sm" onClick={() => setTourOpen(true)} title="Step-by-step tour of the editor">🎓 Tutorial</button>
-        <button className="btn sm" onClick={() => setGlossaryOpen(true)} title="What every label means">📖 Glossary</button>
+        <button
+          className="btn sm"
+          aria-pressed={preview}
+          onClick={togglePreview}
+          title="Preview the map as shoppers see it — no editing chrome, departments visible"
+        >
+          {preview ? 'Edit' : '▶ Preview'}
+        </button>
+        <button className="btn sm" onClick={() => setExportOpen(true)} title="Download this map as a transfer bundle (.json)">⬇ Export</button>
+
+        <label className="btn sm" title="Import a transfer bundle (.json) into this sandbox">
+          ⬆ Import
+          <input
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f || !session) return;
+              f.text()
+                .then((t) => {
+                  const b = JSON.parse(t) as Parameters<LocalSession['importBundle']>[0] & { format?: string };
+                  if (b?.format !== 'storemap.export/1') {
+                    throw new Error('That file is not a storemap export bundle');
+                  }
+                  session.importBundle(b);
+                  window.location.reload(); // the editor re-reads the sandbox on boot
+                })
+                .catch((err) => alert(err instanceof Error ? err.message : 'Import failed'));
+            }}
+          />
+        </label>
+        </div>
+        <button className="btn sm" onClick={() => setTourOpen(true)} title="Step-by-step tour of the editor"><Icon name="grad" size={13} /> Tutorial</button>
+        <button className="btn sm" onClick={() => setGlossaryOpen(true)} title="What every label means"><Icon name="book" size={13} /> Glossary</button>
         {tryMode ? (
-          <button className="btn sm" onClick={() => setExportOpen(true)} title="Download this store as a transfer bundle">
-            ⬇ Export
-          </button>
+          <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>sandbox</span>
         ) : (
           <SaveBadge state={saveState} onRetry={() => { setSaveState('dirty'); dirtyRef.current = true; }} />
         )}
       </div>
-
-      {tryMode && (
-        <div className="try-banner">
-          <span className="try-banner-text">
-            Your map is saved <b>on this device only</b>. Create an account to put it online.
-          </span>
-          <div className="try-banner-actions">
-            <button className="btn sm" onClick={() => setExportOpen(true)}>⬇ Export</button>
-            <label className="btn sm" title="Import a transfer bundle (.json) into this sandbox">
-              ⬆ Import
-              <input
-                type="file"
-                accept="application/json,.json"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = '';
-                  if (!f || !session) return;
-                  f.text()
-                    .then((t) => {
-                      const b = JSON.parse(t) as Parameters<LocalSession['importBundle']>[0] & { format?: string };
-                      if (b?.format !== 'storemap.export/1') {
-                        throw new Error('That file is not a storemap export bundle');
-                      }
-                      session.importBundle(b);
-                      window.location.reload(); // the editor re-reads the sandbox on boot
-                    })
-                    .catch((err) => alert(err instanceof Error ? err.message : 'Import failed'));
-                }}
-              />
-            </label>
-            {session?.canPersist && (
-              <button
-                className="btn sm"
-                title="Discard the copy saved on this device and start fresh"
-                onClick={() => {
-                  if (confirm('Discard this map from your device and start over?')) {
-                    session.discard();
-                    window.location.reload();
-                  }
-                }}
-              >
-                Start over
-              </button>
-            )}
-            {/* opens the sign-in modal in place — signing in keeps you in this editor */}
-            <button className="btn sm primary" onClick={() => openLogin(window.location.pathname)}>
-              Save with an account
-            </button>
-          </div>
-        </div>
-      )}
 
       {exportOpen && (
         <Modal title="Export this map?" onClose={() => setExportOpen(false)}>
@@ -1447,14 +1476,15 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             <Map3D
               floor={floor}
               elements={floorElements}
-              pins={visibleFloorPins}
-              stockPins={visibleFloorPins}
-              showItems={showItems}
+              pins={previewMatches ?? visibleFloorPins}
+              stockPins={previewMatches ?? visibleFloorPins}
+              showItems={previewMatches ? true : showItems}
               pickFilter={pickFilter}
               camera={cam3d}
               onCamera={setCam3d}
-              edit
-              selectedId={selectedId}
+              edit={!preview}
+              grid={preview ? null : 0.25}
+              selectedId={preview ? null : selectedId}
               onSelectElement={(id) => {
                 setSelectedId(id);
                 if (id) autoShowPanel();
@@ -1471,35 +1501,36 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               fitSignal={fitSignal}
               zoomCommand={zoomCmd}
               theme={sceneTheme}
-              locked={locked}
+              locked={preview ? true : locked}
             />
           ) : (
             <MapCanvas
               floor={floor}
               elements={floorElements}
-              pins={visibleFloorPins}
+              pins={previewMatches ?? visibleFloorPins}
               showLabels={!hideLabels}
-              showItems={showItems}
-              showDepartments={!hideLabels && !showItems}
-              locked={locked}
-              onMapContextMenu={(client) => setCtxMenu({ x: client.x, y: client.y })}
+              showItems={previewMatches ? true : showItems}
+              showDepartments={preview ? !previewMatches : (!hideLabels && !showItems)}
+              locked={preview ? true : locked}
+              grid={preview ? null : 0.25}
+              edit={!preview}
+              tool={preview ? 'select' : tool}
+              onMapContextMenu={preview ? undefined : (client) => setCtxMenu({ x: client.x, y: client.y })}
               viewport={viewport}
               onViewport={setViewport}
-              edit
-              tool={tool}
-              selectedId={selectedId}
-              draftPts={draftPts}
-              onSelect={(id) => {
+              selectedId={preview ? null : selectedId}
+              draftPts={preview ? [] : draftPts}
+              onSelect={preview ? undefined : (id) => {
                 setSelectedId(id);
                 if (id) { setSelectedPinProductId(null); autoShowPanel(); }
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
-              onElementsChange={changeElements}
-              onAddElement={addElement}
-              onDraftAdd={(p) => setDraftPts((d) => [...d, p])}
-              onDraftFinish={finishDraft}
-              onDraftCancel={() => setDraftPts([])}
-              onPlaceProduct={placeProduct}
+              onElementsChange={preview ? undefined : changeElements}
+              onAddElement={preview ? undefined : addElement}
+              onDraftAdd={preview ? undefined : (p) => setDraftPts((d) => [...d, p])}
+              onDraftFinish={preview ? undefined : finishDraft}
+              onDraftCancel={preview ? undefined : () => setDraftPts([])}
+              onPlaceProduct={preview ? undefined : placeProduct}
               placeMode={addMode}
               ownerOfPin={(locId) => {
                 const loc = locations.find((l) => l.id === locId);
@@ -1524,7 +1555,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             />
           )}
           {/* editing tools as a left icon rail: add-tools, delete, pick filter.
-              In 3D only selection works — placement tools are 2D and hide. */}
+              In 3D only selection works — placement tools are 2D and hide.
+              Hidden entirely in preview — the map renders shopper-style. */}
+          {!preview && (
           <div className="tool-rail" role="toolbar" aria-label="Map editing tools">
             {TOOLS.filter((t) => !view3d || t.id === 'select').map((t) => (
               <button
@@ -1534,7 +1567,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 aria-label={t.id === 'product' ? 'Add item group — click a shelf to add it, or switch to Single for one item' : t.label}
                 data-tip={t.id === 'product' ? 'Add item group (toggle Group/Single next to 2D/3D)' : t.label}
               >
-                <span aria-hidden>{t.icon}</span>
+                <RailIcon id={t.id} />
               </button>
             ))}
             <span className="rail-sep" aria-hidden />
@@ -1549,7 +1582,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 setSelectedId(null);
               }}
             >
-              <span aria-hidden>🗑</span>
+              <Icon name="trash" />
             </button>
             <button
               className={`tool-btn ${hideLabels ? 'active' : ''}`}
@@ -1558,7 +1591,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               data-tip={hideLabels ? 'Show labels' : 'Hide labels'}
               onClick={() => setHideLabels((v) => !v)}
             >
-              <span aria-hidden>🏷</span>
+              <Icon name="label" />
             </button>
             <button
               className={`tool-btn ${locked ? 'active' : ''}`}
@@ -1567,7 +1600,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               data-tip={locked ? 'Unlock items' : 'Lock items — pan only'}
               onClick={() => setLocked((v) => !v)}
             >
-              <span aria-hidden>{locked ? '🔒' : '🔓'}</span>
+              <Icon name={locked ? 'lock' : 'unlock'} />
             </button>
             <button
               className={`tool-btn ${!showItems ? 'active' : ''}`}
@@ -1576,7 +1609,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               data-tip={showItems ? 'Hide items — groups + departments only' : 'Show items'}
               onClick={toggleShowItems}
             >
-              <span aria-hidden>{showItems ? '🧺' : '🗂'}</span>
+              <Icon name={showItems ? 'basket' : 'groups'} />
             </button>
             {tool === 'select' && (
               <>
@@ -1606,9 +1639,34 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               </>
             )}
           </div>
+          )}
+          {preview && (
+            <div className="view-toggle" style={{ position: 'absolute', top: 60, left: 12, zIndex: 6, boxShadow: 'var(--shadow)' }}>
+              <input
+                className="input"
+                placeholder="Search items…"
+                value={previewQuery}
+                onChange={(e) => setPreviewQuery(e.target.value)}
+                aria-label="Search items (preview)"
+                style={{ width: 220, padding: '6px 10px' }}
+              />
+              {previewQuery.trim() && (
+                <button
+                  className={previewMatches ? '' : 'danger'}
+                  aria-label="Clear preview search"
+                  title={previewMatches ? `${previewMatches.length} facings on the map` : 'No matches on this floor'}
+                  onClick={() => setPreviewQuery('')}
+                  style={{ borderLeft: 'none', borderRadius: '0 8px 8px 0' }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
           {/* the 2D hint hides in 3D — the centered 3D hint takes over, so the
               two never overlap */}
-          {!placing && !view3d && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
+          {!placing && !view3d && !preview && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
+
           {/* pull-out handle for the side panel */}
           <button
             className={`side-handle ${sideOpen ? 'open' : ''}`}
@@ -1625,6 +1683,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             <CameraToggle onOpen={() => setCamPadOpen(true)} />
           ))}
           <ZoomPad onZoom={(dir) => setZoomCmd((z) => ({ k: dir > 0 ? 1.3 : 0.77, seq: z.seq + 1 }))} />
+          {!preview && (
           <button
             className="btn controls-btn"
             onClick={() => setShowControls((v) => !v)}
@@ -1632,6 +1691,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           >
             ⌨ Controls
           </button>
+          )}
           {showControls && (
             <div className="controls-card card" role="dialog" aria-label="Editor controls">
               <div className="row-between" style={{ marginBottom: 6 }}>
@@ -1683,7 +1743,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                 title="Click a shelf to fill it with a named group of items"
                 onClick={() => setAddMode('group')}
               >
-                🧺 Group
+                <Icon name="basket" size={13} /> Group
               </button>
               <button
                 className={addMode === 'single' ? 'active' : ''}
@@ -2691,6 +2751,50 @@ function HistoryPanel({
       })()}
     </div>
   );
+}
+
+/* ---------------- Editor icon set (SVG outlines) ----------------
+ * Stroke-based inline SVGs — currentColor keeps them correct in light and
+ * dark mode. Replaces the emoticon buttons across the editor chrome. */
+const ICON_PATHS: Record<string, React.ReactNode> = {
+  tools: <><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-2.1 2.7-2.5Z" /></>,
+  basket: <><path d="M5 9h14l-1.5 10a2 2 0 0 1-2 1.7h-7A2 2 0 0 1 6.5 19L5 9Z" /><path d="M3.5 9h17" /><path d="M8.5 9 12 3.5 15.5 9" /></>,
+  groups: <><rect x="3.5" y="4.5" width="7.5" height="7.5" rx="1" /><rect x="13" y="4.5" width="7.5" height="7.5" rx="1" /><rect x="3.5" y="14" width="7.5" height="7.5" rx="1" /><rect x="13" y="14" width="7.5" height="7.5" rx="1" /></>,
+  label: <><path d="M4 4h7l9 9-7 7-9-9V4Z" /><circle cx="8" cy="8" r="1.4" /></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
+  unlock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></>,
+  trash: <><path d="M4 7h16" /><path d="M9 7V4h6v3" /><path d="M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
+  cursor: <><path d="M5 3l7 17 2.5-6.5L21 11 5 3Z" /></>,
+  shelf: <><rect x="4" y="5" width="16" height="4" rx="1" /><rect x="4" y="11" width="16" height="4" rx="1" /><rect x="4" y="17" width="16" height="2.5" rx="1" /></>,
+  wall: <><rect x="4" y="5" width="16" height="14" rx="1" /><path d="M4 12h16M12 5v7" /></>,
+  zone: <><rect x="4" y="5" width="16" height="14" rx="2" strokeDasharray="3 2.4" /></>,
+  entrance: <><path d="M12 20V6" /><path d="M6.5 12.5 12 19l5.5-6.5" /><path d="M4 21h16" /></>,
+  poi: <><path d="M12 21s-6.5-5.4-6.5-10a6.5 6.5 0 0 1 13 0c0 4.6-6.5 10-6.5 10Z" /><circle cx="12" cy="10.6" r="2.2" /></>,
+  product: <><path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5v-9Z" /><path d="M4 9.5 12 14l8-4.5M12 14v9" /></>,
+  grad: <><path d="M2.5 9.5 12 5l9.5 4.5L12 14 2.5 9.5Z" /><path d="M6.5 11.5V16c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-4.5" /><path d="M21.5 9.5v5" /></>,
+  book: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" /><path d="M4 18.2A2.3 2.3 0 0 1 6.3 16H20" /></>,
+};
+function Icon({ name, size = 15 }: { name: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}
+
+/** The left rail's tool icons (SVG outlines keyed by tool id). */
+function RailIcon({ id }: { id: EditorTool }) {
+  const map: Partial<Record<EditorTool, string>> = {
+    select: 'cursor',
+    shelf: 'shelf',
+    wall: 'wall',
+    'aisle': 'zone',
+    entrance: 'entrance',
+    poi: 'poi',
+    product: 'product',
+  };
+  return <Icon name={map[id] ?? 'cursor'} />;
 }
 
 /* ---------------- Selected product pin (map card) ---------------- */

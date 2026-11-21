@@ -294,7 +294,9 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     const signal = { cancelled: false };
     tweenSignal.current = signal;
     const c = camRef.current;
-    tweenCamera(c, { dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist * zoomCommand.k)) }, setCam, signal);
+    // zoomCommand.k follows the 2D convention: k > 1 = zoom IN — in 3D that
+    // means a SHORTER camera distance, so divide (multiplying reversed +/−)
+    tweenCamera(c, { dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist / zoomCommand.k)) }, setCam, signal);
   }, [zoomCommand?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // selection made elsewhere (outline/panel) → aim the camera target at it

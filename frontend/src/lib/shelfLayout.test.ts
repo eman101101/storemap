@@ -31,9 +31,9 @@ describe('computeShelfLayout', () => {
     expect(layout.bays[3].slots.map((s) => s.product.id)).toEqual(['b']);
   });
 
-  it('auto length (unset) draws at most 3 m — long shelves stay readable', () => {
+  it('auto length (unset) draws at most 2 m — long shelves stay readable', () => {
     const layout = computeShelfLayout(shelf, [])!; // 5 m physical shelf
-    expect(layout.width).toBe(3);
+    expect(layout.width).toBe(2);
     const tiny = computeShelfLayout({ ...shelf, geom: { x: 0, y: 0, w: 0.7, h: 1, rot: 0 } }, [])!;
     expect(tiny.width).toBeCloseTo(0.7); // short shelves keep their real width
   });

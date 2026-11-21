@@ -163,19 +163,19 @@ const IMAGE_TYPES: Record<string, { ext: string; magic: (b: Uint8Array) => boole
 
 const imageLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 
-/** Pay-as-you-go photo accounting: each product photo upload spends one
- *  credit from the uploader's account (1 credit = 1 photo). Self-hosted
+/** Pay-as-you-go photo accounting: charged by the SIZE of the images stored
+ *  (MB used), accrued per upload against the account's quota. Self-hosted
  *  (local mode) instances include photos and skip the meter entirely. */
-async function photoCreditsLeft(env: Env, userId: string): Promise<number> {
-  const row = await first(env, 'SELECT photo_credits FROM users WHERE id = ?', userId) as { photo_credits?: number } | null;
-  return row?.photo_credits ?? 0;
+async function photoBytes(env: Env, userId: string): Promise<{ used: number; quota: number }> {
+  const row = await first(env, 'SELECT photo_bytes_used, photo_bytes_quota FROM users WHERE id = ?', userId) as { photo_bytes_used?: number; photo_bytes_quota?: number } | null;
+  return { used: row?.photo_bytes_used ?? 0, quota: row?.photo_bytes_quota ?? 209715200 };
 }
-async function spendPhotoCredit(env: Env, userId: string, selfHosted: boolean): Promise<void> {
+async function chargePhotoBytes(env: Env, userId: string, bytes: number, selfHosted: boolean): Promise<void> {
   if (selfHosted) return;
-  await run(env, 'UPDATE users SET photo_credits = photo_credits - 1 WHERE id = ? AND photo_credits > 0', userId);
+  await run(env, 'UPDATE users SET photo_bytes_used = photo_bytes_used + ? WHERE id = ?', bytes, userId);
 }
 const OUT_OF_CREDITS = {
-  error: 'Out of photo credits — your free plan includes 1000. Add more any time from Plan & credits.',
+  error: 'Out of photo storage — the free plan includes 200 MB (≈1000 photos). Add more any time from Plan & credits.',
   upgrade: true,
 };
 
@@ -191,7 +191,8 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
       upgrade: true,
     });
   }
-  if (!cfg.selfHosted && (await photoCreditsLeft(env, c.get('user').id)) <= 0) return json(c, 402, OUT_OF_CREDITS);
+  const mb = await photoBytes(env, c.get('user').id);
+  if (!cfg.selfHosted && mb.used >= mb.quota) return json(c, 402, OUT_OF_CREDITS);
   const type = (c.req.header('content-type') || '').split(';')[0].trim();
   const spec = IMAGE_TYPES[type];
   if (!spec) return badRequest(c, 'Only PNG, JPEG or WebP images are accepted');
@@ -208,7 +209,7 @@ app.post('/products/:id/image', requireAuth, imageLimiter, async (c) => {
       return json(c, 503, { error: 'Daily media budget reached — uploads pause until tomorrow.', retry: true });
     throw err;
   }
-  await spendPhotoCredit(env, c.get('user').id, cfg.selfHosted);
+  await chargePhotoBytes(env, c.get('user').id, buf.length, cfg.selfHosted);
   await run(env, 'UPDATE products SET image_url = ? WHERE id = ?', url, product.id);
   await touchStore(c, env, product.store_id as string);
   await deleteImage(env, product.image_url); // the replaced image, if any
@@ -247,7 +248,8 @@ app.post('/products/:id/image-crop', requireAuth, imageLimiter, async (c) => {
       upgrade: true,
     });
   }
-  if (!cfg.selfHosted && (await photoCreditsLeft(env, c.get('user').id)) <= 0) return json(c, 402, OUT_OF_CREDITS);
+  const mb = await photoBytes(env, c.get('user').id);
+  if (!cfg.selfHosted && mb.used >= mb.quota) return json(c, 402, OUT_OF_CREDITS);
   const type = (c.req.header('content-type') || '').split(';')[0].trim();
   const spec = IMAGE_TYPES[type];
   if (!spec) return badRequest(c, 'Only PNG, JPEG or WebP images are accepted');
@@ -264,7 +266,7 @@ app.post('/products/:id/image-crop', requireAuth, imageLimiter, async (c) => {
       return json(c, 503, { error: 'Daily media budget reached — uploads pause until tomorrow.', retry: true });
     throw err;
   }
-  await spendPhotoCredit(env, c.get('user').id, cfg.selfHosted);
+  await chargePhotoBytes(env, c.get('user').id, buf.length, cfg.selfHosted);
   await run(env, 'UPDATE products SET image_crop_url = ? WHERE id = ?', url, product.id);
   await touchStore(c, env, product.store_id as string);
   await deleteImage(env, product.image_crop_url); // the replaced crop, if any

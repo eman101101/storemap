@@ -38,11 +38,11 @@ const json = (body: unknown) => JSON.stringify(body);
 
 export const api = {
   me: () => request<AuthInfo>('/api/auth/me'),
-  /** Pay-as-you-go photo credits — add a pack to the signed-in account. */
-  addCredits: (pack: 'small' | 'medium' | 'large') =>
-    request<{ photo_credits: number; added: number }>('/api/auth/credits', {
+  /** Pay-as-you-go photo storage — fill up by MB (like a fuel pump). */
+  addStorage: (mb: number) =>
+    request<{ photo_bytes_used: number; photo_bytes_quota: number; added: number }>('/api/auth/storage', {
       method: 'POST',
-      body: json({ pack }),
+      body: json({ mb }),
     }),
   devLogin: (email: string, name?: string) =>
     request<{ user: unknown }>('/api/auth/dev-login', {

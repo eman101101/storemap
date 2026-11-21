@@ -468,13 +468,19 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   position: absolute; left: 0; right: 0; max-height: min(52dvh, 420px);
   overflow-y: auto; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 14px 40px rgba(0,0,0,0.16); padding: 8px; z-index: 9;
-  /* desktop: the search bar hugs the viewport top — drop below.
-     phone/tablet (wrapped header pushes the bar down): open above it. */
+  /* always drop BELOW the search bar — on every screen size */
   top: calc(100% + 8px);
 }
-@media (max-width: 860px) {
-  .results-drop { top: auto; bottom: calc(100% + 8px); }
+/* editor top-bar map tools (duplicate / re-center / edit): flow inline on
+   desktop; on small screens they collapse behind a 🛠 toggle, hidden first */
+.map-tools { display: contents; }
+.map-tools-toggle { display: none; }
+@media (max-width: 760px) {
+  .map-tools { display: none; }
+  .map-tools.open { display: flex; gap: 6px; }
+  .map-tools-toggle { display: inline-flex; }
 }
+
 /* result card: the product photo rides above the label; the label wraps to
    a couple of lines inside the fixed-width card */
 .result-item {

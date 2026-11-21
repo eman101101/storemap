@@ -248,7 +248,9 @@ async function seedFreshmart(env: Env, ownerId: string): Promise<void> {
     elements.push([newId(), floorId, type, 'polyline', JSON.stringify(pts), label, '', '{}', z++]);
 
   // perimeter with the vestibule notch at the bottom entrance
-  poly('wall', [[1, 1], [119, 1], [119, 79], [70, 79], [70, 74], [50, 74], [50, 79], [1, 79], [1, 1]], 'Outer walls');
+  // vestibule walls stop short of the doorway (x 56–64) — the entrance stays open
+  poly('wall', [[1, 1], [119, 1], [119, 79], [70, 79], [70, 74], [64, 74]], 'Outer walls');
+  poly('wall', [[56, 74], [50, 74], [50, 79], [1, 79], [1, 1]], 'Outer walls');
   point('entrance', 60, 76.5, 'Entrance');
   point('exit', 66, 78.5, 'Exit');
 
@@ -289,7 +291,9 @@ async function seedFreshmart(env: Env, ownerId: string): Promise<void> {
   fx('Seasonal', 'Produce', 22, 74.5, 14, 2);
   fx('News', 'Household', 42, 74.5, 8, 2);
 
-  // the plan's four centre rows, 10 segments each (20 groups per row)
+  // four centre rows — the plan's four double-sided gondolas. Each row shows
+  // its TWO groups (2 m each — the group-length default), stocked with two
+  // representative items edge to edge (w = 1 m, no overlap)
   const ROWS = [
     { y: 33, a: 'Specials', b: 'Dry Goods', pa: 'Snacks', pb: 'Bakery' },
     { y: 41, a: 'Breakfast', b: 'Chips', pa: 'Bakery', pb: 'Snacks' },
@@ -297,23 +301,15 @@ async function seedFreshmart(env: Env, ownerId: string): Promise<void> {
     { y: 57, a: 'Medical / Health', b: 'Automotive', pa: 'Health & Beauty', pb: 'Home & DIY' },
   ];
   for (const { y, a, b, pa, pb } of ROWS) {
-    for (let s = 0; s < 10; s++) {
-      const x0 = 20 + s * 3.4;
-      if (s % 2 === 0) {
-        fx(a, pa, x0, y, 3.2, 0.8);
-        fx(b, pb, x0, y + 0.9, 3.2, 0.8);
-      } else {
-        fx(b, pb, x0, y, 3.2, 0.8);
-        fx(a, pa, x0, y + 0.9, 3.2, 0.8);
-      }
-    }
+    fx(a, pa, 20, y, 2, 0.8);
+    fx(b, pb, 20, y + 0.9, 2, 0.8);
   }
 
   for (const f of FIXTURES) {
     rect('shelf', f.x, f.y, f.w, f.h, f.label, JSON.stringify({ department: f.label }));
   }
-  poly('aisle', [[20, 37.2], [54, 37.2]], 'Aisles 1–40 · centre rows');
-  poly('aisle', [[20, 45.2], [54, 45.2]], 'Aisles 41–80 · centre rows');
+  poly('aisle', [[20, 37.2], [54, 37.2]], 'Centre rows · 1–2');
+  poly('aisle', [[20, 45.2], [54, 45.2]], 'Centre rows · 3–4');
   point('poi', 33, 22.5, 'Cart line');
 
   // catalogue: 10 departments × 20 bases × 10 variants = 2000
@@ -356,46 +352,36 @@ async function seedFreshmart(env: Env, ownerId: string): Promise<void> {
     }
   }
 
-  // stock: items per shelf proportional to its length, 2000 total — each
-  // shelf draws from its department's pool, cycling like a real planogram
-  const totalLen = FIXTURES.reduce((s, f) => s + f.w + f.h, 0);
-  const counts = FIXTURES.map((f) => Math.max(4, Math.round((2000 * (f.w + f.h)) / totalLen)));
-  let diff = 2000 - counts.reduce((s, n) => s + n, 0);
-  const byLen = FIXTURES.map((f, i) => i).sort((a, b) => (FIXTURES[b].w + FIXTURES[b].h) - (FIXTURES[a].w + FIXTURES[a].h));
-  for (let i = 0; diff !== 0; i = (i + 1) % byLen.length) {
-    const idx = byLen[i];
-    if (diff > 0) { counts[idx]++; diff--; } else if (counts[idx] > 4) { counts[idx]--; diff++; }
-  }
+  // stock: the centre-row groups carry their representative items — two
+  // facings per 2 m group (w = 1 m), edge to edge, nothing overlapping.
+  // Every other fixture stays a clean, item-free fixture ("remove all
+  // items — only groups carry items").
   const deptCursor: Record<string, number> = {};
   const locRows: LocRow[] = [];
   let pinned = 0;
-  for (let fi = 0; fi < FIXTURES.length; fi++) {
-    const f = FIXTURES[fi];
-    const n = counts[fi];
-    const len = f.w + f.h;
+  for (const f of FIXTURES) {
+    const isRowGroup = ROWS.some((r) => r.a === f.label || r.b === f.label);
+    if (!isRowGroup) continue;
     deptCursor[f.pool] ??= 0;
     const start = deptStart[f.pool];
     const poolSize = pool[f.pool].length;
-    for (let k = 0; k < n; k++) {
-      const at = f.w >= f.h
-        ? { x: f.x + ((k + 0.5) * f.w) / n, y: f.y + f.h / 2 }
-        : { x: f.x + f.w / 2, y: f.y + ((k + 0.5) * f.h) / n };
-      const pi = start + ((deptCursor[f.pool] + k) % poolSize);
-      locRows.push([newId(), prodIds[pi], floorId, at.x, at.y, JSON.stringify({
+    for (let k = 0; k < 2; k++) {
+      const at = { x: f.x + (k + 0.5) * 1, y: f.y + f.h / 2 };
+      locRows.push([newId(), prodIds[deptStart[f.pool] + ((deptCursor[f.pool] + k) % poolSize)], floorId, at.x, at.y, JSON.stringify({
         shelf_level: 1,
         w: 1,
-        pinW: Math.min(0.3, Math.max(0.14, len / n - 0.06)),
+        pinW: 0.3,
       })]);
       pinned++;
     }
-    deptCursor[f.pool] += n;
+    deptCursor[f.pool] += 2;
   }
 
   await insertAll(env, ELEMENT_SQL, elements);
   await insertAll(env, 'INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)', catRows);
   await insertAll(env, PRODUCT_SQL, prodRows);
   await insertAll(env, LOCATION_SQL, locRows);
-  console.log(`[boot] seeded Freshmart Downtown: ${FW}×${FH} m floor-plan store, ${FIXTURES.length} groups, ${products.length} SKUs · ${pinned} facings`);
+  console.log(`[boot] seeded Freshmart Downtown: ${FW}×${FH} m floor-plan store, ${FIXTURES.length} groups (2 m centre-row groups), ${products.length} SKUs · ${pinned} facings`);
 }
 
 /* ════════════════ Annex Market ════════════════ */
