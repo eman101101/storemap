@@ -415,14 +415,15 @@ export default function MapCanvas(props: Props) {
     const isPanButton = e.button === 1 || e.shiftKey;
 
     // products pick filter: grab the nearest VISIBLE pin, never the fixtures
-    // under it — and never a hidden groupOnly facing (items have no pins)
+    // under it — and never a hidden groupOnly facing (items have no pins).
+    // Hit against the rendered pin (anchor bar), not the raw location.
     if (edit && tool === 'select' && pickFilter === 'products' && e.button === 0 && !isPanButton) {
       const grabR = Math.max(0.5, 16 / viewport.scale);
       let bestPin: MapPin | null = null;
       let bestD = grabR;
       for (const p of pins) {
         if (!isPickablePin(p, showItems)) continue;
-        const d = Math.hypot(p.location.x - w.x, p.location.y - w.y);
+        const d = pinHitDistance(p.location, w, pinAnchors.get(p.location.id));
         if (d < bestD) {
           bestD = d;
           bestPin = p;
@@ -493,9 +494,11 @@ export default function MapCanvas(props: Props) {
         let bestD = grabR;
         for (const p of pins) {
           // only pins that actually render — a hidden groupOnly facing must
-          // never swallow the click that was meant for the group pin
+          // never swallow the click that was meant for the group pin.
+          // Measured against the rendered bar: a group pin is metres long and
+          // anchored to the shelf edge, so the raw location point misses it.
           if (!isPickablePin(p, showItems)) continue;
-          const d = Math.hypot(p.location.x - w.x, p.location.y - w.y);
+          const d = pinHitDistance(p.location, w, pinAnchors.get(p.location.id));
           if (d < bestD) { bestD = d; bestPin = p; }
         }
         if (bestPin) pendingPin.current = bestPin.product.id;
@@ -571,6 +574,7 @@ export default function MapCanvas(props: Props) {
 
     // Product placement hover: target the shelf under the pointer, or the
     // group owning the nearest pin — the glow shows where a click will add.
+    // Pin proximity measures the rendered bar (see pinHitDistance).
     if (edit && tool === 'product' && !interaction.current) {
       const w = toWorld(e);
       const shelf = elements.find((el) => el.type === 'shelf' && elementContains(el, w, 0.15));
@@ -580,7 +584,7 @@ export default function MapCanvas(props: Props) {
         let best: { id: string; d: number } | null = null;
         for (const pin of pins) {
           if (!isPickablePin(pin, showItems)) continue;
-          const d = Math.hypot(pin.location.x - w.x, pin.location.y - w.y);
+          const d = pinHitDistance(pin.location, w, pinAnchors.get(pin.location.id));
           if (d < Math.max(0.5, 16 / viewport.scale) && (!best || d < best.d)) best = { id: pin.location.id, d };
         }
         const owner = best ? ownerOfPin?.(best.id) ?? null : null;
@@ -590,7 +594,9 @@ export default function MapCanvas(props: Props) {
       setPlaceHoverShelfId(null);
     }
 
-    // group-pin hover preview: outline the shelf the click would select
+    // group-pin hover preview: outline the shelf the click would select —
+    // hit against the rendered bar so the whole visible pin previews, and
+    // resolve the owner shelf even when meta.shelfId is missing (seeded pins)
     if (edit && tool === 'select' && !interaction.current) {
       const hov = toWorld(e);
       const grabR = Math.max(0.5, 12 / viewport.scale);
@@ -598,15 +604,12 @@ export default function MapCanvas(props: Props) {
       let hitD = grabR;
       for (const p of pins) {
         if (!isPickablePin(p, showItems)) continue;
-        const d = Math.hypot(p.location.x - hov.x, p.location.y - hov.y);
+        const d = pinHitDistance(p.location, hov, pinAnchors.get(p.location.id));
         if (d < hitD) { hitD = d; hitPin = p; }
       }
       let nextHover: string | null = null;
       if (hitPin && locationFlags(hitPin.location).groupPin) {
-        try {
-          const sid = JSON.parse(hitPin.location.meta || '{}').shelfId;
-          if (typeof sid === 'string') nextHover = sid;
-        } catch { /* no owner */ }
+        nextHover = groupOwnerShelf(hitPin.location)?.id ?? null;
       }
       if (nextHover !== hoverGroupShelfId) setHoverGroupShelfId(nextHover);
     } else if (hoverGroupShelfId && (interaction.current || tool !== 'select')) {
@@ -899,26 +902,30 @@ export default function MapCanvas(props: Props) {
     [showDepartments, floorEls, stockPins, floorPins, ownerOfPin]
   );
   const shelfById = useMemo(() => new Map(floorEls.map((el) => [el.id, el])), [floorEls]);
-  // a group pin's title is its GROUP's name — the owning shelf's label
-  // (resolved from the persisted meta.shelfId); meta.labelHidden on the shelf
-  // hides it (the editor's group panel and element panel both write it)
-  const groupPinTitle = (loc: ProductLocation): string | undefined => {
+  // The shelf a group pin belongs to: the persisted meta.shelfId wins; seeded
+  // and legacy pins carry none, so fall back to the editor's derived owner
+  // and then to the shelf the pin renders against.
+  const groupOwnerShelf = (loc: ProductLocation): MapElement | null => {
     let shelfId: string | null = null;
-    try { shelfId = JSON.parse(loc.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
-    const el = typeof shelfId === 'string' ? shelfById.get(shelfId) : undefined;
+    try { shelfId = JSON.parse(loc.meta || '{}').shelfId ?? null; } catch { /* no meta */ }
+    if (typeof shelfId !== 'string' || !shelfId) shelfId = ownerOfPin?.(loc.id) ?? null;
+    if (typeof shelfId !== 'string' || !shelfId) shelfId = pinAnchors.get(loc.id)?.el.id ?? null;
+    return (typeof shelfId === 'string' && shelfById.get(shelfId)) || null;
+  };
+  // a group pin's title is its GROUP's name — the owning shelf's group name
+  // (or label). meta.groupLabelHidden on the shelf hides JUST this pin title:
+  // it is independent of the shelf's own labelHidden (the element panel's
+  // "Hide label"), so hiding one never hides the other.
+  const groupPinTitle = (loc: ProductLocation): string | undefined => {
+    const el = groupOwnerShelf(loc);
     if (!el) return undefined;
     try {
-      if (JSON.parse(el.meta || '{}').labelHidden === true) return undefined;
+      if (JSON.parse(el.meta || '{}').groupLabelHidden === true) return undefined;
     } catch { /* visible */ }
     return groupDisplayName(el) || undefined;
   };
   // …and its colour follows the owning shelf's colour when the owner set one
-  const groupPinColor = (loc: ProductLocation): string | undefined => {
-    let shelfId: string | null = null;
-    try { shelfId = JSON.parse(loc.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
-    const el = typeof shelfId === 'string' ? shelfById.get(shelfId) : undefined;
-    return el?.color || undefined;
-  };
+  const groupPinColor = (loc: ProductLocation): string | undefined => groupOwnerShelf(loc)?.color || undefined;
   // hovering a group pin outlines its shelf — the click target preview
   const [hoverGroupShelfId, setHoverGroupShelfId] = useState<string | null>(null);
   const deptBadgeIds = useMemo(() => {
@@ -1334,6 +1341,37 @@ function isPickablePin(p: { location: { meta?: string } }, showItems: boolean): 
   const flags = locationFlags(p.location);
   if (flags.groupOnly) return false;
   return showItems || flags.groupPin;
+}
+
+/** Distance from a world point to the pin AS RENDERED. Anchored pins draw as
+ *  a bar (meta.pinW × pinH) centred on their shelf-edge anchor — group pins
+ *  are metres long and sit up to 1.4 m away from the raw location point — so
+ *  clicks and hovers must measure against that bar, not the location, or most
+ *  of the visible pin grabs the shelf underneath instead. */
+function pinHitDistance(
+  loc: { x: number; y: number; meta?: string | null },
+  w: WorldPt,
+  anchor: (WorldPt & { nx?: number; ny?: number }) | null | undefined
+): number {
+  let pinW: number | null = null;
+  let pinH: number | null = null;
+  try {
+    const m = JSON.parse(loc.meta || '{}');
+    if (typeof m.pinW === 'number') pinW = m.pinW;
+    if (typeof m.pinH === 'number') pinH = m.pinH;
+  } catch { /* defaults below */ }
+  if (anchor && typeof anchor.nx === 'number' && typeof anchor.ny === 'number') {
+    const bw = (pinW ?? 0.5) / 2; // along the shelf edge
+    const bh = (pinH ?? 0.2) / 2; // depth off the face
+    const dx = w.x - anchor.x;
+    const dy = w.y - anchor.y;
+    const u = dx * -anchor.ny + dy * anchor.nx; // position along the bar
+    const v = dx * anchor.nx + dy * anchor.ny;  // depth off the edge
+    return Math.hypot(Math.max(0, Math.abs(u) - bw), Math.max(0, Math.abs(v) - bh));
+  }
+  // free-standing pin: a small square at the location
+  const half = (pinW ?? 0.42) / 2;
+  return Math.max(0, Math.hypot(w.x - (anchor?.x ?? loc.x), w.y - (anchor?.y ?? loc.y)) - half);
 }
 
 function ElementNode({

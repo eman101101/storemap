@@ -192,6 +192,16 @@ export default function ViewerPage() {
     [data, activeFloorId]
   );
 
+  // The shelf a group pin belongs to: the persisted meta.shelfId wins; seeded
+  // and legacy pins carry none, so fall back to the shelf the pin sits on.
+  const shelfIdOfPin = (loc: { x: number; y: number; floor_id: string; meta?: string | null }): string | null => {
+    try {
+      const sid = JSON.parse(loc.meta || '{}').shelfId;
+      if (typeof sid === 'string' && sid) return sid;
+    } catch { /* fall through to the pin's position */ }
+    return shelfContaining(loc.x, loc.y, elements.filter((e) => e.floor_id === loc.floor_id));
+  };
+
   const search = q.trim().toLowerCase();
   const hasSearch = search.length > 0;
   const matching = useMemo(() => {
@@ -503,9 +513,8 @@ export default function ViewerPage() {
                 // the 2D map; plain (legacy) pins focus the item as usual
                 const pin = pins.find((x) => x.product.id === productId);
                 if (pin && locationFlags(pin.location).groupPin) {
-                  let shelfId: string | null = null;
-                  try { shelfId = JSON.parse(pin.location.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
-                  if (typeof shelfId === 'string') {
+                  const shelfId = shelfIdOfPin(pin.location);
+                  if (shelfId) {
                     setShelfPopupId(shelfId);
                     return;
                   }
@@ -533,9 +542,8 @@ export default function ViewerPage() {
               // focuses the item as usual
               const pin = pins.find((x) => x.product.id === productId);
               if (pin && locationFlags(pin.location).groupPin) {
-                let shelfId: string | null = null;
-                try { shelfId = JSON.parse(pin.location.meta || '{}').shelfId ?? null; } catch { /* no owner */ }
-                if (typeof shelfId === 'string') {
+                const shelfId = shelfIdOfPin(pin.location);
+                if (shelfId) {
                   setShelfPopupId(shelfId);
                   return;
                 }

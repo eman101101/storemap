@@ -484,20 +484,22 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     });
     // a focused group pin floats its GROUP's title (the shelf label) — the
     // shopper lands on the group, not on one item's name
-    const groupTitleOf = (loc: { meta?: string }): string | undefined => {
+    const groupTitleOf = (loc: { meta?: string }, fallbackEl?: MapElement): string | undefined => {
+      let el: MapElement | undefined;
       try {
         const m = JSON.parse(loc.meta || '{}');
-        if (typeof m.shelfId === 'string') {
-          const el = elements.find((e) => e.id === m.shelfId);
-          if (!el) return undefined;
-          // the shelf's labelHidden hides the group's map label in 3D too
-          let sm: Record<string, unknown> = {};
-          try { sm = JSON.parse(el.meta || '{}'); } catch { /* no meta */ }
-          if (sm.labelHidden === true) return undefined;
-          return groupDisplayName(el) ?? undefined;
-        }
+        if (typeof m.shelfId === 'string') el = elements.find((e) => e.id === m.shelfId);
       } catch { /* no meta */ }
-      return undefined;
+      // seeded/legacy pins carry no meta.shelfId — fall back to the shelf the
+      // pin renders against
+      if (!el) el = fallbackEl;
+      if (!el) return undefined;
+      // the shelf's groupLabelHidden hides the group's map label in 3D too —
+      // independent of the shelf's own labelHidden (the element panel toggle)
+      let sm: Record<string, unknown> = {};
+      try { sm = JSON.parse(el.meta || '{}'); } catch { /* no meta */ }
+      if (sm.groupLabelHidden === true) return undefined;
+      return groupDisplayName(el) ?? undefined;
     };
     const pins3d: Pin3D[] = [];
     for (const p of hitPins) {
@@ -527,7 +529,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
           ...base,
           // label floats at the top of the stack only
           label: last && p.location.id === focusPinId
-            ? (pinFlags.groupPin ? groupTitleOf(p.location) ?? p.product.name : p.product.name)
+            ? (pinFlags.groupPin ? groupTitleOf(p.location, anchor.el) ?? p.product.name : p.product.name)
             : undefined,
           ax: anchor.x,
           ay: anchor.y,

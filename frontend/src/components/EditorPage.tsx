@@ -2132,10 +2132,12 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
                   onSelectMember={(productId) => selectPin(productId)}
                   onRenameGroup={selectedPinShelf ? (label) => renameGroup(selectedPinShelf.id, label) : undefined}
                   onHideLabel={selectedPinShelf ? () => {
-                    // the group's name label on the map lives on the owner shelf
+                    // the group's name label on the map is its OWN toggle
+                    // (meta.groupLabelHidden on the owner shelf) — separate
+                    // from the shelf's own labelHidden (element panel)
                     const m = (() => { try { return JSON.parse(selectedPinShelf.meta || '{}') as Record<string, unknown>; } catch { return {}; } })();
                     changeElements(
-                      floorElements.map((e) => (e.id === selectedPinShelf.id ? { ...e, meta: JSON.stringify({ ...m, labelHidden: !m.labelHidden }) } : e)),
+                      floorElements.map((e) => (e.id === selectedPinShelf.id ? { ...e, meta: JSON.stringify({ ...m, groupLabelHidden: !m.groupLabelHidden }) } : e)),
                       'push',
                       'hide group label'
                     );
@@ -2430,7 +2432,7 @@ function ElementPanel({
                 type="button"
                 className={`btn sm ${labelHidden ? 'active' : ''}`}
                 aria-pressed={labelHidden}
-                title="Hide this element's label on the map (2D and 3D)"
+                title="Hide this element's own label on the map (2D and 3D) — a group pin's name label has its own toggle in the pin panel"
                 onClick={() => patch({ meta: JSON.stringify({ ...parseMeta(el.meta), labelHidden: labelHidden ? undefined : true }) })}
               >
                 Hide label
@@ -3117,9 +3119,9 @@ function PinPanel({
   const isGroupPin = (() => {
     try { return !!JSON.parse(location.meta || '{}').groupPin; } catch { return false; }
   })();
-  let labelHidden = false;
+  let groupLabelHidden = false;
   if (ownerShelf) {
-    try { labelHidden = JSON.parse(ownerShelf.meta || '{}').labelHidden === true; } catch { /* default */ }
+    try { groupLabelHidden = JSON.parse(ownerShelf.meta || '{}').groupLabelHidden === true; } catch { /* default */ }
   }
   return (
     <div className="panel-section">
@@ -3184,12 +3186,12 @@ function PinPanel({
           {onHideLabel && (
             <button
               type="button"
-              className={`btn sm ${labelHidden ? 'active' : ''}`}
-              aria-pressed={labelHidden}
-              title="Hide or show this group's name label on the map"
+              className={`btn sm ${groupLabelHidden ? 'active' : ''}`}
+              aria-pressed={groupLabelHidden}
+              title="Hide or show this group's name label on the map — separate from the shelf's own label toggle"
               onClick={onHideLabel}
             >
-              {labelHidden ? '👁 Show label on map' : '🚫 Hide label on map'}
+              {groupLabelHidden ? '👁 Show label on map' : '🚫 Hide label on map'}
             </button>
           )}
         </div>
