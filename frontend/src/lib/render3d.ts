@@ -1533,7 +1533,7 @@ function drawLabel(
     x = 0;
     y = 0;
   }
-  ctx.font = `${bold ? '700 ' : ''}${size}px 'Plus Jakarta Sans Variable', 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif`;
+  ctx.font = `${bold ? '700 ' : ''}${size}px 'Allo', 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = Math.max(2.5, size / 4);

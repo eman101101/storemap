@@ -353,6 +353,7 @@ function walmartSpec(): Spec {
   g('Bakery', 'Bakery', 74.5, 30.5, 18.5, 1.4, 6);
   g('Fresh Produce', 'Fresh Produce', 74.5, 33.3, 18.5, 1.4, 6);
   g('Paper Towels & Cleaners', 'Paper & Cleaning', 74.5, 36.1, 18.5, 1.4, 6);
+  g('Soft Drinks & Juices', 'Drinks', 74.5, 38.9, 18.5, 1.4, 6);
 
   // general merchandise — one titled group per department area
   g('Auto Care', 'Auto Care', 3.5, 8.5, 11, 1.4);
@@ -417,27 +418,41 @@ function walmartSpec(): Spec {
     }
   }
 
-  /* ---------- stock: 1 group pin + 2 groupOnly facings per group ---------- */
+  /* ---------- stock: every item lives in its section's group --------------- */
+  // A shopper searching any catalog item must land in a group — an item with
+  // no facing lists as "out of stock" in the viewer. Each category's full
+  // pool is split evenly across its groups: the first item carries the
+  // group's ONE map pin, the rest are planogram-only facings spread along the
+  // shelf and staggered across the three levels.
   const locations: Spec['locations'] = [];
-  const catCursor: Record<string, number> = {};
+  const groupsOfCat: Record<string, number> = {};
+  for (const gr of groups) groupsOfCat[gr.cat] = (groupsOfCat[gr.cat] ?? 0) + 1;
+  const catGroupIdx: Record<string, number> = {};
   for (const gr of groups) {
     const pool = poolByCat[gr.cat];
-    catCursor[gr.cat] ??= 0;
     const vertical = gr.h > gr.w;
     const pinSpan = Math.round(Math.min(6, Math.max(2, Math.max(gr.w, gr.h))) * 10) / 10;
     const center = { x: gr.x + gr.w / 2, y: gr.y + gr.h / 2 };
-    // the group pin — ONE per group, spanning the group's plan length and
-    // carrying the section's first item; two more representative items are
-    // planogram-only (groupOnly: never drawn or selectable on the map)
-    const picks = [0, 1, 2].map((k) => pool[(catCursor[gr.cat] + k) % pool.length]);
-    locations.push({ product: picks[0], x: center.x, y: center.y, level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
-    for (const [k, quarter] of [0, 2].entries()) {
-      const at = vertical
-        ? { x: gr.x + gr.w / 2, y: gr.y + ((quarter + 0.5) * gr.h) / 4 }
-        : { x: gr.x + ((quarter + 0.5) * gr.w) / 4, y: gr.y + gr.h / 2 };
-      locations.push({ product: picks[k + 1], x: at.x, y: at.y, level: k === 0 ? 1 : 3, w: 1, pinW: 0.3, groupOnly: 1 });
-    }
-    catCursor[gr.cat] += 3;
+    // this group's even share of the category's catalogue (earlier groups
+    // absorb the remainder items)
+    const gi = catGroupIdx[gr.cat] ?? 0;
+    catGroupIdx[gr.cat] = gi + 1;
+    const total = groupsOfCat[gr.cat];
+    const share = Math.floor(pool.length / total);
+    const start = gi * share + Math.min(gi, pool.length % total);
+    const mine = pool.slice(start, start + share + (gi < pool.length % total ? 1 : 0));
+    // the group pin — ONE per group, spanning the group's plan length
+    locations.push({ product: mine[0] ?? pool[gi % pool.length], x: center.x, y: center.y, level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
+    const n = Math.max(1, mine.length - 1);
+    mine.slice(1).forEach((p, j) => {
+      const at = ((j + 0.5) / n) * (vertical ? gr.h : gr.w);
+      locations.push({
+        product: p,
+        x: vertical ? gr.x + gr.w / 2 : gr.x + at,
+        y: vertical ? gr.y + at : gr.y + gr.h / 2,
+        level: (j % 3) + 1, w: 1, pinW: 0.3, groupOnly: 1,
+      });
+    });
   }
 
   return {
@@ -446,6 +461,309 @@ function walmartSpec(): Spec {
       'Big-box example built from the reference floor plan: every area is a department and every shelf one titled item group — the map shows ONE pin per group (sized to the group), the items live only inside its planogram. Grocery wing carries real product photos; general merchandise plans as diagram tiles.',
     hours: '6am–11pm daily', floorName: 'Main floor', w: WW, h: WH,
     elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 4,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Home Depot Example — the big-box hardware reference plan: lumber and paint
+   up top, tool/plumbing/electrical aisles down the middle, appliances and
+   flooring on the right, the garden center yard in the bottom-right corner.
+   Same group model as Walmart: one titled group per shelf, every catalog item
+   facings inside its section's planogram.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const HD_W = 80;
+const HD_H = 52;
+const HD_ORANGE = '#d97a2b';
+const HD_GRAY = '#9aa0a6';
+const HD_GREEN = '#2f7d32';
+
+const HD_CATS: SpecCat[] = [
+  { name: 'Power Tools', color: '#c2453a', icon: '🪚', items: ['Cordless Drill Kit 18V', 'Circular Saw 185mm', 'Impact Driver 18V', 'Oscillating Multi-Tool', 'Angle Grinder 115mm', 'Reciprocating Saw', 'Rotary Hammer SDS', 'Belt Sander 75mm', 'Orbital Sander 125mm', 'Nail Gun 16ga'] },
+  { name: 'Hand Tools', color: '#8a5fd4', icon: '🔧', items: ['Claw Hammer 16oz', 'Screwdriver Set 12pc', 'Adjustable Wrench 250mm', 'Pliers Set 3pc', 'Tape Measure 8m', 'Utility Knife', 'Spirit Level 600mm', 'Socket Set 40pc', 'Hex Key Set Metric', 'Stud Finder'] },
+  { name: 'Paint', color: '#e4572e', icon: '🎨', items: ['Interior Paint 5L Eggshell', 'Exterior Paint 5L Satin', 'Primer Undercoat 3.8L', 'Wood Stain 946ml', 'Roller Frame 230mm', 'Roller Covers 3pc', 'Brush Set 3pc', 'Painter Tape 50m', 'Drop Cloth 3.6×2.7m', 'Paint Tray Kit'] },
+  { name: 'Lumber', color: '#a4713d', icon: '🪵', items: ['Stud 45×90×2400mm', 'Plywood Sheet 18mm', 'MDF Board 12mm', 'Decking Board 3600mm', 'Fence Panel 1800mm', 'Dado Rail 2400mm', 'Architrave Set 2400mm', 'OSB Sheet 11mm', 'Plasterboard 12.5mm', 'Cedar Post 2400mm'] },
+  { name: 'Plumbing', color: '#3b6fd4', icon: '🚰', items: ['PVC Pipe 32mm 3m', 'Copper Pipe 15mm 2m', 'Pipe Elbow 32mm', 'Ball Valve 15mm', 'Tap Washer Assortment', 'Bottle Trap 40mm', 'Toilet Fill Valve', 'Rain Shower Head', 'Hose Bib 20mm', 'Pipe Wrench 350mm'] },
+  { name: 'Electrical', color: '#e8a33d', icon: '⚡', items: ['Twin & Earth Cable 10m', 'Conduit 20mm 2m', 'Double Socket Outlet', 'Light Switch Plate', 'Junction Box IP65', 'Circuit Breaker 20A', 'LED Downlight 9W', 'Wireless Doorbell Kit', 'Extension Reel 25m', 'Digital Multimeter'] },
+  { name: 'Lighting', color: '#f2c94c', icon: '💡', items: ['LED Shop Light 1.2m', 'Pendant Lamp Kit', 'Ceiling Fan 1200mm', 'Track Light 3-head', 'Under-Cabinet Strip 600mm', 'Motion Sensor Light', 'Portable Work Light 20W', 'Smart Bulb 2-pack', 'Flood Light 30W', 'Vanity Bar 4-light'] },
+  { name: 'Appliances', color: '#5b6b5f', icon: '🧺', items: ['Dishwasher 600mm', 'Refrigerator 500L', 'Washer 8kg', 'Dryer 7kg', 'Rangehood 600mm', 'Electric Oven 600mm', 'Induction Cooktop 4-zone', 'Microwave 30L', 'Chest Freezer 200L', 'Portable AC 9000BTU'] },
+  { name: 'Hardware', color: '#7950f2', icon: '🔩', items: ['Wood Screws 4×40 200pc', 'Masonry Anchors 100pc', 'Cabinet Hinge Pair', 'Door Handle Set', 'Hasp & Staple 150mm', 'Padlock 50mm', 'Drawer Slides Pair', 'Gate Hinge Set', 'Turnbuckle M8', 'Eye Bolt M8 4pc'] },
+  { name: 'Storage & Organization', color: '#4a7f6e', icon: '🗄️', items: ['Steel Shelving 5-tier', 'Plastic Tote 45L', 'Tool Box 480mm', 'Stackable Bin 4-pack', 'Garage Cabinet Steel', 'Pegboard 600×900', 'Crate 60L Foldable', 'Ceiling Storage Rack'] },
+  { name: 'Lawn & Garden', color: '#57a86c', icon: '🌱', items: ['Garden Hose 20m', 'Oscillating Sprinkler', 'Petrol Lawn Mower', 'Hedge Trimmer 550mm', 'Potting Mix 40L', 'Planter Pot 300mm', 'Garden Trowel', 'Pruning Shears', 'Wheelbarrow 90L', 'Grass Seed 2kg'] },
+  { name: 'Grills & Outdoor', color: '#b0413e', icon: '🔥', items: ['Gas BBQ 4-Burner', 'Charcoal Kettle 570mm', 'Electric Smoker', 'BBQ Tool Set 3pc', 'Propane Tank 9kg', 'Outdoor Pizza Oven', 'Steel Fire Pit', 'Gas Patio Heater', 'Rotomold Cooler 28L', 'Gazebo 3×3m'] },
+  { name: 'Concrete', color: '#5b6b5f', icon: '🧱', items: ['Cement Bag 25kg', 'Mortar Mix 20kg', 'Concrete Mix 20kg', 'Post Crete 20kg', 'Self-Levelling Compound 20kg', 'Paver Base Sand 20kg', 'Render Mix 20kg', 'Crack Filler 1L'] },
+  { name: 'Roofing', color: '#7d9e3a', icon: '🏚️', items: ['Corrugated Sheet 2400mm', 'Ridge Cap Steel', 'Gutter 3m', 'Downpipe 2m', 'Gutter Brackets 10pc', 'Roofing Screws 100pc', 'Roof Felt 10m Roll', 'Soffit Vent 100mm'] },
+  { name: 'Flooring', color: '#a4713d', icon: '🧹', items: ['Laminate Planks 2.2m²', 'Vinyl Roll 3m', 'Engineered Oak 1.5m²', 'Tile Backer Board', 'Floor Underlay 10m²', 'Carpet Tiles 20pc', 'Floor Scraper 200mm', 'Skirting 2400mm'] },
+  { name: 'Safety & Workwear', color: '#f2c94c', icon: '⛑️', items: ['Hard Hat', 'Safety Goggles', 'Leather Work Gloves', 'Hi-Vis Vest', 'Ear Defenders', 'Dust Mask FFP2 5pc', 'Steel Toe Boots', 'Gel Knee Pads', 'First Aid Kit 60pc', 'Fall Arrest Harness'] },
+  { name: 'Doors & Windows', color: '#8a5fd4', icon: '🚪', items: ['Interior Door 800mm', 'Exterior Door 900mm', 'Door Frame Kit', 'Window 900×600', 'Screen Door 800mm', 'Door Closer', 'Threshold Strip 900mm', 'Weather Strip Roll'] },
+  { name: 'Kitchens & Bath', color: '#c98a3d', icon: '🛁', items: ['Sink Mixer Chrome', 'Vanity Basin 600mm', 'Pull-out Kitchen Tap', 'Towel Rail Chrome', 'Shower Screen 900mm', 'Bath Panel 1700mm', 'Close-Coupled WC', 'Cabinet Pulls 10pc'] },
+  { name: 'Seasonal', color: '#7d9e3a', icon: '🎄', items: ['Fairy Lights 20m', 'Christmas Tree 180cm', 'Halloween Pumpkin Decor', 'Snow Shovel', 'De-Icer Salt 10kg', 'Leaf Blower', 'Gazebo Side Panel', 'Advent Calendar'] },
+];
+
+function homeDepotSpec(): Spec {
+  const elements: SpecEl[] = [];
+
+  // the outline: plain rectangle, two entrance gaps on the south edge and the
+  // garden-center exit cutting the bottom-right corner
+  elements.push({
+    type: 'wall',
+    shape: 'polyline',
+    label: '',
+    geometry: [
+      [0.4, 0.4], [79.6, 0.4], [79.6, 51.6],
+      [64, 51.6], [60, 51.6],
+      [34, 51.6], [30, 51.6],
+      [0.4, 51.6], [0.4, 0.4],
+    ],
+  });
+
+  const zone = (x: number, y: number, w: number, h: number, label: string, color = HD_ORANGE) =>
+    elements.push({ type: 'zone', shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, color, meta: JSON.stringify({ department: label }) });
+  const poi = (x: number, y: number, label: string) =>
+    elements.push({ type: 'poi', shape: 'point', geometry: { x, y }, label });
+
+  // top band
+  zone(2, 1, 26, 8, 'Lumber & Building Materials', HD_GRAY);
+  zone(29, 1, 14, 8, 'Hardware & Fasteners');
+  zone(44, 1, 10, 8, 'Key & Glass Desk', HD_GRAY);
+  zone(55, 1, 23, 8, 'Paint & Décor');
+  // middle aisles
+  zone(2, 10, 30, 6, 'Tools');
+  zone(33, 10, 22, 6, 'Electrical & Lighting');
+  zone(56, 10, 22, 6, 'Appliances', HD_GRAY);
+  zone(2, 17, 30, 6, 'Plumbing', '#3b6fd4');
+  zone(33, 17, 22, 6, 'Building Supplies', HD_GRAY);
+  zone(56, 17, 22, 6, 'Flooring & Rugs');
+  zone(2, 24, 30, 6, 'Seasonal & Grills');
+  zone(33, 24, 22, 6, 'Doors & Windows', HD_GRAY);
+  zone(56, 24, 22, 6, 'Kitchens & Bath', HD_GRAY);
+  zone(2, 31, 30, 6, 'Lawn & Garden', HD_GREEN);
+  // bottom band
+  zone(2, 40, 22, 8, 'Outdoor Yard', HD_GREEN);
+  zone(30, 44, 20, 4.5, 'Checkout', HD_GRAY);
+  zone(58, 40, 20, 10, 'Garden Center', HD_GREEN);
+  poi(46, 9.5, 'Pro Desk');
+  poi(5, 9.5, 'Tool Rental');
+  poi(26, 49.5, 'Cart bay');
+
+  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 32, y: 50.9 }, label: 'Entrance' });
+  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 62, y: 50.9 }, label: 'Entrance' });
+  elements.push({ type: 'exit', shape: 'point', geometry: { x: 78, y: 45 }, label: 'Garden Center' });
+
+  /* shelves: every shelf is one titled group */
+  const groups: { label: string; cat: string; x: number; y: number; w: number; h: number }[] = [];
+  const g = (label: string, cat: string, x: number, y: number, w: number, h: number) =>
+    groups.push({ label, cat, x, y, w, h });
+
+  g('Framing Lumber', 'Lumber', 3, 2.2, 11, 1.4);
+  g('Sheet & Panel Goods', 'Lumber', 15.5, 2.2, 11.5, 1.4);
+  g('Hardware & Fasteners', 'Hardware', 30, 2.2, 12, 1.4);
+  g('Interior Paint', 'Paint', 56, 2.2, 10.5, 1.4);
+  g('Exterior Paint & Stain', 'Paint', 67, 2.2, 10, 1.4);
+  g('Power Tools', 'Power Tools', 3, 11.5, 13.5, 1.4);
+  g('Hand Tools', 'Hand Tools', 18, 11.5, 13.5, 1.4);
+  g('Electrical Supplies', 'Electrical', 34, 11.5, 10, 1.4);
+  g('Lighting & Fans', 'Lighting', 45, 11.5, 9.5, 1.4);
+  g('Major Appliances', 'Appliances', 57, 11.5, 9, 1.4);
+  g('Laundry & Kitchen', 'Appliances', 67.5, 11.5, 9.5, 1.4);
+  g('Pipes & Fittings', 'Plumbing', 3, 18.5, 13.5, 1.4);
+  g('Bath & Kitchen Fittings', 'Plumbing', 18, 18.5, 13.5, 1.4);
+  g('Concrete & Mortar', 'Concrete', 34, 18.5, 10, 1.4);
+  g('Roofing & Gutters', 'Roofing', 45, 18.5, 9.5, 1.4);
+  g('Flooring & Rugs', 'Flooring', 57, 18.5, 9, 1.4);
+  g('Storage & Organization', 'Storage & Organization', 67.5, 18.5, 9.5, 1.4);
+  g('Grills & Outdoor Cooking', 'Grills & Outdoor', 3, 25.5, 13.5, 1.4);
+  g('Seasonal Décor', 'Seasonal', 18, 25.5, 13.5, 1.4);
+  g('Doors & Windows', 'Doors & Windows', 34, 25.5, 10, 1.4);
+  g('Safety & Workwear', 'Safety & Workwear', 45, 25.5, 9.5, 1.4);
+  g('Kitchens & Bath', 'Kitchens & Bath', 57, 25.5, 9, 1.4);
+  g('Lawn & Garden', 'Lawn & Garden', 3, 32.5, 13.5, 1.4);
+  g('Outdoor Power Equipment', 'Lawn & Garden', 18, 32.5, 13.5, 1.4);
+  g('Garden Center', 'Lawn & Garden', 66, 41.5, 1.4, 6); // vertical, in the garden zone
+
+  for (const gr of groups) {
+    elements.push({
+      type: 'shelf',
+      shape: 'rect',
+      geometry: { x: gr.x, y: gr.y, w: gr.w, h: gr.h, rot: 0 },
+      label: gr.label,
+      color: '',
+      meta: JSON.stringify({ department: gr.cat, planWidth: Math.round(Math.min(6, Math.max(1, Math.max(gr.w, gr.h))) * 10) / 10 }),
+    });
+  }
+
+  const products: { name: string; category: string; brand: string; image?: string }[] = [];
+  const poolByCat: Record<string, number[]> = {};
+  for (const c of HD_CATS) {
+    poolByCat[c.name] = [];
+    for (const base of c.items) {
+      poolByCat[c.name].push(products.length);
+      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: '' });
+    }
+  }
+
+  // every item faces inside its section's group (same model as Walmart)
+  const locations: Spec['locations'] = [];
+  const groupsOfCat: Record<string, number> = {};
+  for (const gr of groups) groupsOfCat[gr.cat] = (groupsOfCat[gr.cat] ?? 0) + 1;
+  const catGroupIdx: Record<string, number> = {};
+  for (const gr of groups) {
+    const pool = poolByCat[gr.cat];
+    const vertical = gr.h > gr.w;
+    const pinSpan = Math.round(Math.min(6, Math.max(2, Math.max(gr.w, gr.h))) * 10) / 10;
+    const center = { x: gr.x + gr.w / 2, y: gr.y + gr.h / 2 };
+    const gi = catGroupIdx[gr.cat] ?? 0;
+    catGroupIdx[gr.cat] = gi + 1;
+    const total = groupsOfCat[gr.cat];
+    const share = Math.floor(pool.length / total);
+    const start = gi * share + Math.min(gi, pool.length % total);
+    const mine = pool.slice(start, start + share + (gi < pool.length % total ? 1 : 0));
+    locations.push({ product: mine[0] ?? pool[gi % pool.length], x: center.x, y: center.y, level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
+    const n = Math.max(1, mine.length - 1);
+    mine.slice(1).forEach((p, j) => {
+      const at = ((j + 0.5) / n) * (vertical ? gr.h : gr.w);
+      locations.push({
+        product: p,
+        x: vertical ? gr.x + gr.w / 2 : gr.x + at,
+        y: vertical ? gr.y + at : gr.y + gr.h / 2,
+        level: (j % 3) + 1, w: 1, pinW: 0.3, groupOnly: 1,
+      });
+    });
+  }
+
+  return {
+    slug: 'home-depot-example', name: 'Home Depot Example', address: '1 Warehouse Row',
+    description:
+      'Hardware-store example: lumber and paint along the top, tool and trade aisles down the middle, appliances and flooring on the right, and the garden center yard in the corner. Every shelf is one titled item group and every catalog item faces inside its planogram.',
+    hours: '6am–10pm daily', floorName: 'Main floor', w: HD_W, h: HD_H,
+    elements, categories: HD_CATS, products, locations, skuPrefix: 'HDX', skuPad: 3,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Corner Store Example — the small-floorplan reference: cooler wall along the
+   top, two center snack shelves, coffee corner, hot-food case, essentials on
+   the back wall and an ice-cream freezer by the door.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const CS_W = 16;
+const CS_H = 12;
+
+const CS_CATS: SpecCat[] = [
+  { name: 'Soft Drinks', color: '#e4572e', icon: '🥤', items: ['Cola 500ml', 'Lemon-Lime Soda 500ml', 'Orange Soda 500ml', 'Sparkling Water 500ml', 'Still Water 600ml', 'Iced Tea Lemon 500ml', 'Cloudy Lemonade 500ml', 'Cola 1.5L'] },
+  { name: 'Milk & Dairy', color: '#3b6fd4', icon: '🥛', items: ['Whole Milk 1L', 'Semi-Skimmed Milk 1L', 'Chocolate Milk 250ml', 'Salted Butter 250g', 'Greek Yogurt 150g', 'Yogurt Drink 250ml', 'Double Cream 250ml', 'Cheese Snack 4-pack'] },
+  { name: 'Beer & Cider', color: '#7a4fd4', icon: '🍺', items: ['Lager 440ml Can', 'IPA 330ml Bottle', 'Cider 500ml Can', 'Stout 440ml Can', 'Alcohol-Free Lager 330ml', 'Radler Citrus 330ml', 'Craft Lager 4-pack', 'Red Wine Mini 187ml'] },
+  { name: 'Salty Snacks', color: '#d4a017', icon: '🍿', items: ['Sea Salt Crisps 32g', 'Salt & Vinegar Crisps 32g', 'Tortilla Chips 100g', 'Salted Peanuts 50g', 'Salted Pretzels 45g', 'Sweet Popcorn 40g', 'Beef Jerky 25g', 'Rice Crackers 30g', 'Trail Mix 40g', 'Nachos & Dip 100g'] },
+  { name: 'Candy & Chocolate', color: '#d9556b', icon: '🍫', items: ['Milk Chocolate Bar 45g', 'White Chocolate Bar 45g', 'Gummy Bears 100g', 'Sour Worms 100g', 'Mint Chews 50g', 'Caramel Wafer', 'Nougat Bar', 'Jelly Beans 40g'] },
+  { name: 'Coffee & Tea', color: '#7a4f2a', icon: '☕', items: ['Ground Coffee 200g', 'Instant Coffee 50g', 'Tea Bags 40-pack', 'Green Tea 20-pack', 'Herbal Tea 20-pack', 'Hot Chocolate Sachets 5-pack', 'Chai Latte 8-pack', 'Coffee Creamer 250g'] },
+  { name: 'Hot Food', color: '#e8a33d', icon: '🥪', items: ['Sausage Roll', 'Chicken Wrap', 'BLT Sandwich', 'Cheese & Ham Toastie', 'Pepperoni Pizza Slice', 'Hot Dog', 'Steak Pie', 'Samosa 2-pack', 'Chicken Wings 6pc', 'Mac & Cheese Cup'] },
+  { name: 'Pantry Essentials', color: '#b98a2f', icon: '🥫', items: ['Instant Noodles 65g', 'Pasta Sauce 350g', 'Chicken Soup 400g', 'Baked Beans 200g', 'Rice Pudding 200g', 'Tuna Chunks 80g', 'Olive Oil 250ml', 'Tomato Ketchup 300ml'] },
+  { name: 'Household Essentials', color: '#3a7ca5', icon: '🧻', items: ['Batteries AA 4-pack', 'Batteries AAA 4-pack', 'Lighter', 'Kitchen Roll 2 Rolls', 'Bin Bags 10-pack', 'Hand Soap 100ml', 'Dish Sponge 3-pack', 'Phone Charging Cable'] },
+  { name: 'Ice Cream', color: '#7c3aed', icon: '🍦', items: ['Vanilla Cone', 'Magnum Classic', 'Cornetto Classic', 'Ice Cream Sandwich', 'Solero Exotic', 'Mini Milk 6-pack', 'Lemon Sorbet 500ml', 'Ice Lollies 4-pack'] },
+];
+
+function cornerStoreSpec(): Spec {
+  const elements: SpecEl[] = [];
+
+  // one room, one door at the bottom-left
+  elements.push({
+    type: 'wall',
+    shape: 'polyline',
+    label: '',
+    geometry: [
+      [0.3, 0.3], [15.7, 0.3], [15.7, 11.7],
+      [4.8, 11.7], [2, 11.7],
+      [0.3, 11.7], [0.3, 0.3],
+    ],
+  });
+
+  const zone = (x: number, y: number, w: number, h: number, label: string, color?: string) =>
+    elements.push({ type: 'zone', shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, color: color ?? '', meta: JSON.stringify({ department: label }) });
+  const poi = (x: number, y: number, label: string) =>
+    elements.push({ type: 'poi', shape: 'point', geometry: { x, y }, label });
+
+  zone(1, 1, 14, 2.4, 'Coolers', '#3b6fd4');
+  zone(1, 4, 3.2, 3.2, 'Coffee Corner', '#7a4f2a');
+  zone(5, 4, 6, 3.6, 'Snacks');
+  zone(12, 4, 3.4, 3.6, 'Hot Food', '#e8a33d');
+  zone(1, 8, 10, 2, 'Groceries & Essentials');
+  zone(11.6, 8, 3.9, 2, 'Ice Cream', '#3b6fd4');
+  zone(5.6, 10.4, 3.6, 1, 'Checkout', '#9aa0a6');
+  poi(15, 10.9, 'ATM');
+
+  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 3.4, y: 11.4 }, label: 'Entrance' });
+  elements.push({ type: 'exit', shape: 'point', geometry: { x: 3.4, y: 11.4 }, label: 'Exit' });
+
+  const groups: { label: string; cat: string; x: number; y: number; w: number; h: number }[] = [];
+  const g = (label: string, cat: string, x: number, y: number, w: number, h: number) =>
+    groups.push({ label, cat, x, y, w, h });
+
+  g('Soft Drinks', 'Soft Drinks', 1.5, 1.5, 4, 1.2);
+  g('Milk & Dairy', 'Milk & Dairy', 6, 1.5, 4, 1.2);
+  g('Beer & Cider', 'Beer & Cider', 10.5, 1.5, 4, 1.2);
+  g('Coffee & Tea', 'Coffee & Tea', 1.5, 4.6, 2.2, 1.2);
+  g('Salty Snacks', 'Salty Snacks', 5.5, 4.5, 5, 1.2);
+  g('Candy & Chocolate', 'Candy & Chocolate', 5.5, 6.2, 5, 1.2);
+  g('Hot Food', 'Hot Food', 12.6, 4.6, 2.2, 1.2);
+  g('Pantry Essentials', 'Pantry Essentials', 1.5, 8.4, 4.4, 1.2);
+  g('Household Essentials', 'Household Essentials', 6.6, 8.4, 3.9, 1.2);
+  g('Ice Cream', 'Ice Cream', 12.1, 8.4, 2.9, 1.2);
+
+  for (const gr of groups) {
+    elements.push({
+      type: 'shelf',
+      shape: 'rect',
+      geometry: { x: gr.x, y: gr.y, w: gr.w, h: gr.h, rot: 0 },
+      label: gr.label,
+      color: '',
+      meta: JSON.stringify({ department: gr.cat, planWidth: Math.round(Math.min(6, Math.max(1, Math.max(gr.w, gr.h))) * 10) / 10 }),
+    });
+  }
+
+  const products: { name: string; category: string; brand: string; image?: string }[] = [];
+  const poolByCat: Record<string, number[]> = {};
+  for (const c of CS_CATS) {
+    poolByCat[c.name] = [];
+    for (const base of c.items) {
+      poolByCat[c.name].push(products.length);
+      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: '' });
+    }
+  }
+
+  const locations: Spec['locations'] = [];
+  const groupsOfCat: Record<string, number> = {};
+  for (const gr of groups) groupsOfCat[gr.cat] = (groupsOfCat[gr.cat] ?? 0) + 1;
+  const catGroupIdx: Record<string, number> = {};
+  for (const gr of groups) {
+    const pool = poolByCat[gr.cat];
+    const vertical = gr.h > gr.w;
+    const pinSpan = Math.round(Math.min(6, Math.max(2, Math.max(gr.w, gr.h))) * 10) / 10;
+    const center = { x: gr.x + gr.w / 2, y: gr.y + gr.h / 2 };
+    const gi = catGroupIdx[gr.cat] ?? 0;
+    catGroupIdx[gr.cat] = gi + 1;
+    const total = groupsOfCat[gr.cat];
+    const share = Math.floor(pool.length / total);
+    const start = gi * share + Math.min(gi, pool.length % total);
+    const mine = pool.slice(start, start + share + (gi < pool.length % total ? 1 : 0));
+    locations.push({ product: mine[0] ?? pool[gi % pool.length], x: center.x, y: center.y, level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
+    const n = Math.max(1, mine.length - 1);
+    mine.slice(1).forEach((p, j) => {
+      const at = ((j + 0.5) / n) * (vertical ? gr.h : gr.w);
+      locations.push({
+        product: p,
+        x: vertical ? gr.x + gr.w / 2 : gr.x + at,
+        y: vertical ? gr.y + at : gr.y + gr.h / 2,
+        level: (j % 3) + 1, w: 1, pinW: 0.3, groupOnly: 1,
+      });
+    });
+  }
+
+  return {
+    slug: 'convenience-store-example', name: 'Corner Store Example', address: '12 Corner Street',
+    description:
+      'Convenience-store example on a small floorplan: cooler wall along the top, snack shelves in the middle, coffee corner, hot-food case, essentials on the back wall and an ice-cream freezer by the door. Every shelf is one titled item group.',
+    hours: '6am–11pm daily', floorName: 'Shop floor', w: CS_W, h: CS_H,
+    elements, categories: CS_CATS, products, locations, skuPrefix: 'CNV', skuPad: 3,
   };
 }
 
@@ -484,12 +802,12 @@ interface Spec {
 
 async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: string): Promise<void> {
   const ownerId = await ensureDemoOwner(env, ownerEmail, ownerName, `${spec.slug}-demo`);
-  // Capture the floor's size BEFORE ensureStore syncs it to the spec — a
+  // Capture the floor's size AND owner BEFORE ensureStore syncs the size — a
   // mismatch means the spec grew and the seeded layout is stale, so it gets
   // wiped and rebuilt (parity with the node seed script's rebuild signal).
   const prior = await first(
     env,
-    `SELECT f.width_m AS w, f.height_m AS h FROM floors f
+    `SELECT f.width_m AS w, f.height_m AS h, s.owner_id AS owner_id FROM floors f
      JOIN stores s ON s.id = f.store_id WHERE s.slug = ? ORDER BY f.level LIMIT 1`,
     spec.slug
   );
@@ -501,7 +819,17 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
   });
   const shelfRow = await first(env, "SELECT COUNT(*) AS n FROM map_elements WHERE floor_id = ? AND type = 'shelf'", floorId);
   let shelves = Number(shelfRow?.n ?? 0);
-  if (shelves > 0 && sizeChanged) {
+  // A store can be left stale two ways: half-seeded (shelves + products
+  // written, pins never inserted — an older seed version's work) or seeded by
+  // an older spec (its pin count no longer matches this spec's). The
+  // skip-when-present check below would keep it frozen forever, so treat a
+  // location-count mismatch as stale and rebuild — but only while the store
+  // is still the demo's own (a user-claimed store is left exactly as its
+  // owner made it).
+  const locRow = await first(env, 'SELECT COUNT(*) AS n FROM product_locations WHERE floor_id = ?', floorId);
+  const demoOwned = String(prior?.owner_id ?? '') === String(ownerId);
+  const locDrift = shelves > 0 && demoOwned && Number(locRow?.n ?? 0) !== spec.locations.length;
+  if (shelves > 0 && (sizeChanged || locDrift)) {
     await env.DB.batch([
       env.DB.prepare('DELETE FROM product_locations WHERE floor_id = ?').bind(floorId),
       env.DB.prepare('DELETE FROM products WHERE store_id = ?').bind(storeId),
@@ -510,7 +838,7 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
       env.DB.prepare('UPDATE stores SET description = ?, hours = ? WHERE id = ?').bind(spec.description, spec.hours, storeId),
     ]);
     shelves = 0;
-    console.log(`[boot] ${spec.name} spec changed — rebuilding layout`);
+    console.log(`[boot] ${spec.name} ${sizeChanged ? 'spec changed' : `stale pins (${locRow?.n} vs ${spec.locations.length})`} — rebuilding layout`);
   }
   if (shelves > 0) return; // already present — idempotent
 
@@ -556,9 +884,10 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
   console.log(`[boot] seeded ${spec.name}: ${spec.elements.length} elements, ${spec.products.length} products (${spec.locations.length} pinned)`);
 }
 
-/** Seed the one example store (Walmart Example). Retires the previous demo
- *  maps from databases that already seeded them — slug deletions cascade;
- *  per-store idempotency keeps the boot check cheap. Safe to race. */
+/** Seed the example stores (Walmart Example, Home Depot Example, Corner Store
+ *  Example). Retires demo maps from databases that already seeded older
+ *  examples — slug deletions cascade; per-store idempotency keeps the boot
+ *  check cheap. Safe to race. */
 export async function seedDemoMaps(env: Env): Promise<void> {
   await ensureDemoOwner(env);
   for (const slug of [
@@ -573,7 +902,9 @@ export async function seedDemoMaps(env: Env): Promise<void> {
     await deleteDemoStore(env, slug);
   }
   await seedExample(env, walmartSpec(), 'walmart@storemap.demo', 'Walmart Demo');
-  console.log('[boot] demo map seeded (Walmart Example)');
+  await seedExample(env, homeDepotSpec(), 'homedepot@storemap.demo', 'Home Depot Demo');
+  await seedExample(env, cornerStoreSpec(), 'corner@storemap.demo', 'Corner Store Demo');
+  console.log('[boot] demo maps seeded (Walmart, Home Depot, Corner Store examples)');
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

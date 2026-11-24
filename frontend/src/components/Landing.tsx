@@ -15,10 +15,12 @@ import { computeRoute } from '../lib/navgrid';
 import PricingModal from './PricingModal';
 import { useTheme } from '../theme';
 
-/** The homepage example — the one seeded demo store, opened as a no-account
- *  sandbox copy from the hero. */
+/** The homepage examples — the seeded demo stores, opened as no-account
+ *  sandbox copies from the hero. */
 const EXAMPLES = [
   { slug: 'walmart-example', name: 'Walmart Example', kind: 'Supercenter' },
+  { slug: 'home-depot-example', name: 'Home Depot Example', kind: 'Hardware Store' },
+  { slug: 'convenience-store-example', name: 'Corner Store Example', kind: 'Convenience Store' },
 ];
 
 /** The hero's settle-in motion: a slow, decelerating swing (~29°) that glides
@@ -68,6 +70,7 @@ function HeroMap({ data }: { data: PublicStorePayload }) {
     const pick = () => {
       if (searchHold.current) return;
       const loc = locs[Math.floor(Math.random() * locs.length)];
+      if (!loc) return; // map has no pins yet — nothing to route the demo to
       const product = data.products.find((p) => p.id === loc.product_id);
       if (!product) return;
       const r = computeRoute(floor, floorEls, { x: loc.x, y: loc.y });
@@ -525,7 +528,11 @@ export default function Landing() {
       </section>
 
       {pricingOpen && <PricingModal onClose={() => setPricingOpen(false)} />}
-      <footer className="footer">item.place - <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Host your own maps</a></footer>
+      <footer className="footer">
+        item.place - <a href="https://github.com/eman101101/storemaplocal" target="_blank" rel="noreferrer">Host your own maps</a>
+        {' · '}
+        Typeface: <a href="https://allo.joshpuckett.me/" target="_blank" rel="noreferrer" title="Allo — a free open-source variable typeface by Josh Puckett (SIL OFL)">Allo by Josh Puckett</a>
+      </footer>
     </main>
   );
 }

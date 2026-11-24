@@ -40,6 +40,12 @@ export default function App() {
   const navigate = useNavigate();
   // the shopper viewer is a full-bleed experience — no site chrome
   const isViewer = location.pathname.startsWith('/s/');
+  // the map editors keep the site nav above the workspace, but the workspace
+  // must fit the viewport BELOW it (the shell caps and the editor flexes — see
+  // .app-shell.has-editor) or the map pokes out above the bars when scrolling
+  const isEditorRoute =
+    location.pathname.startsWith('/try/') ||
+    /^\/dashboard\/stores\/[^/]+$/.test(location.pathname);
 
   const refresh = useCallback(async () => {
     try {
@@ -84,7 +90,7 @@ export default function App() {
     <AuthContext.Provider value={authValue}>
       <LoginModalContext.Provider value={{ openLogin }}>
       <ThemeProvider>
-        <div className="app-shell">
+        <div className={'app-shell' + (isEditorRoute ? ' has-editor' : '')}>
           {!isViewer && <TopNav />}
           <Routes>
             <Route path="/" element={<Landing />} />

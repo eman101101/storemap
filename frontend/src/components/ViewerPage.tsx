@@ -87,6 +87,13 @@ export default function ViewerPage() {
   /** One tap from the shopper view into the owner's editor (login first if needed). */
   const goEdit = () => {
     if (!data) return;
+    // the example maps belong to the demo account nobody can log into — send
+    // their "Edit map" to the no-account sandbox copy instead of a dashboard
+    // the visitor doesn't own
+    if (data.store.slug.endsWith('-example')) {
+      navigate(`/try/${data.store.slug}`);
+      return;
+    }
     const target = `/dashboard/stores/${data.store.id}`;
     navigate(user ? target : `/login?next=${encodeURIComponent(target)}`);
   };
