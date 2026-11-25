@@ -8,6 +8,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8787',
       '/uploads': 'http://localhost:8787',
+      // demo product photos, served from the database
+      '/media': 'http://localhost:8787',
     },
   },
   build: { sourcemap: false, chunkSizeWarningLimit: 900 },

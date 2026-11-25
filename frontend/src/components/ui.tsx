@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 export function Modal({
-  title, onClose, children, wide,
-}: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  title, onClose, children, wide, xwide, style,
+}: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; xwide?: boolean; style?: React.CSSProperties }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -10,7 +10,14 @@ export function Modal({
   }, [onClose]);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal fade-in" style={wide ? { maxWidth: 640 } : undefined} role="dialog" aria-label={title}>
+      <div
+        // wide: forms with side-by-side fields · xwide: drawings (a planogram
+        // is wider than it is tall — see .planogram-svg)
+        className={`modal fade-in${xwide ? ' xwide' : ''}`}
+        style={style ?? (wide ? { maxWidth: 640 } : undefined)}
+        role="dialog"
+        aria-label={title}
+      >
         <h3>{title}</h3>
         {children}
       </div>

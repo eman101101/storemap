@@ -21,19 +21,45 @@
  * PlanogramSvg is the drawing itself, exported so other surfaces (the
  * homepage planogram example) can render a planogram inline.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Modal } from './ui';
-import type { MapElement, Product } from '../types';
-import { compactFilledLayout, computeShelfLayout, shelfPlanogramView, type PlanogramView, type ShelfLayout, type ShelfPin, type ShelfSlot } from '../lib/shelfLayout';
+import type { MapElement, Product, RectGeom } from '../types';
+import {
+  compactFilledLayout, computeShelfLayout, shelfPlanogramView, worldToShelfLocal,
+  type PlanogramView, type ShelfLayout, type ShelfPin, type ShelfSlot,
+} from '../lib/shelfLayout';
 
-const M = 46; // pixels per metre of shelf width in the drawing
+/** Base drawing scale: pixels per metre of shelf length. A row is always
+ *  `meta.rowH` px tall, so on a long shelf this alone would squeeze each
+ *  facing into a sliver — the drawing widens past it instead (see below). */
+const M = 46;
 const FRAME = 10; // frame thickness in px
+/** The narrowest a facing is drawn. A row stocked finer than this makes the
+ *  whole planogram longer (it scrolls sideways) rather than squashed. */
+const MIN_TILE_W = 56;
 
 type ViewMode = PlanogramView;
 
 /** The photo a planogram tile shows: the owner's cropped variant by default,
  *  falling back to the full product photo. */
 const productPhoto = (p: Product) => p.image_crop_url || p.image_url;
+
+/** How many facings sit in each row of a layout. */
+function facingsPerRow(layout: ShelfLayout): Map<number, number> {
+  const perRow = new Map<number, number>();
+  for (const bay of layout.bays) for (const s of bay.slots) perRow.set(s.level, (perRow.get(s.level) ?? 0) + 1);
+  return perRow;
+}
+
+/** The planogram's own (unscaled) drawing size in px. Facings in the fullest
+ *  row set the scale — every one of them must get MIN_TILE_W, so a densely
+ *  stocked shelf is drawn longer, never squashed. */
+export function planogramSize(layout: ShelfLayout): { svgW: number; svgH: number; widthPx: number; pxPerM: number } {
+  const fullest = Math.max(1, ...facingsPerRow(layout).values());
+  const pxPerM = Math.max(M, (fullest * MIN_TILE_W) / layout.width);
+  const widthPx = Math.round(pxPerM * layout.width);
+  return { widthPx, pxPerM, svgW: widthPx + FRAME * 2, svgH: layout.levels * layout.meta.rowH + FRAME * 2 };
+}
 
 /** The planogram drawing for one shelf face (bays + levels from the layout). */
 export function PlanogramSvg({
@@ -52,13 +78,14 @@ export function PlanogramSvg({
   // one row height for EVERY view mode, so the drawing never resizes when the
   // owner toggles between diagram / photos / image tiles (meta.rowH, px)
   const levelH = layout.meta.rowH;
-  const widthPx = Math.max(240, Math.min(560, layout.width * M));
-  const heightPx = layout.levels * levelH + FRAME * 2;
-  const pxPerM = widthPx / layout.width;
+  // facings in the fullest row decide the scale (see planogramSize)
+  const { widthPx, pxPerM, svgW, svgH: heightPx } = planogramSize(layout);
   const svgRef = useRef<SVGSVGElement>(null);
   // live drag preview: the dragged facing renders at these values until commit
   const [drag, setDrag] = useState<{ locationId: string; u: number; level: number; moved: boolean } | null>(null);
-  const dragBase = useRef<{ u: number; level: number; px: number; py: number } | null>(null);
+  // `k` = on-screen px per drawing unit: the svg scales to fit its box, so
+  // pointer travel must be converted into drawing units
+  const dragBase = useRef<{ u: number; level: number; px: number; py: number; k: number } | null>(null);
   // a just-finished drag suppresses the svg's click-deselect, so the moved
   // facing STAYS selected after you let go
   const lastDragAt = useRef(0);
@@ -68,22 +95,21 @@ export function PlanogramSvg({
   // rendered planograms (the Landing demo pair) can't cross-clip each other
   const clipBase = `pf-${(layout.shelfId || 'x').replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const slotBox = (s: { u: number; facingWidth: number; level: number }) => {
-    // photos/images render wider than their literal facing when the facing is
-    // tiny, so an image is never a sliver — dense shelves just overlap slightly
-    const min = editing ? 24 : 44;
-    const w = Math.max(min, s.facingWidth * pxPerM);
+    // a facing is as wide as its real width (metres × scale), but never a
+    // sliver — dense shelves get a longer drawing so tiles don't overlap
+    const w = Math.max(MIN_TILE_W, s.facingWidth * pxPerM);
     const x = s.u * widthPx - w / 2;
     const y = FRAME + (layout.levels - s.level) * levelH + 8;
     return { x: Math.max(2, Math.min(widthPx - w - 2, x)), y, w, h: levelH - 18 };
   };
 
-  const flatSlots: { slot: ShelfSlot; box: ReturnType<typeof slotBox> }[] = useMemo(
+  const flatSlots: { slot: ShelfSlot; box: ReturnType<typeof slotBox>; lines: string[] }[] = useMemo(
     () =>
       layout.bays.flatMap((bay) =>
-        bay.slots.map((slot) => ({
-          slot,
-          box: slotBox(drag && drag.locationId === slot.locationId ? { ...slot, u: drag.u, level: drag.level } : slot),
-        }))
+        bay.slots.map((slot) => {
+          const box = slotBox(drag && drag.locationId === slot.locationId ? { ...slot, u: drag.u, level: drag.level } : slot);
+          return { slot, box, lines: tileLabel(slot.product.name, box.w) };
+        })
       ),
     // eslint-disable-line react-hooks/exhaustive-deps
     [layout, mode, editing, drag]
@@ -97,7 +123,10 @@ export function PlanogramSvg({
     // (capturing on the facing itself loses the pointer when facings re-sort
     // mid-drag — items stopped moving to the left across a neighbour)
     svgRef.current?.setPointerCapture?.(e.pointerId);
-    dragBase.current = { u: s.u, level: s.level, px: e.clientX, py: e.clientY };
+    dragBase.current = {
+      u: s.u, level: s.level, px: e.clientX, py: e.clientY,
+      k: svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1,
+    };
     setDrag({ locationId: s.locationId, u: s.u, level: s.level, moved: false });
     onSelectFacing?.(s.locationId);
   };
@@ -105,13 +134,13 @@ export function PlanogramSvg({
   const onPointerMove = (e: React.PointerEvent) => {
     const base = dragBase.current;
     if (!base || !drag) return;
-    const du = (e.clientX - base.px) / widthPx;
+    const du = (e.clientX - base.px) / (widthPx * base.k);
     // screen-up = a higher row on the planogram (level 1 is the bottom board)
-    const dLevel = Math.round((base.py - e.clientY) / levelH);
+    const dLevel = Math.round((base.py - e.clientY) / (levelH * base.k));
     const u = Math.min(1, Math.max(0, base.u + du));
     const level = Math.min(layout.levels, Math.max(1, base.level + dLevel));
     // moved in EITHER direction — a leftward drag makes du negative
-    setDrag({ locationId: drag.locationId, u, level, moved: Math.abs(du) * widthPx > 4 || dLevel !== 0 });
+    setDrag({ locationId: drag.locationId, u, level, moved: Math.abs(du) * widthPx * base.k > 4 || dLevel !== 0 });
   };
 
   const onPointerUp = () => {
@@ -140,9 +169,21 @@ export function PlanogramSvg({
   return (
     <svg
       ref={svgRef}
-      width={widthPx + FRAME * 2}
-      height={heightPx}
-      style={{ display: 'block', margin: '0 auto', background: '#f4f1e8', borderRadius: 10, border: '1px solid var(--line)', touchAction: editing ? 'none' : undefined }}
+      // the drawing has its own size and scales as a whole to fit its box:
+      // the same factor both ways, so a planogram is never squashed. Long
+      // shelves keep a readable minimum and scroll sideways instead
+      // (.planogram-svg), tall ones are capped by height.
+      className="planogram-svg"
+      viewBox={`0 0 ${svgW} ${heightPx}`}
+      style={
+        {
+          '--planogram-w': `${svgW}px`,
+          background: '#f4f1e8',
+          borderRadius: 10,
+          border: '1px solid var(--line)',
+          touchAction: editing ? 'none' : undefined,
+        } as CSSProperties
+      }
       role="img"
       aria-label={`Planogram of ${layout.label}`}
       onPointerMove={editing ? onPointerMove : undefined}
@@ -182,7 +223,7 @@ export function PlanogramSvg({
       <rect x={0} y={0} width={widthPx + FRAME * 2} height={heightPx} fill="none" stroke="#8a7448" strokeWidth={FRAME} rx={6} />
 
       {/* facings */}
-      {flatSlots.map(({ slot: s, box }, i) => {
+      {flatSlots.map(({ slot: s, box, lines: tileLines }, i) => {
         const color = s.product.category_color || '#4f7d3f';
         const selected = selectedId === s.locationId;
         const highlighted = highlightLocationId === s.locationId;
@@ -212,7 +253,9 @@ export function PlanogramSvg({
                 y={box.y}
                 width={box.w}
                 height={box.h}
-                preserveAspectRatio="xMidYMid slice"
+                // the whole product, standing on the shelf board — its own
+                // proportions kept (a "slice" fill cropped bottles to slivers)
+                preserveAspectRatio="xMidYMax meet"
                 clipPath={`url(#${clipBase}-${i})`}
               />
               {halo}
@@ -226,12 +269,16 @@ export function PlanogramSvg({
             <rect x={box.x + FRAME} y={box.y} width={box.w} height={box.h} rx={4} fill={color} fillOpacity={0.16} stroke={color} strokeWidth={1.6} />
             <text
               x={box.x + FRAME + box.w / 2}
-              y={box.y + box.h / 2 + 4}
+              y={box.y + box.h / 2 + (tileLines.length === 2 ? -2 : 4)}
               textAnchor="middle"
               fontSize={10}
               fill="#33402e"
             >
-              {truncate(s.product.name, Math.max(4, Math.floor(box.w / 6.2)))}
+              {tileLines.map((line, li) => (
+                <tspan key={li} x={box.x + FRAME + box.w / 2} dy={li === 0 ? 0 : 11}>
+                  {line}
+                </tspan>
+              ))}
             </text>
             {s.product.price != null && (
               <text x={box.x + FRAME + box.w / 2} y={box.y + box.h - 4} textAnchor="middle" fontSize={9} fill="#5a6b53">
@@ -316,6 +363,25 @@ export default function ShelfDetail({
 
   const allSlots = layout.bays.flatMap((b) => b.slots);
   const totalSlots = displayLayout.bays.reduce((n, b) => n + b.slots.length, 0);
+  // the dialog fits its drawing: a small shelf gets a snug dialog, a long
+  // one the full width (the drawing grows up to 1.9× — see .planogram-svg)
+  const size = planogramSize(displayLayout);
+  const dialogWidth = Math.min(1240, Math.ceil(size.svgW * 1.9) + 68);
+  // `outside` is every other pin on the floor; only the ones within arm's
+  // reach of the shelf are worth mentioning (the rest is simply the store)
+  const nearby = useMemo(
+    () =>
+      shelf.shape === 'rect'
+        ? layout.outside.filter((pin) => {
+            const r = shelf.geom as RectGeom;
+            const l = worldToShelfLocal(r, pin.location);
+            const dx = Math.max(0, -l.x, l.x - r.w);
+            const dy = Math.max(0, -l.y, l.y - r.h);
+            return Math.hypot(dx, dy) <= 1.5;
+          })
+        : [],
+    [layout, shelf]
+  );
   // selected facing as DISPLAYED — the viewer's compact re-grid may place it
   // in a different bay/row than the raw layout — powers the bottom panel
   const selectedSlot = selectedId
@@ -325,7 +391,7 @@ export default function ShelfDetail({
     : null;
 
   return (
-    <Modal title={`${layout.label} — planogram`} onClose={onClose} wide>
+    <Modal title={`${layout.label} — planogram`} onClose={onClose} xwide style={{ maxWidth: dialogWidth }}>
       <p className="muted" style={{ marginTop: -8, marginBottom: 10 }}>
         {layout.bays.length} bays × {layout.levels} rows · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
         shelf · {layout.width.toFixed(1)} m wide
@@ -382,15 +448,17 @@ export default function ShelfDetail({
         ))}
       </div>
 
-      <PlanogramSvg
-        layout={displayLayout}
-        mode={mode}
-        editing={editing}
-        selectedId={selectedId}
-        onSelectFacing={setSelectedId}
-        onMoveFacing={onMoveFacing}
-        highlightLocationId={highlightLocationId}
-      />
+      <div className="planogram-scroll">
+        <PlanogramSvg
+          layout={displayLayout}
+          mode={mode}
+          editing={editing}
+          selectedId={selectedId}
+          onSelectFacing={setSelectedId}
+          onMoveFacing={onMoveFacing}
+          highlightLocationId={highlightLocationId}
+        />
+      </div>
 
       {selectedSlot ? (
         /* bottom details panel — selection in BOTH modes: product details for
@@ -487,16 +555,26 @@ export default function ShelfDetail({
         </div>
       )}
 
-      {layout.outside.length > 0 && (
+      {nearby.length > 0 && (
         <p className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
-          {layout.outside.length} pinned product{layout.outside.length === 1 ? '' : 's'} near this shelf sit outside its
-          footprint on the map and are not shown here.
+          {nearby.length} pinned product{nearby.length === 1 ? '' : 's'} just outside this shelf's footprint
+          {nearby.length === 1 ? 'is' : ' are'} not shown here — drag {nearby.length === 1 ? 'it' : 'them'} onto the shelf
+          to add {nearby.length === 1 ? 'it' : 'them'} to the planogram.
         </p>
       )}
     </Modal>
   );
 }
 
-function truncate(s: string, n: number) {
-  return s.length > n ? `${s.slice(0, Math.max(1, n - 1))}…` : s;
+/** A tile label: the name on one line, or wrapped to two when it is longer
+ *  than the tile is wide (≈6.2px per character at the tile's font size). */
+function tileLabel(name: string, width: number): string[] {
+  const max = Math.max(4, Math.floor(width / 6.2));
+  const clip = (s: string) => (s.length > max ? `${s.slice(0, Math.max(1, max - 1))}…` : s);
+  if (name.length <= max) return [name];
+  const words = name.split(/\s+/);
+  let first = '';
+  let i = 0;
+  while (i < words.length && (!first || `${first} ${words[i]}`.length <= max)) first = first ? `${first} ${words[i++]}` : words[i++];
+  return [clip(first), clip(words.slice(i).join(' '))];
 }

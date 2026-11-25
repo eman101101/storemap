@@ -2,13 +2,14 @@
   "name": "storemap-worker",
   "version": "1.0.0",
   "private": true,
-  "description": "StoreMap on Cloudflare Workers — D1 (SQLite) + R2 media + static SPA assets",
+  "description": "StoreMap on Cloudflare Workers \u2014 D1 (SQLite) + R2 media + static SPA assets",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --config ../wrangler.jsonc",
     "deploy": "wrangler deploy --config ../wrangler.jsonc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "photos": "node scripts/load-demo-photos.mjs"
   },
   "dependencies": {
     "hono": "^4.6.0"

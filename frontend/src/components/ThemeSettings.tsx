@@ -1,12 +1,13 @@
 /**
  * Appearance toggle: one click flips light ↔ dark (saved on this device).
- * Shown in the top nav (app pages) and the shopper viewer's floating bar.
+ * Shown in the shopper viewer's floating bar (the app pages keep the toggle
+ * in their Account menu — see AccountMenu.tsx, which reuses the icons).
  * First visits follow the OS; the first click pins an explicit choice.
  * The icon shows the mode you'll switch TO (sun → light, moon → dark).
  */
 import { useTheme } from '../theme';
 
-const SUN_ICON = (
+export const SUN_ICON = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" aria-hidden>
     <circle cx="12" cy="12" r="4.4" />
@@ -14,7 +15,7 @@ const SUN_ICON = (
   </svg>
 );
 
-const MOON_ICON = (
+export const MOON_ICON = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M20.6 14.2A8.6 8.6 0 0 1 9.8 3.4a8.6 8.6 0 1 0 10.8 10.8z" />

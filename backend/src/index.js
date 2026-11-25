@@ -19,7 +19,12 @@ const server = app.listen(config.port, () => {
 // SEED_DEMO=false to skip.
 if (config.selfHosted && config.seedDemo) {
   const n = db.prepare('SELECT COUNT(*) n FROM stores').get().n;
-  if (n < 6) {
+  // a database seeded before the demo photos moved into the `media` table
+  // references images it does not hold yet — one more seed run loads them
+  const photosPending =
+    db.prepare('SELECT COUNT(*) n FROM media').get().n === 0 &&
+    db.prepare("SELECT COUNT(*) n FROM products WHERE image_url LIKE '/media/%' OR image_url LIKE '/demo-products/%'").get().n > 0;
+  if (n < 6 || photosPending) {
     console.log(`[boot] ${n === 0 ? 'empty database' : `${n} stores present, demo set grew`} — seeding demo maps (SEED_DEMO=false to disable)`);
     const seedPath = fileURLToPath(new URL('../scripts/seed-demo.mjs', import.meta.url));
     spawn(process.execPath, [seedPath], { stdio: 'inherit', env: process.env }).on('exit', (code) =>

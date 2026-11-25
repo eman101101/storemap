@@ -3,13 +3,14 @@
  * Same-origin single deployment: /api/* (Hono + D1), /uploads/* (R2), SEO
  * routes, and the built SPA served from the ASSETS binding by the platform.
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env, AppEnv } from './config';
 import { makeConfig, providersConfigured } from './config';
 import { bootstrap } from './migrate';
 import { attachUser } from './session';
 import { json } from './http';
 import { serveImage } from './storage';
+import { serveMedia } from './media';
 import authRoutes from './routes/auth';
 import storeRoutes from './routes/stores';
 import floorRoutes from './routes/floors';
@@ -85,6 +86,14 @@ app.get('/uploads/:name', async (c) => {
   }
 });
 
+/* ---- Demo product photos (kept in the D1 database — see media.ts) ---- */
+const storedPhoto = async (c: Context<AppEnvFull>, file: string) => {
+  const res = await serveMedia(c.env, file, c.req.header('If-None-Match'));
+  return res ?? c.body(null, 404);
+};
+app.get('/media/:name', (c) => storedPhoto(c, c.req.param('name')));
+app.get('/media/gen/:name', (c) => storedPhoto(c, `gen/${c.req.param('name')}`));
+
 /* ---- SEO + shopper share links ---- */
 app.get('/sitemap.xml', (c) => sitemap(c));
 app.get('/robots.txt', (c) => robots(c));
@@ -98,7 +107,13 @@ export default {
     // /s/:slug pages and SEO paths run through the worker (run_worker_first in
     // wrangler.jsonc); everything else is served straight from the asset CDN.
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/api') || url.pathname.startsWith('/uploads') || url.pathname === '/sitemap.xml' || url.pathname === '/robots.txt') {
+    if (
+      url.pathname.startsWith('/api') ||
+      url.pathname.startsWith('/uploads') ||
+      url.pathname.startsWith('/media') ||
+      url.pathname === '/sitemap.xml' ||
+      url.pathname === '/robots.txt'
+    ) {
       return app.fetch(request, env, ctx as any);
     }
     if (url.pathname.startsWith('/s/')) {

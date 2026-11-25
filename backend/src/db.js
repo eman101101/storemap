@@ -310,6 +310,41 @@ const MIGRATIONS = [
       ALTER TABLE users ADD COLUMN photo_bytes_quota INTEGER NOT NULL DEFAULT 209715200;
     `,
   },
+  {
+    // Demo product photos live in the database: one row per image with its
+    // bytes. They used to ship as static SPA assets under
+    // frontend/public/demo-products; scripts/seed-demo.mjs now copies them
+    // in from backend/demo-products and products reference them at
+    // /media/<file> (served by lib/media.js).
+    name: '012-media-table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS media (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        etag TEXT NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
+  {
+    // Per-instance key/value settings (the Worker's 006 table). The seeder
+    // keeps its per-store photo bookkeeping here.
+    //
+    // This is its own migration on purpose: 012 had already been applied to
+    // live databases (as the media table alone) when the need for the table
+    // came up — and an applied migration is never re-run, so anything added
+    // to it later would never reach those databases. Never edit a migration
+    // that has shipped; add the next one.
+    name: '013-app-settings',
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function migrate() {

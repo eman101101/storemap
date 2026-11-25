@@ -68,6 +68,19 @@ raw.close();
 const { migrate, db } = await import('../src/db.js');
 migrate();
 
+test('013 creates app_settings on its own, for a database that already recorded 012', () => {
+  // an install that applied the first cut of 012 (the media table alone)
+  // before app_settings became its own migration
+  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'media'").get(), 'media is there from 012');
+  db.exec("DROP TABLE app_settings; DELETE FROM migrations WHERE name = '013-app-settings';");
+  assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'app_settings'").get(), undefined);
+  migrate();
+  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'app_settings'").get(), 'and the next migration brings the table');
+  // the rest of the schema is untouched by re-running migrate()
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM products").get().n, 1, 'the live product row survived');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM migrations WHERE name = '013-app-settings'").get().n, 1, 'recorded exactly once');
+});
+
 test('008 rebuild keeps data and widens the provider CHECK', () => {
   // the store survived the users DROP (no cascade wipe)
   const store = db.prepare("SELECT id, owner_id FROM stores WHERE id = 's1'").get();

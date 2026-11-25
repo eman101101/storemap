@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Routes, Route, Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from './api';
 import type { AuthInfo } from './types';
 import { ThemeProvider } from './theme';
@@ -13,22 +13,21 @@ import EditorPage from './components/EditorPage';
 import TryEditor from './components/TryEditor';
 import StockPage from './components/StockPage';
 import ViewerPage from './components/ViewerPage';
-import ThemeSettings from './components/ThemeSettings';
-import PricingModal from './components/PricingModal';
+import AccountMenu from './components/AccountMenu';
 
-interface AuthCtx extends AuthInfo {
+export interface AuthCtx extends AuthInfo {
   loading: boolean;
   refresh: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthCtx>({ user: null, providers: { google: false, apple: false, facebook: false, email: true, dev: false }, loading: true, refresh: async () => {} });
+export const AuthContext = createContext<AuthCtx>({ user: null, providers: { google: false, apple: false, facebook: false, email: true, dev: false }, loading: true, refresh: async () => {} });
 export const useAuth = () => useContext(AuthContext);
 
 interface LoginModalCtrl {
   /** Open the sign-in popup; `next` is where to land after signing in. */
   openLogin: (next?: string, error?: string) => void;
 }
-const LoginModalContext = createContext<LoginModalCtrl>({ openLogin: () => {} });
+export const LoginModalContext = createContext<LoginModalCtrl>({ openLogin: () => {} });
 export const useLoginModal = () => useContext(LoginModalContext);
 
 export default function App() {
@@ -117,86 +116,16 @@ export default function App() {
   );
 }
 
+/** The site's top bar: the brand on the left, the Account menu on the right
+ *  (theme, sign-in, FAQ and Settings all live inside it — see AccountMenu). */
 function TopNav() {
-  const { user, refresh } = useAuth();
-  const { openLogin } = useLoginModal();
-  const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [pricingOpen, setPricingOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const logout = async () => {
-    await api.logout();
-    await refresh(); // or the avatar stays and authed calls keep 401ing
-    navigate('/');
-  };
-  // close the account menu on any outside click / Escape
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [menuOpen]);
   return (
     <nav className="topnav">
       <Link to="/" className="brand" aria-label="item.place — home">
         <BlockText text="item.place" cell={2.4} />
       </Link>
       <div className="spacer" />
-      <ThemeSettings />
-      {user ? (
-        <div className="nav-user" ref={menuRef} style={{ position: 'relative' }}>
-          {/* the avatar is the account control, kept rightmost — My maps and
-              Sign out live in its dropdown, not the bar */}
-          <button
-            className="avatar as-button"
-            title={user.email}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            {(user.name || user.email)[0]?.toUpperCase()}
-          </button>
-          {menuOpen && (
-            <div className="account-menu" role="menu">
-              <NavLink to="/dashboard" role="menuitem" onClick={() => setMenuOpen(false)}>
-                My maps
-              </NavLink>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setPricingOpen(true);
-                }}
-              >
-                Plan & credits · {(((user.photo_bytes_quota ?? 0) - (user.photo_bytes_used ?? 0)) / 1048576).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB free
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  void logout();
-                }}
-              >
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="nav-user">
-          <button className="btn sm" onClick={() => openLogin()}>
-            Sign in
-          </button>
-        </div>
-      )}
-      {pricingOpen && <PricingModal onClose={() => setPricingOpen(false)} />}
+      <AccountMenu />
     </nav>
   );
 }

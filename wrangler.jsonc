@@ -27,6 +27,7 @@
 		"run_worker_first": [
 			"/api/*",
 			"/uploads/*",
+			"/media/*",
 			"/s/*",
 			"/sitemap.xml",
 			"/robots.txt"

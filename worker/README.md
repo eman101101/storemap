@@ -16,12 +16,13 @@ This repo is the Cloudflare-ready build. Use the **Deploy to Cloudflare** button
 
 The button reads [`wrangler.jsonc`](wrangler.jsonc) and provisions everything:
 
-- **D1 database** `storemap` — schema migrations + the four demo stores
-  apply automatically on first request (Freshmart Downtown, Annex Market,
-  Harbor Warehouse, Megamart Central). No manual migration step.
-- **R2 bucket** `storemap-media` — floor-plan images, logos, product photos.
+- **D1 database** `storemap` — schema migrations + the three example stores
+  (Walmart, Home Depot, Corner Store) apply automatically on first request.
+  No manual migration step.
+- **R2 bucket** `storemap-media` — floor-plan images, logos, product photos
+  uploaded by owners.
 - **Worker + assets** — the SPA from `frontend/dist` is served from the edge;
-  only `/api/*`, `/uploads/*`, `/s/*` and SEO paths invoke the worker.
+  only `/api/*`, `/uploads/*`, `/media/*`, `/s/*` and SEO paths invoke the worker.
 
 After the deploy you get a `https://storemap.<your-subdomain>.workers.dev`
 URL — open it: the homepage hero cycles the demo maps (**View live** opens
@@ -29,6 +30,22 @@ the shopper viewer, **Edit a copy — free** the no-account sandbox editor).
 To sign in and publish your own maps, use the sign-in modal (Google/Apple
 once configured, or the passwordless email form after setting
 `ENABLE_DEV_LOGIN="true"` — dev login ships disabled by default).
+
+## Load the demo photos (once per database)
+
+The example maps' product photos are stored **in the database** (the `media`
+table), not shipped with the frontend — and a Worker can't bundle several MB
+of images. So they are loaded from `backend/demo-products/`:
+
+```bash
+cd worker
+npm run photos                  # the local D1 of `wrangler dev`
+npm run photos -- --remote      # the deployed D1 (after `wrangler login`)
+```
+
+Until that's done the example maps work but show no photos. The command is
+idempotent (only new or changed files are written) and verifies every stored
+image against its file.
 
 ## Configuration
 

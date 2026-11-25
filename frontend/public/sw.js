@@ -3,6 +3,9 @@
  * - Public store payloads: stale-while-revalidate, 30-day cache — the QR flow
  *   works with zero signal after the first view; routes/flights are pure
  *   client-side math and run offline.
+ * - Demo product photos (/media/*) come from the database and can be
+ *   re-picked under the same url: stale-while-revalidate, so a changed photo
+ *   still comes through.
  * - Never caches /api/* except public stores; uploads are immutable (1y).
  */
 const SHELL_CACHE = 'storemap-shell-v1';
@@ -66,6 +69,20 @@ self.addEventListener('fetch', (e) => {
         c.match(e.request).then((hit) =>
           hit || fetch(e.request).then((res) => { c.put(e.request, res.clone()); return res; })
         )
+      )
+    );
+    return;
+  }
+
+  if (/^\/media\/(?:gen\/)?[a-z0-9-]+\.(?:jpe?g|png|webp|svg)$/.test(url.pathname)) {
+    e.respondWith(
+      caches.open(SHELL_CACHE).then((c) =>
+        c.match(e.request).then((hit) => {
+          const net = fetch(e.request)
+            .then((res) => { if (res.ok) c.put(e.request, res.clone()); return res; })
+            .catch(() => hit);
+          return hit || net;
+        })
       )
     );
     return;

@@ -1,15 +1,24 @@
 /**
- * Demo map generator — pure row arrays inserted via D1 batches. Seeds ONE
- * example store, Walmart Example (the big-box reference floor plan: every
+ * Demo map generator — pure row arrays inserted via D1 batches. Seeds the
+ * three homepage examples (Walmart, Home Depot and the Corner Store: every
  * department area carries shelf groups — ONE titled pin per group sized to
  * the group's plan length, items stocked as planogram-only `groupOnly`
- * facings) — under the demo owner account that "Open the demo maps" signs
- * into. Former examples (Freshmart Downtown, Annex Market, Harbor Warehouse,
+ * facings) under demo owner accounts that "Open the demo maps" signs into.
+ * Former examples (Freshmart Downtown, Annex Market, Harbor Warehouse,
  * Megamart Central, Maple Corner Store, Grand Mart) are retired on boot.
+ *
+ * Parity with backend/scripts/seed-demo.mjs + demo-specs.mjs — the same
+ * floor plans, catalogue, stocking and photo urls; keep the two in step.
+ *
+ * Every catalogue item faces on a shelf: a shopper's search lists an item
+ * with no facing as "out of stock". And the demo photos are stored IN the
+ * database (the `media` table, see media.ts) — a present store is never
+ * rebuilt because a photo changed; its product urls are updated in place.
  */
 import type { Env } from './config';
-import { first, run } from './db';
+import { all, first, run } from './db';
 import { newId } from './util';
+import { demoPhotoUrl } from './media';
 
 /** id, floor_id, type, shape, geometry, label, color, z_index — meta is inlined as '{}' in the SQL. */
 type ElemRow = [string, string, string, string, string, string, string, string, number];
@@ -88,76 +97,6 @@ async function ensureStore(
 }
 
 /* ════════════════ Walmart Example ════════════════ */
-
-/**
- * Real product photos for the demo planogram — bundled SPA assets (served
- * from frontend/public/demo-products by both engines, so the URL works on
- * Express and Workers with no storage setup). Downloaded from Open Food
- * Facts; see frontend/public/demo-products/ATTRIBUTION.md (ODbL).
- * Regenerate with: node backend/scripts/fetch-demo-photos.mjs
- */
-const PHOTO_URLS: Record<string, string> = {
-  'Organic Whole Milk 1L': '/demo-products/organic-whole-milk-1l.jpg',
-  'Oat Drink Barista 1L': '/demo-products/oat-drink-barista-1l.jpg',
-  'Greek Yogurt 500g': '/demo-products/greek-yogurt-500g.jpg',
-  'Mozzarella Ball 125g': '/demo-products/mozzarella-ball-125g.jpg',
-  'Mild Cheddar Block 350g': '/demo-products/mild-cheddar-block-350g.jpg',
-  'Salted Butter 250g': '/demo-products/salted-butter-250g.jpg',
-  'Kefir 1L': '/demo-products/kefir-1l.jpg',
-  'Cream Cheese Tub 300g': '/demo-products/cream-cheese-tub-300g.jpg',
-  'Gouda Slices 200g': '/demo-products/gouda-slices-200g.jpg',
-  'Lactose-Free Milk 1L': '/demo-products/lactose-free-milk-1l.jpg',
-  'Orange Juice 1L': '/demo-products/orange-juice-1l.jpg',
-  'Cola 2L': '/demo-products/cola-2l.jpg',
-  'Ground Coffee 500g': '/demo-products/ground-coffee-500g.jpg',
-  'Espresso Beans 1kg': '/demo-products/espresso-beans-1kg.jpg',
-  'Green Tea 40 Bags': '/demo-products/green-tea-40-bags.jpg',
-  'English Breakfast Tea 80 Bags': '/demo-products/english-breakfast-tea-80-bags.jpg',
-  'Hot Chocolate Mix 400g': '/demo-products/hot-chocolate-mix-400g.jpg',
-  'Cold Brew Coffee 1L': '/demo-products/cold-brew-coffee-1l.jpg',
-  'Almond Milk 1L': '/demo-products/almond-milk-1l.jpg',
-  'Coconut Water 1L': '/demo-products/coconut-water-1l.jpg',
-  'Iced Tea Lemon 1.5L': '/demo-products/iced-tea-lemon-1-5l.jpg',
-  'Lemon-Lime Soda 2L': '/demo-products/lemon-lime-soda-2l.jpg',
-  'Tonic Water 6-pack': '/demo-products/tonic-water-6-pack.jpg',
-  'Energy Drink 4-pack': '/demo-products/energy-drink-4-pack.jpg',
-  'Sea Salt Crisps 150g': '/demo-products/sea-salt-crisps-150g.jpg',
-  'Tortilla Chips 300g': '/demo-products/tortilla-chips-300g.jpg',
-  'Salted Peanuts 200g': '/demo-products/salted-peanuts-200g.jpg',
-  'Mixed Nuts 300g': '/demo-products/mixed-nuts-300g.jpg',
-  'Roasted Cashews 200g': '/demo-products/roasted-cashews-200g.jpg',
-  'Milk Chocolate Bar 100g': '/demo-products/milk-chocolate-bar-100g.jpg',
-  'Dark Chocolate 70% 100g': '/demo-products/dark-chocolate-70-100g.jpg',
-  'Choc Chip Cookies 300g': '/demo-products/choc-chip-cookies-300g.jpg',
-  'Digestive Biscuits 400g': '/demo-products/digestive-biscuits-400g.jpg',
-  'Jaffa Cakes 12-pack': '/demo-products/jaffa-cakes-12-pack.jpg',
-  'Gummy Bears 200g': '/demo-products/gummy-bears-200g.jpg',
-  'Sweet Popcorn 100g': '/demo-products/sweet-popcorn-100g.jpg',
-  'Salted Pretzels 250g': '/demo-products/salted-pretzels-250g.jpg',
-  'Rice Cakes 150g': '/demo-products/rice-cakes-150g.jpg',
-  'Sourdough Loaf': '/demo-products/sourdough-loaf.jpg',
-  'Croissants 4-pack': '/demo-products/croissants-4-pack.jpg',
-  'Bagels 6-pack': '/demo-products/bagels-6-pack.jpg',
-  'Brioche Buns 6-pack': '/demo-products/brioche-buns-6-pack.jpg',
-  'Frozen Pepperoni Pizza': '/demo-products/frozen-pepperoni-pizza.jpg',
-  'Frozen Margherita Pizza': '/demo-products/frozen-margherita-pizza.jpg',
-  'Vanilla Ice Cream 1L': '/demo-products/vanilla-ice-cream-1l.jpg',
-  'Chocolate Ice Cream 1L': '/demo-products/chocolate-ice-cream-1l.jpg',
-  'French Fries 1.5kg': '/demo-products/french-fries-1-5kg.jpg',
-  'Garden Peas 1kg': '/demo-products/garden-peas-1kg.jpg',
-  'Fish Fingers 20-pack': '/demo-products/fish-fingers-20-pack.jpg',
-  'Chicken Nuggets 750g': '/demo-products/chicken-nuggets-750g.jpg',
-  'Washing Up Liquid 500ml': '/demo-products/washing-up-liquid-500ml.jpg',
-  'Hand Soap 500ml': '/demo-products/hand-soap-500ml.jpg',
-  'Antibacterial Spray 750ml': '/demo-products/antibacterial-spray-750ml.jpg',
-  'Bacon Rashers 300g': '/demo-products/bacon-rashers-300g.jpg',
-  'Salmon Fillets 2-pack': '/demo-products/salmon-fillets-2-pack.jpg',
-  'Honey-Roast Ham 200g': '/demo-products/honey-roast-ham-200g.jpg',
-  'Pork Sausages 8-pack': '/demo-products/pork-sausages-8-pack.jpg',
-  'Smoked Salmon 180g': '/demo-products/smoked-salmon-180g.jpg',
-  'Chorizo Ring 250g': '/demo-products/chorizo-ring-250g.jpg',
-};
-
 
 const BRANDS = ['Fresh Farm', 'GreenVale', 'Sun Grove', 'Meadow', 'Olympus', 'Stone Oven', 'Napoli', 'Glacier', 'Nord Haus', 'Terra'];
 
@@ -250,7 +189,7 @@ const WM_GM_CATS: SpecCat[] = [
   { name: 'Pharmacy', color: '#2f9e6b', icon: '💊', items: ['Pain Reliever 500mg 24pc', 'Vitamin C 1000mg 60pc', 'First Aid Kit 60pc', 'Allergy Tablets 30pc', 'Cough Syrup 100ml', 'Bandages 100pc', 'Antacid Chewables 96pc', 'Electrolyte Powder 10-pack'] },
 ];
 
-function walmartSpec(): Spec {
+export function walmartSpec(): Spec {
   const elements: SpecEl[] = [];
 
   // the store outline, traced from the reference plan's black line: the
@@ -500,7 +439,7 @@ const HD_CATS: SpecCat[] = [
   { name: 'Seasonal', color: '#7d9e3a', icon: '🎄', items: ['Fairy Lights 20m', 'Christmas Tree 180cm', 'Halloween Pumpkin Decor', 'Snow Shovel', 'De-Icer Salt 10kg', 'Leaf Blower', 'Gazebo Side Panel', 'Advent Calendar'] },
 ];
 
-function homeDepotSpec(): Spec {
+export function homeDepotSpec(): Spec {
   const elements: SpecEl[] = [];
 
   // the outline: plain rectangle, two entrance gaps on the south edge and the
@@ -598,7 +537,7 @@ function homeDepotSpec(): Spec {
     poolByCat[c.name] = [];
     for (const base of c.items) {
       poolByCat[c.name].push(products.length);
-      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: '' });
+      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: PHOTOS[base] ?? '' });
     }
   }
 
@@ -662,7 +601,7 @@ const CS_CATS: SpecCat[] = [
   { name: 'Ice Cream', color: '#7c3aed', icon: '🍦', items: ['Vanilla Cone', 'Magnum Classic', 'Cornetto Classic', 'Ice Cream Sandwich', 'Solero Exotic', 'Mini Milk 6-pack', 'Lemon Sorbet 500ml', 'Ice Lollies 4-pack'] },
 ];
 
-function cornerStoreSpec(): Spec {
+export function cornerStoreSpec(): Spec {
   const elements: SpecEl[] = [];
 
   // one room, one door at the bottom-left
@@ -726,7 +665,7 @@ function cornerStoreSpec(): Spec {
     poolByCat[c.name] = [];
     for (const base of c.items) {
       poolByCat[c.name].push(products.length);
-      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: '' });
+      products.push({ name: base, category: c.name, brand: BRANDS[products.length % BRANDS.length], image: PHOTOS[base] ?? '' });
     }
   }
 
@@ -800,7 +739,81 @@ interface Spec {
 
 
 
+const skuOf = (spec: Spec, i: number) => `${spec.skuPrefix}-${String(i + 1).padStart(spec.skuPad ?? 3, '0')}`;
+
+/**
+ * Every catalogue item must face somewhere (parity with demo-specs.mjs).
+ * The specs stock each category's items across that category's shelf groups;
+ * anything the grouping left out is added here as a planogram-only facing on
+ * the nearest group — its own department's, else the first shelf. Returns
+ * how many were added (0 for the specs as written).
+ */
+export function stockEverything(spec: Spec): number {
+  const shelves = spec.elements.filter((e) => e.type === 'shelf');
+  const facing = new Set(spec.locations.map((l) => l.product));
+  let added = 0;
+  spec.products.forEach((p, i) => {
+    if (facing.has(i)) return;
+    const shelf = shelves.find((e) => JSON.parse(e.meta ?? '{}').department === p.category) ?? shelves[0];
+    if (!shelf) return;
+    const { x, y, w, h } = shelf.geometry as { x: number; y: number; w: number; h: number };
+    spec.locations.push({ product: i, x: x + w / 2, y: y + h / 2, level: 1, w: 1, pinW: 0.3, groupOnly: 1 });
+    facing.add(i);
+    added++;
+  });
+  return added;
+}
+
+/**
+ * A cheap change signal for a present store's photos: a fingerprint of
+ * every photo url the spec assigns, in catalogue order. A mismatch means the
+ * spec's picks — or the url scheme itself — changed since the store was last
+ * synced. It is kept in app_settings, so the usual cold start costs one tiny
+ * read instead of the whole catalogue.
+ */
+async function photoFingerprint(spec: Spec): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(spec.products.map((p) => p.image ?? '').join('\n')));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+const photoSyncKey = (slug: string) => `seed:photos:${slug}`;
+const markPhotosInSync = (env: Env, spec: Spec, print: string) =>
+  run(
+    env,
+    'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    photoSyncKey(spec.slug),
+    print
+  );
+
+/**
+ * Bring a present store's product photos up to date WITHOUT rebuilding it
+ * (parity with the node seeder's repointPhotos). A photo picked later — or
+ * the move of the whole set from static files into the media table — only
+ * changes an url, so the rows are updated in place and product ids stay put
+ * (deep links keep working). Only urls of the demo's own photo set are ever
+ * replaced: a photo the owner uploaded, or one they removed, is left alone.
+ * The one exception is a store's FIRST sync (none recorded yet): it was
+ * seeded before photos were tracked, so its empty photo fields are filled too.
+ */
+async function repointPhotos(env: Env, spec: Spec, storeId: string, firstSync: boolean): Promise<number> {
+  const rows = await all(env, 'SELECT id, sku, image_url FROM products WHERE store_id = ?', storeId);
+  const bySku = new Map(rows.map((r) => [String(r.sku), r]));
+  const updates: D1PreparedStatement[] = [];
+  spec.products.forEach((p, i) => {
+    const cur = bySku.get(skuOf(spec, i));
+    const image = p.image ?? '';
+    const vacant = firstSync && cur?.image_url === '' && image !== '';
+    if (cur && cur.image_url !== image && (!!demoPhotoUrl(cur.image_url) || vacant)) {
+      updates.push(env.DB.prepare('UPDATE products SET image_url = ? WHERE id = ?').bind(image, cur.id));
+    }
+  });
+  for (const update of chunks(updates, 50)) await env.DB.batch(update);
+  await markPhotosInSync(env, spec, await photoFingerprint(spec));
+  return updates.length;
+}
+
 async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: string): Promise<void> {
+  const stray = stockEverything(spec);
+  if (stray) console.log(`[boot] ${spec.name}: ${stray} catalogue items had no facing — added to a group`);
   const ownerId = await ensureDemoOwner(env, ownerEmail, ownerName, `${spec.slug}-demo`);
   // Capture the floor's size AND owner BEFORE ensureStore syncs the size — a
   // mismatch means the spec grew and the seeded layout is stale, so it gets
@@ -840,7 +853,19 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
     shelves = 0;
     console.log(`[boot] ${spec.name} ${sizeChanged ? 'spec changed' : `stale pins (${locRow?.n} vs ${spec.locations.length})`} — rebuilding layout`);
   }
-  if (shelves > 0) return; // already present — idempotent
+  if (shelves > 0) {
+    // present: keep it, but bring its photos up to date in place. Changed
+    // photos used to trigger the rebuild above — which threw away every
+    // product id (and deep link to them) for the sake of a new url
+    if (demoOwned) {
+      const synced = await first(env, 'SELECT value FROM app_settings WHERE key = ?', photoSyncKey(spec.slug));
+      if (synced?.value !== (await photoFingerprint(spec))) {
+        const n = await repointPhotos(env, spec, storeId, synced?.value === undefined);
+        if (n) console.log(`[boot] ${spec.name}: ${n} product photos updated in place`);
+      }
+    }
+    return; // already present — idempotent
+  }
 
   const elements: ElemRow[] = spec.elements.map((e, z) => [
     newId(), floorId, e.type, e.shape, JSON.stringify(e.geometry), e.label, e.color ?? '', e.meta ?? '{}', z + 1,
@@ -858,8 +883,7 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
     const id = newId();
     const price = p.price ?? Math.round((1.49 + ((i * 61) % 2400) / 100) * 100) / 100;
     prodRows.push([
-      id, storeId, catIds[p.category], p.name, p.brand,
-      `${spec.skuPrefix}-${String(i + 1).padStart(spec.skuPad ?? 3, '0')}`, '', '', price, p.image ?? '',
+      id, storeId, catIds[p.category], p.name, p.brand, skuOf(spec, i), '', '', price, p.image ?? '',
     ]);
     return id;
   });
@@ -881,6 +905,7 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
   await insertAll(env, 'INSERT INTO categories (id, store_id, name, color, icon) VALUES (?, ?, ?, ?, ?)', catRows);
   await insertAll(env, PRODUCT_SQL, prodRows);
   await insertAll(env, LOCATION_SQL, locRows);
+  await markPhotosInSync(env, spec, await photoFingerprint(spec));
   console.log(`[boot] seeded ${spec.name}: ${spec.elements.length} elements, ${spec.products.length} products (${spec.locations.length} pinned)`);
 }
 
@@ -908,10 +933,12 @@ export async function seedDemoMaps(env: Env): Promise<void> {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Demo product photos: scripts/fetch-demo-photos.mjs writes the mapping to
-   demo-photos.json — real Open Food Facts downloads + generated packshot
-   fallbacks, served as bundled SPA assets. Food items look theirs up here;
-   general-merchandise items have none and planogram as diagram tiles.
+   Demo product photos: scripts/fetch-demo-photos.mjs (Open Food Facts) and
+   backend/scripts/fetch-demo-photos-cc.mjs (openly-licensed photos) write
+   the mapping to demo-photos.json — with generated packshot fallbacks. The
+   urls in it (/media/<file>) are stored images: scripts/load-demo-photos.mjs
+   copies the files of backend/demo-products into the `media` table (see
+   media.ts). An item the scripts couldn't source plans as a diagram tile.
    ══════════════════════════════════════════════════════════════════════════ */
 import photoMap from '../../backend/scripts/demo-photos.json';
 

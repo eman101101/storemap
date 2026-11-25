@@ -314,6 +314,24 @@ const MIGRATIONS: { name: string; sql: string; batch?: boolean }[] = [
       ALTER TABLE users ADD COLUMN photo_bytes_quota INTEGER NOT NULL DEFAULT 209715200;
     `,
   },
+  {
+    // Demo product photos live in the database: one row per image with its
+    // bytes (mirror of the Node backend's 012). They used to ship as static
+    // SPA assets; scripts/load-demo-photos.mjs now writes the files of
+    // backend/demo-products in here and products reference them at
+    // /media/<file> (served by media.ts).
+    name: '015-media-table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS media (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        etag TEXT NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
 ];
 
 /**

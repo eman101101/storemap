@@ -16,8 +16,8 @@ const product = (id: string, name: string): Product => ({
   description: '', price: 1.5, image_url: '', image_crop_url: '',
 });
 
-const pin = (id: string, productId: string, x: number, y: number) =>
-  ({ id, product_id: productId, floor_id: 'f1', x, y, rot: 0, meta: '{}' }) as ProductLocation;
+const pin = (id: string, productId: string, x: number, y: number, meta = '{}') =>
+  ({ id, product_id: productId, floor_id: 'f1', x, y, rot: 0, meta }) as ProductLocation;
 
 describe('types helpers', () => {
   it('parses and serialises element geometry losslessly', () => {
@@ -89,7 +89,7 @@ describe('ShelfDetail', () => {
     expect(picked).toBe('p1');
   });
 
-  it('persists the image view: full-bleed cover images, no label strip', () => {
+  it('persists the image view: the whole product stands on its shelf board, no label strip', () => {
     const imageShelf = parseElement({ ...row, meta: JSON.stringify({ bays: 2, levels: 2, planogramView: 'images' }) });
     const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
     const { container } = render(
@@ -101,7 +101,9 @@ describe('ShelfDetail', () => {
     );
     const images = container.querySelectorAll('image');
     expect(images).toHaveLength(1);
-    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMid slice');
+    // never cropped to the tile ("slice" cut bottles down to slivers): the
+    // photo keeps its own proportions and sits on the board, like stock
+    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMax meet');
     // image tiles carry no <text> — details moved to the bottom panel
     expect(container.querySelectorAll('text')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Image' }).getAttribute('aria-pressed')).toBe('true');
@@ -175,7 +177,7 @@ describe('ShelfDetail', () => {
     const images = container.querySelectorAll('image');
     expect(images).toHaveLength(1);
     expect(images[0]!.getAttribute('href')).toBe('data:image/png;base64,abc');
-    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMid slice');
+    expect(images[0]!.getAttribute('preserveAspectRatio')).toBe('xMidYMax meet');
     expect(container.textContent).toContain('Rye Bread');
     // Image is the active view of the toggle pair (the planogram starts on Image)
     expect(screen.getByRole('button', { name: 'Image' }).getAttribute('aria-pressed')).toBe('true');
@@ -213,7 +215,8 @@ describe('ShelfDetail', () => {
     const withPhoto = { ...product('p1', 'Oat Milk'), image_url: 'data:image/png;base64,abc' };
     const pins = [{ location: pin('l1', 'p1', 1, 0.5), product: withPhoto }];
     const { container } = render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
-    const heightAt = () => container.querySelector('svg')!.getAttribute('height');
+    // the drawing's own size lives in its viewBox (CSS scales the whole svg)
+    const heightAt = () => container.querySelector('svg')!.getAttribute('viewBox')!.split(' ')[3];
     const photosH = heightAt();
     fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
     expect(heightAt()).toBe(photosH);
@@ -232,6 +235,103 @@ describe('ShelfDetail', () => {
       <ShelfDetail shelf={shelf} pins={[{ location: pin('l1', 'p1', 1, 0.5), product: cropped }]} onClose={() => {}} />
     );
     expect(container.querySelector('image')!.getAttribute('href')).toBe('data:image/png;base64,crop');
+  });
+
+  /* ── drawing size: a planogram is never squashed ────────────────────────
+     The drawing is laid out at its own size (one scale per metre, rows at a
+     fixed height) and CSS scales the whole svg to fit. A densely stocked
+     row must make the drawing LONGER, not squeeze its facings together. */
+  const viewBoxOf = (container: HTMLElement) =>
+    container.querySelector('svg.planogram-svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+  const facingRects = (container: HTMLElement) =>
+    [...container.querySelectorAll('rect[fill-opacity="0.16"]')].map((r) => ({
+      x: Number(r.getAttribute('x')), w: Number(r.getAttribute('width')),
+    }));
+  const stocked = (n: number) => {
+    const shelf = parseElement({ ...row, meta: JSON.stringify({ planWidth: 2, levels: 4 }) });
+    const pins = Array.from({ length: n }, (_, i) => ({
+      location: pin(`l${i}`, `p${i}`, (i + 0.5) * (5 / n), 0.5, `{"w":${(2 / n).toFixed(3)}}`),
+      product: { ...product(`p${i}`, `Item ${i}`), image_url: 'data:image/png;base64,abc' },
+    }));
+    return render(<ShelfDetail shelf={shelf} pins={pins} onClose={() => {}} />);
+  };
+
+  it('a densely stocked shelf is drawn longer, not squashed (80 items on a 2 m planogram)', () => {
+    const { container } = stocked(80);
+    const [x, y, w, h] = viewBoxOf(container);
+    // 4 rows of 20: each facing keeps a readable width in the drawing itself
+    expect(w).toBeGreaterThanOrEqual(20 * 56);
+    // rows keep their fixed height — the drawing is wide, not a tall sliver
+    expect(h).toBe(4 * 112 + 20);
+    // and it tells CSS its own size, so scaling is the same factor both ways
+    expect(container.querySelector('svg')!.style.getPropertyValue('--planogram-w')).toBe(`${w}px`);
+  });
+
+  it('facings in the fullest row never overlap', () => {
+    const { container } = stocked(40);
+    const row = facingRects(container).filter((r) => r.x >= 0);
+    // group by row (same y) and check each row left-to-right
+    const byY = new Map<number, number[]>();
+    for (const r of [...container.querySelectorAll('rect[fill-opacity="0.16"]')]) {
+      const y = Number(r.getAttribute('y'));
+      byY.set(y, [...(byY.get(y) ?? []), Number(r.getAttribute('x')) + Number(r.getAttribute('width'))]);
+    }
+    for (const ends of byY.values()) {
+      const starts = [...container.querySelectorAll('rect[fill-opacity="0.16"]')]
+        .filter((r) => byY.has(Number(r.getAttribute('y'))))
+        .map((r) => Number(r.getAttribute('x')));
+      ends.forEach((end, i) => {
+        for (const start of starts) if (start > ends[i] - 0.001 && start < end - 0.5) throw new Error(`facings overlap at x=${start}`);
+      });
+    }
+    expect(row.length).toBeGreaterThan(0);
+  });
+
+  it('three facings on a short shelf still get the readable tile width', () => {
+    const { container } = stocked(3);
+    const [x, y, w] = viewBoxOf(container);
+    // one row of three on 2 m: 46 px/m would give 30 px tiles, so the scale
+    // rises to fit three 56 px tiles
+    expect(w).toBe(3 * 56 + 20);
+  });
+
+  it('long tile labels wrap onto two lines instead of being cut to a stub', () => {
+    const shelf = parseElement({ ...row, meta: JSON.stringify({ planWidth: 2 }) });
+    const long = { ...product('p1', 'Organic Whole Milk 1L Family Pack') };
+    const { container } = render(<ShelfDetail shelf={shelf} pins={[{ location: pin('l1', 'p1', 1, 0.5), product: long }]} onClose={() => {}} />);
+    const lines = [...container.querySelectorAll('svg tspan')].map((t) => t.textContent ?? '');
+    expect(lines.length).toBe(2);
+    expect(lines.join(' ')).toContain('Organic Whole');
+  });
+
+  it('fits its dialog to the drawing: a small shelf gets a snug dialog', () => {
+    const shelf = parseElement(row);
+    render(<ShelfDetail shelf={shelf} pins={[]} onClose={() => {}} />);
+    // 2 m planogram × 46 px/m + frame = 112 px, grown up to 1.9×, plus the dialog's padding
+    expect(screen.getByRole('dialog').style.maxWidth).toBe('281px');
+  });
+
+  it('"outside" means within reach of the shelf — not the rest of the store', () => {
+    const shelf = parseElement(row); // 5 m × 1 m at the origin
+    const near = pin('near', 'p1', 5.8, 0.5); // just past the right-hand end
+    const far = pin('far', 'p2', 30, 20); // somewhere else entirely
+    const { container, unmount } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[
+          { location: near, product: product('p1', 'Near Item') },
+          { location: far, product: product('p2', 'Far Item') },
+        ]}
+        onClose={() => {}}
+      />
+    );
+    expect(container.textContent).toContain('1 pinned product just outside this shelf');
+    expect(container.textContent).not.toContain('2 pinned products');
+    unmount();
+    const { container: alone } = render(
+      <ShelfDetail shelf={shelf} pins={[{ location: far, product: product('p2', 'Far Item') }]} onClose={() => {}} />
+    );
+    expect(alone.textContent).not.toContain('just outside');
   });
 
   it('editor: the Row height slider persists via onRowHeightChange', () => {

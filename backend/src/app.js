@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { migrate, db } from './db.js';
 import { attachUser } from './auth/session.js';
 import { sendImage } from './lib/storage.js';
+import { sendMedia } from './lib/media.js';
 import { sendJson } from './lib/http.js';
 import authRoutes from './routes/auth.js';
 import storeRoutes from './routes/stores.js';
@@ -103,12 +104,21 @@ app.use('/api', memberRoutes); // members + invitations (organizes /api/stores/:
     }
   });
 
+  // ---- Demo product photos (kept in the database — see lib/media.js) ----
+  app.get(/^\/media\/((?:gen\/)?[a-z0-9-]+\.(?:jpe?g|png|webp|svg))$/, (req, res) => {
+    if (sendMedia(req, res, req.params[0])) return;
+    res.status(404).end();
+  });
+
   // ---- Built SPA ----
   const distIndex = path.join(config.frontendDist, 'index.html');
   if (fs.existsSync(config.frontendDist)) {
     app.use(express.static(config.frontendDist, { maxAge: '1h', index: false }));
     app.use((req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+      // (/media too: an unknown image must 404, not answer with the SPA shell)
+      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/media')) {
+        return next();
+      }
       // Shopper links (/s/:slug) get real social-share metadata: QR scans and
       // shared links preview the store name/logo instead of the generic SPA tag.
       const slugMatch = req.path.match(/^\/s\/([A-Za-z0-9_-]{1,120})$/);

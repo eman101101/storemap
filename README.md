@@ -34,7 +34,8 @@ with **Google** or **Apple**.
   stocked against: on the shelf outline in 2D, on the shelf wall in 3D.
 - **3D fly-through on demand** — selecting a product draws the walking route
   (A* on a 0.25 m nav grid built from the floor's shelves and walls, with a 0.3 m
-  shopper clearance) straight away and resets the camera to the store's original
+  shopper clearance, kept exactly on every segment — the route ends in the aisle
+  in front of the shelf, never on it) straight away and resets the camera to the store's original
   angle; one tap on the **✈ Fly the route** button in the top bar sends the camera
   on an overhead drone flight down the path to the item, holding one constant
   angle from takeoff to arrival. Skip button included; touching the map takes
@@ -46,8 +47,9 @@ with **Google** or **Apple**.
   renders correctly instead of vanishing). Shelves look stocked: every pinned
   product draws a colored facing block on its shelf face. No WebGL, no three.js,
   a few KB of code, smooth on low-end devices.
-- **Themes** — light/dark/system appearance for the whole app via the ◐ settings
-  popover, saved per device. Dark mode restyles the whole UI **and the 3D map**
+- **Themes** — light/dark/system appearance for the whole app via the
+  **Account** menu in the top bar (which also holds sign-in, FAQ and Settings),
+  saved per device. Dark mode restyles the whole UI **and the 3D map**
   (dim fixtures, dark backdrop, light labels).
 - Multi-floor support, entrance/exit markers, tap a shelf (2D) to see its layout
 - Aisle labels on the map (2D and 3D); hover an aisle's `≡` symbol for what's
@@ -126,21 +128,37 @@ Without OAuth credentials configured, the login page offers a **local demo login
 immediately — including a one-click **"Open the demo maps"** button that signs you
 straight into the seeded demo stores, no form needed.
 
-To fill the bundled demo store with a realistic layout — a 54×36 m supermarket with
-stocked wall shelving around the border, double-sided gondola pairs facing each other
-across aisles, a checkout area by the entrance, and **150 products** pinned to the
-shelf faces:
+The three homepage example stores — **Walmart Example** (`/s/walmart-example`,
+a 96×62 m big-box plan), **Home Depot Example** (`/s/home-depot-example`) and
+**Corner Store Example** (`/s/convenience-store-example`). A self-hosted
+instance seeds them on first boot; by hand:
 
 ```bash
-cd backend && node scripts/seed-demo.mjs            # idempotent
-node scripts/seed-demo.mjs --reset                  # rebuild from scratch
+cd backend && node scripts/seed-demo.mjs                  # idempotent
+node scripts/seed-demo.mjs --reset-home-depot-example     # rebuild just one
 ```
 
-The same script also seeds **Annex Market** (`/s/annex-market`) — a
-complex-shape example: an L-shaped hall with a loading-dock notch and an
-attached backstock warehouse traced with polyline walls, labeled aisles in
-both the hall and the warehouse, and 42 pinned products. Use
-`--reset-annex` to rebuild just that one.
+Every shelf in them is one titled item group — a single map pin, with the items
+living inside its planogram — and every catalogue item faces on a shelf (an item
+with no facing would list as "out of stock" in a search). Every item carries a
+photo, looked up from `scripts/demo-photos.json`:
+
+```bash
+node scripts/fetch-demo-photos.mjs        # grocery items — Open Food Facts
+node scripts/fetch-demo-photos-cc.mjs     # everything else — openly-licensed photos
+```
+
+Both are resumable and rate-limit aware (the sources allow a few hundred look-ups
+a day), so running one again on a later day upgrades the items still showing a
+generated packshot.
+
+**The photos live in the database, not in the frontend.** The files sit in
+`backend/demo-products/` (photo credits: the `ATTRIBUTION*.md` files there); the
+seeder copies them into the `media` table and products reference them at
+`/media/<file>`. A present store is updated in place when its photos change —
+it is never rebuilt for a photo — so product ids stay stable. The Cloudflare
+Worker can't bundle the set, so load it into its database by hand:
+`cd worker && npm run photos` for `wrangler dev`, `-- --remote` for a deployment.
 
 ## Tests
 
@@ -150,21 +168,34 @@ A full test suite guards the mapping functionality so it won't break:
 
 ```bash
 cd backend
-npm test               # 39 tests: API integration (auth, ownership, CRUD, search, uploads)
+npm test               # 67 tests: API integration (auth, ownership, CRUD, search, uploads)
                        # + stock tracking, API keys & the v1 API, adapter normalisation,
-                       # CSV parser/round-trips, element validation units
+                       # CSV parser/round-trips, element validation units,
+                       # the example maps (every item stocked, photos in the database,
+                       # in-place upgrades) and the /media route
 npm run smoke          # boots the real server and walks the whole user journey
+```
+
+**Worker** (Vitest, the Cloudflare port):
+
+```bash
+cd worker
+npm run typecheck     # tsc over the Worker
+npm test              # 48 tests: crypto, sessions, validation, CSV …, the stored
+                       # photos, the example specs — and that they describe the
+                       # same maps as backend/scripts/demo-specs.mjs
 ```
 
 **Frontend** (Vitest + Testing Library, jsdom):
 
 ```bash
 cd frontend
-npm test               # 46 tests: coordinate transforms, hit-testing, resize/translate,
+npm test               # 222 tests: coordinate transforms, hit-testing, resize/translate,
                        # shelf planogram computation, element parse/serialise,
                        # ShelfDetail component (bays, levels, facings, interactions),
-                       # wayfinding (nav grid, A* around shelves, unreachable goals),
-                       # 3D projection, box/route mesh building
+                       # wayfinding (nav grid, A* around shelves, unreachable goals,
+                       # routes ending in the aisle at the full clearance, trips),
+                       # 3D projection, box/route mesh building, the Account menu
 ```
 
 The mapping core is covered on both sides: element validation (`test/validate.test.mjs`)
@@ -287,8 +318,11 @@ backend/            Express API + auth + SQLite (zero native deps)
   src/app.js        app factory  ·  src/index.js  bootstrap
   src/auth/         sessions, Google & Apple OIDC
   src/routes/       stores, floors/elements, catalog, public, uploads
+  src/lib/media.js  the example maps' product photos, kept in the `media` table
+  demo-products/    those photo files (copied into the database by the seeder)
   test/             API integration tests + smoke test
-  scripts/          seed-demo.mjs — fills the demo store with a full layout
+  scripts/          demo-specs.mjs — the three example stores as specs
+                    seed-demo.mjs — seeds them (layout, stock, photos)
 frontend/           React + TypeScript + Vite SPA
   src/components/   MapCanvas (SVG engine), Map3D (canvas 3D engine),
                     EditorPage, ViewerPage, Dashboard…
@@ -316,6 +350,7 @@ docs/IMPROVEMENTS.md  the prioritized improvement backlog — review of every pa
 | Catalog | `POST /api/stores/:id/{categories,products}` · `PATCH/DELETE /api/{categories,products}/:id` · `POST /api/products/:id/locations` · `DELETE /api/locations/:id` |
 | Public | `GET /api/public/stores?q=` · `GET /api/public/stores/:slug` · `GET /api/public/stores/:slug/search?q=` |
 | Media | `POST /api/uploads` (raw image bytes) · served at `/uploads/*` |
+| Demo photos | `GET /media/<file>` — the example maps' product photos, kept in the database |
 | Stock (owner) | `GET /api/stores/:id/stock` · `POST /api/stores/:id/stock/{adjust,set}` · `GET/POST /api/stores/:id/keys` · `DELETE /api/stores/keys/:keyId` |
 | CSV (owner) | `POST /api/stores/:id/integrations/csv` · `GET /api/stores/:id/catalog.csv` |
 | Product images (owner) | `POST /api/products/:id/image` (raw bytes; paid plan or local mode) · `DELETE /api/products/:id/image` |

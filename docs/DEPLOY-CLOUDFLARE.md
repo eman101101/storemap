@@ -114,10 +114,18 @@ and `ACCESS_AUD` = the app's AUD tag. Full walkthrough in
 
 ## 6 · Verify the deployment
 
+The example maps' product photos are stored in the database, and a Worker can't
+bundle them — load them once (per database):
+
+```bash
+cd worker && npm run photos -- --remote      # needs `wrangler login`
+```
+
 ```bash
 curl https://<your-host>/api/health           # {"ok":true,...}
-curl -sI https://<your-host>/api/public/stores/freshmart-downtown | grep -i x-cache
+curl -sI https://<your-host>/api/public/stores/home-depot-example | grep -i x-cache
 # 1st request: x-cache: MISS · repeat: x-cache: HIT (edge cache working)
+curl -sI https://<your-host>/media/osb-sheet-11mm.jpg | head -1   # HTTP/2 200
 ```
 
 In the browser: **View live** on a hero example → search "milk" → the route

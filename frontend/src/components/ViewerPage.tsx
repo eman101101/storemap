@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import MapCanvas from './MapCanvas';
 import { shelfContaining } from '../lib/departments';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
+import SearchBox, { searchHits } from './SearchBox';
 import { BlockText } from './GridHero';
 import { CameraPad, CameraToggle, ZoomPad } from './ui';
 import type {
   Floor, MapElement, Product, ProductLocation, PublicStorePayload,
 } from '../types';
-import { parseElement, groupDisplayName, locationFlags } from '../types';
+import { parseElement, locationFlags } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
 import { shelfDirectory } from '../lib/aisleInfo';
 import { pinInShelf } from '../lib/shelfLayout';
+import { buildGroupPins } from '../lib/itemGroups';
 import { formatStoreHours } from '../lib/storeHours';
+import { getViewPref, setViewPref } from '../lib/prefs';
 import { fitCamera, MODERN_THEME, DARK_THEME, DIST_MIN, DIST_MAX, type Camera3D } from '../lib/render3d';
 import { useAuth } from '../App';
 import { useTheme } from '../theme';
@@ -32,15 +35,20 @@ interface FloorRoute {
   distanceM: number;
 }
 
-export default function ViewerPage() {
+/** Editor preview: the shopper view fed from the editor's live map instead
+ *  of a published store — what the owner sees is exactly what shoppers get. */
+export interface ViewerPreview {
+  payload: PublicStorePayload;
+  onExit: () => void;
+}
+
+export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const { slug } = useParams<{ slug: string }>();
   const [params] = useSearchParams();
-  const [data, setData] = useState<PublicStorePayload | null>(null);
+  const [data, setData] = useState<PublicStorePayload | null>(preview?.payload ?? null);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(-1);
-  const searchRef = useRef<HTMLDivElement>(null);
   const [activeFloorId, setActiveFloorId] = useState('');
   const [focusPinLocationId, setFocusPinLocationId] = useState<string | null>(null);
   // the ITEM facing to ring inside the planogram (the map focus lands on the
@@ -50,19 +58,16 @@ export default function ViewerPage() {
   /** the deferred 2D zoom-to-pin from focusResult — cleared on unmount */
   const focusTimer = useRef<number>(0);
   const [viewport, setViewport] = useState<Viewport>({ scale: 15, tx: 0, ty: 0 });
-  const [elements, setElements] = useState<MapElement[]>([]);
+  const [elements, setElements] = useState<MapElement[]>(() => preview?.payload.elements.map(parseElement) ?? []);
   const [shelfPopupId, setShelfPopupId] = useState<string | null>(null);
-  // search-result photos: off by default — the 🖼 chip turns them on
-  const [showResultImages, setShowResultImages] = useState(false);
+  // search-result photos, on by default — the 🖼 chip turns them off. Every
+  // demo item carries a photo (or a generated packshot), so the results read
+  // as a shelf of products rather than a list of dots
+  const [showResultImages, setShowResultImages] = useState(true);
   // the 3D camera pad starts hidden behind the struck-through camera toggle
   const [camPadOpen, setCamPadOpen] = useState(false);
-  const [view3d, setView3d] = useState(() => {
-    try {
-      return localStorage.getItem('storemap.view') !== '2d'; // default 3D
-    } catch {
-      return true;
-    }
-  }); // the store opens in 3D
+  // the store opens in 3D unless this device chose 2D (Account → Settings)
+  const [view3d, setView3d] = useState(() => getViewPref() === '3d');
   const [route, setRoute] = useState<FloorRoute | null>(null);
   const [flySeq, setFlySeq] = useState(0);
   // multi-stop trip (IMPROVEMENTS A1): ordered stops + routed legs
@@ -86,6 +91,10 @@ export default function ViewerPage() {
 
   /** One tap from the shopper view into the owner's editor (login first if needed). */
   const goEdit = () => {
+    if (preview) {
+      preview.onExit();
+      return;
+    }
     if (!data) return;
     // the example maps belong to the demo account nobody can log into — send
     // their "Edit map" to the no-account sandbox copy instead of a dashboard
@@ -100,17 +109,16 @@ export default function ViewerPage() {
 
   const switchView = (v: boolean) => {
     setView3d(v);
-    try {
-      localStorage.setItem('storemap.view', v ? '3d' : '2d');
-    } catch { /* private mode */ }
+    setViewPref(v ? '3d' : '2d');
   };
 
   useEffect(() => {
+    if (preview) return; // the editor keeps its own title
     if (data?.store.name) document.title = `${data.store.name} · StoreMap`;
     return () => {
       document.title = 'StoreMap — Find products in-store';
     };
-  }, [data?.store.name]);
+  }, [data?.store.name, preview]);
 
   // A6: /s/:slug?p=<productId> deep-links straight to an item's route
   const deepLinked = useRef(false);
@@ -173,7 +181,15 @@ export default function ViewerPage() {
 
   useEffect(() => () => window.clearTimeout(focusTimer.current), []);
 
+  const previewPayload = preview?.payload;
   useEffect(() => {
+    if (previewPayload) {
+      // the editor's live map; keep the floor the shopper is on when it still exists
+      setData(previewPayload);
+      setElements(previewPayload.elements.map(parseElement));
+      setActiveFloorId((id) => (previewPayload.floors.some((f) => f.id === id) ? id : previewPayload.floors[0]?.id ?? ''));
+      return;
+    }
     if (!slug) return;
     api.publicStore(slug)
       .then((d) => {
@@ -182,21 +198,19 @@ export default function ViewerPage() {
         setActiveFloorId(d.floors[0]?.id ?? '');
       })
       .catch((e) => setError(e.message || 'Store not found'));
-  }, [slug]);
-
-  // close the results dropdown when clicking anywhere else
-  useEffect(() => {
-    if (!searchOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false);
-    };
-    window.addEventListener('pointerdown', onDown);
-    return () => window.removeEventListener('pointerdown', onDown);
-  }, [searchOpen]);
+  }, [slug, previewPayload]);
 
   const floor: Floor | null = useMemo(
     () => data?.floors.find((f) => f.id === activeFloorId) ?? data?.floors[0] ?? null,
     [data, activeFloorId]
+  );
+
+  // Every shelf group shows ONE map pin; its items are planogram-only
+  // facings. Searches hit items, so each hit resolves to its group's pin
+  // here — what the map can light up and route to.
+  const groupPins = useMemo(
+    () => buildGroupPins(data?.locations ?? [], elements.filter((e) => e.type === 'shelf' && e.shape === 'rect')),
+    [data, elements]
   );
 
   // The shelf a group pin belongs to: the persisted meta.shelfId wins; seeded
@@ -211,13 +225,8 @@ export default function ViewerPage() {
 
   const search = q.trim().toLowerCase();
   const hasSearch = search.length > 0;
-  const matching = useMemo(() => {
-    if (!data) return [];
-    return data.products.filter((p) =>
-      `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(search)
-    );
-  }, [data, search]);
-
+  const hits = useMemo(() => (data ? searchHits(data, search, groupPins) : []), [data, search, groupPins]);
+  const matching = useMemo(() => hits.map((h) => h.product), [hits]);
   const productIds = useMemo(() => new Set(matching.map((p) => p.id)), [matching]);
   // pre-search browsing: every product in the category picked from the directory
   const catProductIds = useMemo(() => {
@@ -244,26 +253,26 @@ export default function ViewerPage() {
             ? new Set(tripIds)
             : null;
     if (!wanted) return [];
-    // a match shows up as its GROUP's pin: the groupPin facing of each shelf
-    // stocking it — item facings never draw as pins. Legacy shelves without a
-    // group pin fall back to their plain facings (old maps keep working); a
-    // pin-less all-groupOnly product stays hidden (it lives inside the group
-    // planogram) until it is focused directly.
+    // a match shows up as its GROUP's pin — the titled pin of every group
+    // stocking it, never the item's own facing (items live inside the group
+    // planogram). A legacy shelf without a group pin falls back to its plain
+    // facings; an item whose facing resolves to no pin at all stays hidden.
     const floorLocs = data.locations.filter((l) => l.floor_id === floor.id);
     const out: Pin[] = [];
     for (const productId of wanted) {
-      const facings = floorLocs.filter((l) => l.product_id === productId);
-      const groupPins = facings.filter((l) => locationFlags(l).groupPin);
-      const plain = facings.filter((l) => {
-        const f = locationFlags(l);
-        return !f.groupOnly && !f.groupPin;
-      });
       const product = data.products.find((p) => p.id === productId);
       if (!product) continue;
-      for (const l of groupPins.length ? groupPins : plain) out.push({ location: l, product });
+      const seen = new Set<string>();
+      for (const facing of floorLocs) {
+        if (facing.product_id !== productId) continue;
+        const pin = groupPins.of(facing);
+        if (seen.has(pin.id) || locationFlags(pin).groupOnly) continue;
+        seen.add(pin.id);
+        out.push({ location: pin, product });
+      }
     }
     return out;
-  }, [data, floor?.id, productIds, catProductIds, hasSearch, focusedProductId, trip]);
+  }, [data, floor?.id, productIds, catProductIds, hasSearch, focusedProductId, trip, groupPins]);
 
   // All pins on the current floor (unfiltered) — used to draw the shelf layout.
   const floorPins: Pin[] = useMemo(() => {
@@ -379,41 +388,22 @@ export default function ViewerPage() {
     const ref = camTarget ?? (mrect && viewport.scale
       ? { x: (mrect.width / 2 - viewport.tx) / viewport.scale, y: (mrect.height / 2 - viewport.ty) / viewport.scale }
       : null);
-    let loc = (ref
-      ? facings.reduce<ProductLocation | null>(
-          (best, l) =>
-            !best || Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best,
-          null
+    // the planogram rings the item's own facing — the map focus below lands
+    // on the item's GROUP pin, the highlight stays on the searched item
+    const own = ref
+      ? facings.reduce<ProductLocation>(
+          (best, l) => (!best || Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best),
+          facings[0]
         )
-      : facings[0]) ?? facings[0];
-    // the planogram rings the item's own facing — the map focus below may
-    // hop to the group's pin, the highlight stays on the searched item
-    setHighlightFacingId(loc?.id ?? null);
-    // a planogram-only facing (groupOnly) has no map pin — head to its
-    // group's pin instead (the closest non-groupOnly facing in that shelf)
-    let gm: Record<string, unknown> = {};
-    try { gm = JSON.parse(loc.meta || '{}'); } catch { /* no meta */ }
-    if (gm.groupOnly) {
-      const floorEls = elements.filter((e) => e.floor_id === loc.floor_id);
-      const shelfId = shelfContaining(loc.x, loc.y, floorEls);
-      const inShelf = facings.filter((l) => {
-        if (l.id === loc.id) return false;
-        let mm: Record<string, unknown> = {};
-        try { mm = JSON.parse(l.meta || '{}'); } catch { return false; }
-        if (mm.groupOnly) return false;
-        return shelfContaining(l.x, l.y, floorEls) === shelfId;
-      });
-      if (inShelf.length) {
-        loc = ref
-          ? inShelf.reduce((best, l) => (Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best))
-          : inShelf[0];
-      }
-    }
+      : facings[0];
+    setHighlightFacingId(own?.id ?? null);
+    // a planogram-only facing has no map pin — head to its group's pin
+    const loc = own ? groupPins.of(own) : undefined;
     setQ('');
     setSearchOpen(false);
     setSheetProduct(product);
     setBrowseCat(null); // searching takes over from category browsing
-    if (!loc) return;
+    if (!loc || locationFlags(loc).groupOnly) return;
     const locFloor = data.floors.find((f) => f.id === loc.floor_id) ?? floor;
     if (!locFloor) return;
     const switching = floor ? loc.floor_id !== floor.id : true;
@@ -428,7 +418,11 @@ export default function ViewerPage() {
     setCam3d(fitCamera(locFloor));
 
     // walking route from the entrance to this product, on the product's floor
-    const r = computeRoute(locFloor, elements.filter((e) => e.floor_id === loc.floor_id), { x: loc.x, y: loc.y }, {}, navGrid ?? undefined);
+    // (the cached grid belongs to the floor on screen — reuse it for that one only)
+    const sameFloor = floor?.id === loc.floor_id;
+    const r = computeRoute(
+      locFloor, elements.filter((e) => e.floor_id === loc.floor_id), { x: loc.x, y: loc.y }, {}, sameFloor ? navGrid ?? undefined : undefined
+    );
     setRoute(r ? { floorId: loc.floor_id, points: r.points, distanceM: r.distanceM } : null);
   };
 
@@ -462,8 +456,10 @@ export default function ViewerPage() {
 
   /** Add the selected item as the next trip stop (A1). */
   const addToTrip = (product: Product) => {
-    const loc = data?.locations.find((l) => l.product_id === product.id);
-    if (!loc) return;
+    const facing = data?.locations.find((l) => l.product_id === product.id);
+    if (!facing) return;
+    // the trip stops at the item's GROUP pin — the same spot a search routes to
+    const loc = groupPins.of(facing);
     setTrip((t) => (t.some((x) => x.product.id === product.id) ? t : [...t, { product, loc }]));
     setSheetProduct(null);
   };
@@ -494,7 +490,7 @@ export default function ViewerPage() {
 
 
 
-  const results = matching.slice(0, 40);
+  const results = hits.slice(0, 40);
 
   return (
     <div className="viewer-full">
@@ -583,125 +579,21 @@ export default function ViewerPage() {
               ✈ Fly the route
             </button>
           )}
-          <button className="edit-btn" onClick={goEdit} title="Open this map in the editor">
-            ✎ Edit map
+          <button className="edit-btn" onClick={goEdit} title={preview ? 'Leave the shopper preview' : 'Open this map in the editor'}>
+            {preview ? '◀ Back to editor' : '✎ Edit map'}
           </button>
-          <div className="search-float" ref={searchRef}>
-            <span className="icon">🔎</span>
-            <input
-              className="input"
-              placeholder="Search an item… e.g. milk"
-              value={q}
-              onChange={(e) => { setQ(e.target.value); setSearchOpen(true); setActiveIdx(-1); setBrowseCat(null); }}
-              onFocus={() => setSearchOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setQ('');
-                  setSearchOpen(false);
-                  setActiveIdx(-1);
-                } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                  if (!results.length) return;
-                  e.preventDefault();
-                  const dir = e.key === 'ArrowDown' ? 1 : -1;
-                  setActiveIdx((i) => (i + dir + results.length) % results.length);
-                } else if (e.key === 'Enter') {
-                  const pick = results[activeIdx] ?? results[0];
-                  if (pick) focusResult(pick);
-                }
-              }}
-              aria-label="Search an item"
-            />
-            <button
-              className={`search-img-toggle ${showResultImages ? 'active' : ''}`}
-              aria-pressed={showResultImages}
-              title={showResultImages ? 'Hide result photos' : 'Show result photos'}
-              aria-label="Toggle result photos"
-              onClick={() => setShowResultImages((v) => !v)}
-            >
-              🖼
-            </button>
-            {q && (
-              <button className="search-clear" onClick={() => { setQ(''); setSearchOpen(false); }} aria-label="Clear search">
-                ✕
-              </button>
-            )}
-            {searchOpen && (
-              <div className="results-drop" role="listbox">
-                {results.length === 0 ? (
-                  <div className="no-results">{search ? `Nothing found for “${q.trim()}”.` : 'Start typing to find an item.'}</div>
-                ) : (
-                  results.map((p, idx) => {
-                    // a map pin = the item's non-groupOnly facing; pin-less
-                    // items name the GROUP they sit in, and items in no group
-                    // at all list as out of stock
-                    const locs = data.locations.filter((l) => l.product_id === p.id);
-                    const loc = locs.find((l) => !locationFlags(l).groupOnly) ?? null;
-                    const groupLabel = loc
-                      ? null
-                      : (() => {
-                          const floorEls = elements.filter((e) => e.type === 'shelf' && e.shape === 'rect');
-                          for (const l of locs) {
-                            let shelfId: string | null = null;
-                            try { shelfId = JSON.parse(l.meta || '{}').shelfId ?? null; } catch { /* no meta */ }
-                            const el = typeof shelfId === 'string' ? floorEls.find((e) => e.id === shelfId) : undefined;
-                            const name = groupDisplayName(el);
-                            if (name) return name;
-                          }
-                          for (const l of locs) {
-                            const shelfId = shelfContaining(l.x, l.y, floorEls);
-                            const el = shelfId ? floorEls.find((e) => e.id === shelfId) : undefined;
-                            const name = groupDisplayName(el);
-                            if (name) return name;
-                          }
-                          return null;
-                        })();
-                    const active = idx === activeIdx;
-                    const rowClass = `result-item ${active ? 'kbd-active' : ''} ${loc && loc.id === focusPinLocationId ? 'selected' : ''}`;
-                    const name = highlight(p.name, search);
-                    return loc || groupLabel ? (
-                      <button
-                        key={p.id}
-                        role="option"
-                        aria-selected={active}
-                        className={rowClass}
-                        ref={active ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
-                        onPointerEnter={() => setActiveIdx(idx)}
-                        onClick={() => focusResult(p)}
-                      >
-                        {p.image_url && showResultImages ? (
-                          <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
-                        ) : (
-                          <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />
-                        )}
-                        <span className="rname">
-                          <b>{name}</b>
-                          <span>
-                            {loc
-                              ? [p.brand, p.price != null ? `$${p.price.toFixed(2)}` : '', floorName(data.floors, loc.floor_id)]
-                                .filter(Boolean)
-                                .join(' · ')
-                              : [p.brand, `in ${groupLabel}`].filter(Boolean).join(' · ')}
-                          </span>
-                        </span>
-                        <span className="rgo" aria-hidden>🧭</span>
-                      </button>
-                    ) : (
-                      <div key={p.id} className={`result-item noloc ${active ? 'kbd-active' : ''}`}>
-                        {p.image_url && showResultImages && (
-                          <span className="rimg"><img src={p.image_url} alt="" loading="lazy" /></span>
-                        )}
-                        <span className="rname">
-                          <b>{name}</b>
-                          <span>{[p.brand, 'out of stock'].filter(Boolean).join(' · ')}</span>
-                        </span>
-                        {!p.image_url && <span className="dot" style={{ background: p.category_color || '#2f6f3e' }} />}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
+          <SearchBox
+            value={q}
+            onChange={(v) => { setQ(v); setBrowseCat(null); }}
+            hits={results}
+            onPick={(hit) => focusResult(hit.product)}
+            open={searchOpen}
+            setOpen={setSearchOpen}
+            placeholder="Search an item… e.g. milk"
+            images={showResultImages}
+            onToggleImages={() => setShowResultImages((v) => !v)}
+            focusedId={focusPinLocationId}
+          />
           <div className="view-toggle" aria-label="Map view mode">
             <button className={!view3d ? 'active' : ''} aria-pressed={!view3d} onClick={() => switchView(false)}>
               2D
@@ -797,18 +689,18 @@ export default function ViewerPage() {
           </div>
         )}
 
-        {offline && (
+        {offline && !preview && (
           <div className="offline-banner">⚡ Offline — showing the saved map. Search and routes still work.</div>
         )}
 
         {/* live text for screen readers (A3/G1) */}
         <div aria-live="polite" className="sr-only">{liveMessage}</div>
 
-        {/* A4: selected-item sheet */}
+        {/* A4: selected-item sheet — photo · name · close, then the actions */}
         {sheetProduct && (
           <div className="product-sheet card">
-            {sheetProduct.image_url
-              ? <img src={sheetProduct.image_url} alt="" width={40} height={40} style={{ borderRadius: 8, objectFit: 'cover' }} />
+            {sheetProduct.image_url || sheetProduct.image_crop_url
+              ? <img src={sheetProduct.image_crop_url || sheetProduct.image_url} alt="" width={40} height={40} style={{ borderRadius: 8, objectFit: 'contain', background: 'var(--chip)' }} />
               : <span className="dot" style={{ background: sheetProduct.category_color || '#2f6f3e' }} />}
             <div className="sheet-info">
               <b>{sheetProduct.name}</b>
@@ -818,20 +710,22 @@ export default function ViewerPage() {
                   .join(' · ')}
               </span>
             </div>
-            <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
-              ＋ Add to list
-            </button>
-            {shelfOfSheet && (
-              <button
-                className="btn sm"
-                title="See this shelf's full planogram"
-                onClick={() => setShelfPopupId(shelfOfSheet.id)}
-              >
-                ▦ View shelf
-              </button>
-            )}
-            {FLY_ENABLED && <button className="fly-btn" onClick={startFlight}>✈ Fly</button>}
             <button className="route-badge-x" onClick={() => setSheetProduct(null)} aria-label="Close">✕</button>
+            <div className="sheet-actions">
+              <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
+                ＋ Add to list
+              </button>
+              {shelfOfSheet && (
+                <button
+                  className="btn sm"
+                  title="See this shelf's full planogram"
+                  onClick={() => setShelfPopupId(shelfOfSheet.id)}
+                >
+                  ▦ View shelf
+                </button>
+              )}
+              {FLY_ENABLED && <button className="fly-btn" onClick={startFlight}>✈ Fly</button>}
+            </div>
           </div>
         )}
 
@@ -878,10 +772,12 @@ export default function ViewerPage() {
           </div>
         )}
 
-        <Link to="/" className="powered-by" aria-label="item.place — home">
-          <span className="powered-mark" aria-hidden>▦</span>
-          <BlockText text="item.place" cell={1.7} />
-        </Link>
+        {!preview && (
+          <Link to="/" className="powered-by" aria-label="item.place — home">
+            <span className="powered-mark" aria-hidden>▦</span>
+            <BlockText text="item.place" cell={1.7} />
+          </Link>
+        )}
 
         {selectedShelf && (
           <ShelfDetail
@@ -898,23 +794,5 @@ export default function ViewerPage() {
         )}
       </div>
     </div>
-  );
-}
-
-function floorName(floors: Floor[], id: string): string {
-  return floors.find((f) => f.id === id)?.name ?? '';
-}
-
-/** Wrap the first case-insensitive match of `q` in <mark> for dropdown display. */
-function highlight(text: string, q: string): ReactNode {
-  if (!q) return text;
-  const at = text.toLowerCase().indexOf(q.toLowerCase());
-  if (at < 0) return text;
-  return (
-    <>
-      {text.slice(0, at)}
-      <mark>{text.slice(at, at + q.length)}</mark>
-      {text.slice(at + q.length)}
-    </>
   );
 }

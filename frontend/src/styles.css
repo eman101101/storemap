@@ -100,7 +100,7 @@ a:hover { text-decoration: underline; }
   font-size: 15px; font-weight: 900;
 }
 .topnav .spacer { flex: 1; }
-.nav-user { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 14px; }
+.nav-user { position: relative; display: flex; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 14px; }
 .avatar {
   width: 30px; height: 30px; border-radius: 50%; background: var(--green-soft);
   color: var(--green-dark); display: inline-flex; align-items: center; justify-content: center;
@@ -282,6 +282,13 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 .save-state.error { color: var(--red); }
 
 .editor-body { flex: 1; display: flex; min-height: 0; position: relative; }
+/* Preview: the real shopper view (ViewerPage) fills the workspace below the
+   editor bar — it is laid out for the full viewport, so give it that height
+   inside the editor instead of letting it push the page */
+.editor-body.is-preview { flex-direction: column; }
+.viewer-preview { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.viewer-preview .viewer-full { height: 100%; }
+.preview-note { font-size: 12.5px; }
 /* clip the map at its box: the svg is pannable/zoomable, and without this the
    content past the edge paints OVER the editor's own top bar (the 3D canvas
    self-clips, so this only ever showed in 2D) — the viewer's .viewer-map
@@ -492,32 +499,33 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   .map-tools-toggle { display: inline-flex; }
 }
 
-/* result card: the product photo rides above the label; the label wraps to
-   a couple of lines inside the fixed-width card */
+/* one row per result: photo (or category dot) · name + where it sits · arrow */
 .result-item {
   position: relative;
   width: 100%; text-align: left; background: var(--surface-solid); border: 1px solid transparent;
-  border-radius: 10px; padding: 8px 10px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  border-radius: 10px; padding: 6px 10px; cursor: pointer;
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
 }
 .result-item:hover { border-color: var(--green); background: var(--hover); }
 .result-item.selected { border-color: var(--green); background: var(--green-soft); }
 .result-item.noloc { cursor: default; opacity: 0.65; }
 .result-item.noloc:hover { border-color: transparent; background: var(--surface-solid); }
 .result-item .rimg {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 56px; height: 56px;
   background: var(--chip); border: 1px solid var(--line);
-  border-radius: 8px; padding: 6px; overflow: hidden;
+  border-radius: 8px; padding: 3px; overflow: hidden;
 }
-.result-item .rimg img { max-height: 84px; max-width: 100%; object-fit: contain; display: block; }
-.result-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.result-item .rname { min-width: 0; padding-right: 22px; }
+.result-item .rimg img { width: 100%; height: 100%; max-height: 100%; max-width: 100%; object-fit: contain; display: block; }
+/* the dot sits where the photo would, so every name lines up */
+.result-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 0 23px; }
+.result-item .rname { flex: 1; min-width: 0; }
 .result-item .rname b {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   line-clamp: 2; overflow: hidden; font-size: 13.5px; line-height: 1.3;
 }
 .result-item .rname span { font-size: 12px; color: var(--ink-soft); }
-.result-item .rgo { position: absolute; right: 10px; bottom: 10px; }
+.result-item .rgo { flex-shrink: 0; }
 .no-results { color: var(--ink-soft); font-size: 13.5px; text-align: center; padding: 20px 10px; }
 
 /* ---------- Editor tour: spotlight + popover ---------- */
@@ -683,11 +691,18 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .product-sheet {
   position: absolute; top: 66px; left: 50%; transform: translateX(-50%); z-index: 8;
-  display: flex; align-items: center; gap: 10px; max-width: min(380px, calc(100vw - 24px));
+  /* photo · name · close on one row, the actions on their own row below —
+     sharing a row, three buttons squeezed the name down to "Greek …" */
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 10px;
+  width: max-content; max-width: min(460px, calc(100vw - 24px));
   padding: 10px 12px; border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,0.12);
 }
-.product-sheet .sheet-info { flex: 1; min-width: 0; }
-.product-sheet .sheet-info b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-sheet .sheet-info { min-width: 0; }
+.product-sheet .sheet-info b {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; font-size: 14px; line-height: 1.3;
+}
+.sheet-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
 .product-sheet .sheet-info span { font-size: 12px; color: var(--ink-soft); }
 .trip-panel {
   position: absolute; bottom: 52px; left: 12px; z-index: 8; width: 300px; max-width: calc(100vw - 24px);
@@ -757,6 +772,7 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   background: var(--surface); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.25);
   width: 100%; max-width: 460px; max-height: 86dvh; overflow-y: auto; padding: 22px;
 }
+.modal.xwide { max-width: min(1240px, 100%); }
 .modal h3 { margin: 0 0 14px; font-size: 18px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
@@ -1167,8 +1183,16 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 
 /* ---------- Homepage: examples carousel inside the rotating 3D hero ---------- */
 .hero-map { animation: fadeIn 0.45s ease; }
+/* the hero's own top bar: the store pill on the left, the route chip on the
+   right (searching lives in the store view, not here) */
+.hero-top {
+  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 4;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); justify-content: space-between;
+  align-items: start; gap: 8px 10px; pointer-events: none;
+}
+.hero-top > * { pointer-events: auto; }
 .hero-store-pill {
-  position: absolute; top: 12px; left: 12px; z-index: 2;
+  grid-column: 1;
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--surface-glass); border: 1px solid var(--line); border-radius: 12px;
   padding: 7px 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 14px;
@@ -1176,23 +1200,15 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .hero-store-pill b { font-size: 14.5px; }
 .hero-store-pill .muted { font-size: 12.5px; }
 .hero-demo-chip {
-  position: absolute; top: 12px; right: 12px; z-index: 2;
-  display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 260px);
+  grid-column: 2; justify-self: end;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   background: var(--surface-glass); border: 1px solid var(--line); border-radius: 12px;
   padding: 7px 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   font-size: 13px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   animation: fadeIn 0.35s ease;
 }
 .hero-demo-chip b { color: var(--ink); font-size: 13px; }
-/* hero search: find a real item on the demo map */
-.hero-search {
-  position: absolute; top: 54px; left: 12px; z-index: 2;
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 24px);
-  background: var(--surface-glass); border: 1px solid var(--line); border-radius: 12px;
-  padding: 6px 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-.hero-search .input { width: 200px; height: 30px; font-size: 13px; }
-.hero-search-miss { width: 100%; font-size: 12px; color: #c2453a; text-align: left; }
+.hero-demo-chip .route-badge-x { flex-shrink: 0; }
 .hero-carousel {
   position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 2;
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
@@ -1214,6 +1230,11 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .hero-dots button:hover { background: var(--hover); color: var(--ink); }
 .hero-dots button.active { background: var(--green); border-color: var(--green); color: #fff; }
 .hero-carousel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  /* one column: store pill, then the search across the full width */
+  .hero-top { grid-template-columns: minmax(0, 1fr); }
+  .hero-store-pill, .hero-demo-chip { grid-column: 1; }
+}
 @media (max-width: 640px) {
   .hero-store-pill { font-size: 13px; gap: 6px; }
   .hero-store-pill .muted { display: none; }
@@ -1233,8 +1254,6 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
   .hero-dots button { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 8px; font-size: 12px; }
   .hero-carousel-actions { flex-wrap: nowrap; justify-content: center; width: 100%; }
   .hero-carousel-actions .btn { padding: 5px 10px; font-size: 12.5px; }
-  /* the two floating chips stack instead of colliding */
-  .hero-demo-chip { top: 58px; left: 12px; right: auto; max-width: calc(100% - 24px); }
   .planogram-card { padding: 12px; }
   .planogram-card-head { flex-direction: column; align-items: flex-start; }
 
@@ -1270,13 +1289,26 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .planogram-grid {
   display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start;
 }
-.planogram-grid .planogram-card { flex: 0 1 460px; max-width: 100%; }
-/* phones: the planogram drawing keeps its size — swipe it sideways */
+/* a card never grows past its grid slot — a long shelf scrolls inside it */
+.planogram-grid .planogram-card { flex: 0 1 460px; min-width: 0; max-width: 100%; }
+/* The planogram drawing is laid out at its own size (metres × scale, rows ×
+   row height) and then scaled as a WHOLE to fit its box — the same factor
+   both ways, so a shelf is never squashed. It grows to fill a wider box (up
+   to 1.9×), is capped by height so tall shelves stay on screen, and never
+   shrinks below 60%: a long shelf keeps its size and scrolls sideways. */
+.planogram-scroll { overflow-x: auto; overflow-y: hidden; border-radius: 10px; -webkit-overflow-scrolling: touch; }
+.planogram-svg {
+  display: block;
+  margin: 0 auto;
+  width: 100%;
+  height: auto;
+  max-height: 62dvh;
+  min-width: calc(var(--planogram-w) * 0.6);
+  max-width: calc(var(--planogram-w) * 1.9);
+}
 @media (max-width: 640px) {
   .planogram-band { margin-top: 34px; }
   .planogram-card { max-width: 100%; padding: 12px; }
-  .planogram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .planogram-scroll svg { margin: 0 !important; }
 }
 
 /* phone: compact map controls that don't eat the screen */
@@ -1294,25 +1326,87 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 html[data-mode='dark'] .el-label { paint-order: stroke; stroke: rgba(8, 10, 9, 0.6); stroke-width: 0.09em; }
 html[data-mode='dark'] .el-label.isle { stroke: rgba(8, 10, 9, 0.85); stroke-width: 0.14em; }
 
-/* account dropdown (avatar menu, rightmost) */
-.avatar.as-button {
-  border: 2px solid var(--line); cursor: pointer; font-family: var(--font);
+/* Account menu — the top bar's one control ("Account"). Its dropdown holds
+   the light/dark toggle, sign-in, FAQ and Settings (AccountMenu.tsx). */
+.account-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px;
+  padding: 0 12px 0 4px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--ink); cursor: pointer;
+  font-family: var(--font); font-size: 14px; font-weight: 600;
+  transition: background 0.12s, border-color 0.12s;
 }
-.avatar.as-button:hover { border-color: var(--green); }
+.account-btn:hover, .account-btn.open { background: var(--hover); border-color: var(--green); }
+.account-btn .avatar { width: 28px; height: 28px; font-size: 12.5px; }
+.account-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%; background: var(--green-soft); color: var(--green-dark);
+}
+.account-caret { color: var(--ink-soft); font-size: 11px; transition: transform 0.15s ease; }
+.account-caret.open { transform: rotate(180deg); }
 .account-menu {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-  min-width: 160px; background: var(--surface-solid); border: 1px solid var(--line);
+  min-width: 236px; background: var(--surface-solid); border: 1px solid var(--line);
   border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22); padding: 6px;
   display: flex; flex-direction: column;
+  animation: fadeIn 0.14s ease;
 }
 .account-menu a,
 .account-menu button {
   text-align: left; border: none; background: none; cursor: pointer;
   padding: 8px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600;
   color: var(--ink); text-decoration: none; font-family: var(--font);
+  white-space: nowrap;
 }
 .account-menu a:hover,
 .account-menu button:hover { background: var(--hover); }
+.account-menu button.account-signin { color: var(--green); }
+.account-menu-head { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px 7px; min-width: 0; }
+.account-menu-head b, .account-menu-head span { overflow: hidden; text-overflow: ellipsis; }
+.account-menu-head b { font-size: 13.5px; color: var(--ink); }
+.account-menu-head span { font-size: 12px; color: var(--ink-soft); }
+.account-menu-sep { height: 1px; background: var(--line); margin: 5px 4px; flex-shrink: 0; }
+.account-theme { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 10px 8px; }
+.account-theme-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+
+/* segmented switch — appearance in the Account menu and in Settings */
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--chip); }
+.account-menu .seg button, .seg button {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: none; background: none; cursor: pointer; border-radius: 999px;
+  padding: 4px 10px; font-family: var(--font); font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s;
+}
+.seg button:hover { background: none; color: var(--ink); }
+.account-menu .seg button.active, .seg button.active {
+  background: var(--surface-solid); color: var(--ink); box-shadow: 0 1px 3px rgba(29, 42, 32, 0.18);
+}
+.seg button svg { flex-shrink: 0; }
+
+/* FAQ + Settings dialogs (Account menu → Help.tsx) */
+.faq { display: flex; flex-direction: column; gap: 6px; }
+.faq-item { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.faq-item[open] { border-color: var(--green); }
+.faq-item summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; cursor: pointer; list-style: none;
+  font-size: 14px; font-weight: 600; color: var(--ink);
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: '+'; color: var(--ink-soft); font-weight: 700; font-size: 16px; }
+.faq-item[open] summary::after { content: '−'; }
+.faq-item > div { padding: 0 12px 11px; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); }
+.faq-item p { margin: 0; }
+.faq-item a { color: var(--green); font-weight: 600; }
+kbd {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin: 0 1px;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+  background: var(--chip); color: var(--ink); font-family: var(--font);
+  font-size: 11.5px; font-weight: 700; line-height: 1.6; text-align: center;
+}
+.settings-group { margin-bottom: 16px; }
+.settings-group h4 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+.settings-group .muted { margin: 8px 0 0; font-size: 12.5px; }
+.settings-note { margin: 4px 0 0; font-size: 12.5px; }
 
 /* map right-click menu */
 .map-ctx-menu {

@@ -6,11 +6,12 @@ import { LocalSession, type EditorApi } from '../localStore';
 import MapCanvas, { TOOL_DEF, TYPE_COLOR, type EditorTool } from './MapCanvas';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
+import ViewerPage from './ViewerPage';
 import ShelfItemPicker from './ShelfItemPicker';
 import CropModal from './CropModal';
 import GroupCreatorModal, { type GroupItemDraft } from './GroupCreatorModal';
 import type {
-  Category, Floor, MapElement, PolyGeom, Product, ProductLocation, RectGeom, Store,
+  Category, Floor, MapElement, PolyGeom, Product, ProductLocation, PublicStorePayload, RectGeom, Store,
 } from '../types';
 import { elementToRow, groupDisplayName, locationFlags, parseElement } from '../types';
 import { bboxOf, elementPoints, translateElement, type Viewport, type WorldPt } from '../lib/geometry';
@@ -334,61 +335,20 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
   // ---- items / groups visibility ----
   // Groups view is THE view: every shelf group shows ONE titled pin on the
   // map (its groupPin facing) and the items live only inside the group's
-  // planogram — items are never individually editable map objects. Preview
-  // search still overlays the resolved pins while a query is active.
+  // planogram — items are never individually editable map objects.
   const showItems = false;
 
-  // ---- preview mode: the map as shoppers see it (non-editing) ----
+  // ---- preview mode: the real shopper view on this map ----
   const [preview, setPreview] = useState(false);
   // mobile: the map tools (duplicate / re-center / edit) start hidden
   const [mapToolsOpen, setMapToolsOpen] = useState(false);
-  // preview carries its own shopper-style search so the flow is testable
-  const [previewQuery, setPreviewQuery] = useState('');
   // the planogram editor's "Edit item" — opens the same product menu as the Items tab
   const [planogramEditProduct, setPlanogramEditProduct] = useState<Product | null>(null);
-  // typing in preview leads to the item's GROUP: one facing per product —
-  // when the same item sits in several groups the closest one to the current
-  // view wins (null = normal map)
-  const previewMatches = useMemo(() => {
-    if (!preview) return null;
-    const needle = previewQuery.trim().toLowerCase();
-    if (!needle) return null;
-    const ids = new Set(
-      products
-        .filter((p) => `${p.name} ${p.brand} ${p.sku} ${p.category_name ?? ''}`.toLowerCase().includes(needle))
-        .map((p) => p.id)
-    );
-    const cx = (window.innerWidth - (sideOpen ? 340 : 0)) / 2;
-    const cy = window.innerHeight / 2;
-    const dist = (p: { location: { x: number; y: number } }) =>
-      Math.hypot(p.location.x - cx, p.location.y - cy);
-    const byProduct = new Map<string, typeof visibleFloorPins[number]>();
-    for (const p of visibleFloorPins) {
-      if (!ids.has(p.location.product_id)) continue;
-      const cur = byProduct.get(p.location.product_id);
-      if (!cur || dist(p) < dist(cur)) byProduct.set(p.location.product_id, p);
-    }
-    // a planogram-only facing (groupOnly) resolves to its group's map pin —
-    // the non-groupOnly location on the same shelf
-    const resolve = (p: (typeof visibleFloorPins)[number]) => {
-      let m: Record<string, unknown> = {};
-      try { m = JSON.parse(p.location.meta || '{}'); } catch { /* no meta */ }
-      if (!m.groupOnly) return p;
-      const shelfId = shelfIdAtPoint({ x: p.location.x, y: p.location.y }, floorElements);
-      const gp = visibleFloorPins.find((q) => {
-        if (ownerOf(q.location) !== shelfId) return false;
-        try { return !JSON.parse(q.location.meta || '{}').groupOnly; } catch { return true; }
-      });
-      return gp ?? p;
-    };
-    const hits = [...byProduct.values()].map(resolve);
-    return hits.length ? hits : null; // nothing found → keep the normal map
-  }, [preview, previewQuery, products, visibleFloorPins, sideOpen]);
   const togglePreview = () => {
     setPreview((v) => {
       if (!v) {
-        // entering preview clears any editing selection; the map re-renders
-        // shopper-style (no edit chrome, departments visible, pans only)
+        // entering preview closes every editing surface — the shopper view
+        // (ViewerPage) takes over the whole workspace
         setSelectedId(null);
         setSelectedIds(new Set());
         setSelectedPinProductId(null);
@@ -397,12 +357,12 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
         setItemPickerFor(null);
         setNewItemAt(null);
         setDraftPts([]);
+        setShelfPreviewId(null);
+        setCtxMenu(null);
       }
       return !v;
     });
   };
-
-
 
   /** Owner shelf id persisted on a location — top-level `shelfId` first, then
    *  `meta.shelfId` (falls back to the live map). */
@@ -1384,8 +1344,44 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
       </main>
     );
   }
+  // the editor's live map in the shape the shopper view reads — the same
+  // rows a visitor would be served, straight from the editing state
+  const previewPayload = useMemo<PublicStorePayload | null>(() => {
+    if (!store || !floors.length) return null;
+    const { owner_id: _owner, is_public: _public, ...shopperStore } = store;
+    return {
+      store: shopperStore,
+      floors,
+      elements: elements.map(elementToRow),
+      categories,
+      products,
+      locations,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!store, floors, elements, categories, products, locations]);
   if (!store || !floor) {
     return <main className="container"><p className="muted">Loading editor…</p></main>;
+  }
+
+  // Preview IS the store view: the real shopper screen (store bar, search
+  // with photos, routes, tap-a-shelf planograms) on the map as it stands
+  // right now — not a stripped-down copy of the editor map.
+  if (preview && previewPayload) {
+    return (
+      <EditorApiContext.Provider value={apix}>
+        <div className="editor">
+          <div className="editor-top">
+            <span className="store-name">{store.name}</span>
+            <span className="muted preview-note">Preview — this is exactly what shoppers see. Editing is paused until you go back.</span>
+          </div>
+          <div className="editor-body is-preview">
+            <div className="viewer-preview">
+              <ViewerPage preview={{ payload: previewPayload, onExit: () => setPreview(false) }} />
+            </div>
+          </div>
+        </div>
+      </EditorApiContext.Provider>
+    );
   }
 
   const selected = elements.find((e) => e.id === selectedId) ?? null;
@@ -1478,7 +1474,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           className="btn sm"
           aria-pressed={preview}
           onClick={togglePreview}
-          title="Preview the map as shoppers see it — no editing chrome, departments visible"
+          title="Preview — open the real shopper view on this map (search, routes, shelf planograms)"
         >
           {preview ? 'Edit' : '▶ Preview'}
         </button>
@@ -1566,15 +1562,14 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             <Map3D
               floor={floor}
               elements={floorElements}
-              pins={previewMatches ?? visibleFloorPins}
-              stockPins={previewMatches ?? visibleFloorPins}
-              showItems={!!previewMatches}
+              pins={visibleFloorPins}
+              stockPins={visibleFloorPins}
+              showItems={showItems}
               pickFilter={pickFilter}
               camera={cam3d}
               onCamera={setCam3d}
-              edit={!preview}
-              grid={preview ? null : 0.25}
-              selectedId={preview ? null : selectedId}
+              grid={0.25}
+              selectedId={selectedId}
               onSelectElement={(id) => {
                 setSelectedId(id);
                 if (id) autoShowPanel();
@@ -1591,36 +1586,35 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               fitSignal={fitSignal}
               zoomCommand={zoomCmd}
               theme={sceneTheme}
-              locked={preview ? true : locked}
+              locked={locked}
             />
           ) : (
             <MapCanvas
               floor={floor}
               elements={floorElements}
-              pins={previewMatches ?? visibleFloorPins}
+              pins={visibleFloorPins}
               showLabels={!hideLabels}
-              showItems={!!previewMatches}
-              showDepartments={preview ? !previewMatches : !hideLabels}
-              locked={preview ? true : locked}
-              grid={preview ? null : 0.25}
-              edit={!preview}
-              tool={preview ? 'select' : tool}
-              onMapContextMenu={preview ? undefined : (client) => setCtxMenu({ x: client.x, y: client.y })}
+              showItems={showItems}
+              showDepartments={!hideLabels}
+              locked={locked}
+              grid={0.25}
+              tool={tool}
+              onMapContextMenu={(client) => setCtxMenu({ x: client.x, y: client.y })}
               viewport={viewport}
               onViewport={setViewport}
-              selectedId={preview ? null : selectedId}
-              draftPts={preview ? [] : draftPts}
-              onSelect={preview ? undefined : (id) => {
+              selectedId={selectedId}
+              draftPts={draftPts}
+              onSelect={(id) => {
                 setSelectedId(id);
                 if (id) { setSelectedPinProductId(null); autoShowPanel(); }
                 if (selectedIds.size) setSelectedIds(new Set());
               }}
-              onElementsChange={preview ? undefined : changeElements}
-              onAddElement={preview ? undefined : addElement}
-              onDraftAdd={preview ? undefined : (p) => setDraftPts((d) => [...d, p])}
-              onDraftFinish={preview ? undefined : finishDraft}
-              onDraftCancel={preview ? undefined : () => setDraftPts([])}
-              onPlaceProduct={preview ? undefined : placeProduct}
+              onElementsChange={changeElements}
+              onAddElement={addElement}
+              onDraftAdd={(p) => setDraftPts((d) => [...d, p])}
+              onDraftFinish={finishDraft}
+              onDraftCancel={() => setDraftPts([])}
+              onPlaceProduct={placeProduct}
               placeMode={addMode}
               ownerOfPin={(locId) => {
                 const loc = locations.find((l) => l.id === locId);
@@ -1645,9 +1639,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             />
           )}
           {/* editing tools as a left icon rail: add-tools, delete, pick filter.
-              In 3D only selection works — placement tools are 2D and hide.
-              Hidden entirely in preview — the map renders shopper-style. */}
-          {!preview && (
+              In 3D only selection works — placement tools are 2D and hide. */}
           <div className="tool-rail" role="toolbar" aria-label="Map editing tools">
             {TOOLS.filter((t) => !view3d || t.id === 'select').map((t) => (
               <button
@@ -1732,33 +1724,9 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
               </>
             )}
           </div>
-          )}
-          {preview && (
-            <div className="view-toggle" style={{ position: 'absolute', top: 60, left: 12, zIndex: 6, boxShadow: 'var(--shadow)' }}>
-              <input
-                className="input"
-                placeholder="Search items…"
-                value={previewQuery}
-                onChange={(e) => setPreviewQuery(e.target.value)}
-                aria-label="Search items (preview)"
-                style={{ width: 220, padding: '6px 10px' }}
-              />
-              {previewQuery.trim() && (
-                <button
-                  className={previewMatches ? '' : 'danger'}
-                  aria-label="Clear preview search"
-                  title={previewMatches ? `${previewMatches.length} facings on the map` : 'No matches on this floor'}
-                  onClick={() => setPreviewQuery('')}
-                  style={{ borderLeft: 'none', borderRadius: '0 8px 8px 0' }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          )}
           {/* the 2D hint hides in 3D — the centered 3D hint takes over, so the
               two never overlap */}
-          {!placing && !view3d && !preview && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
+          {!placing && !view3d && <div className="tool-hint">{TOOL_HINTS[tool]}</div>}
 
           {/* pull-out handle for the side panel */}
           <button
@@ -1776,7 +1744,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
             <CameraToggle onOpen={() => setCamPadOpen(true)} />
           ))}
           <ZoomPad onZoom={(dir) => setZoomCmd((z) => ({ k: dir > 0 ? 1.3 : 0.77, seq: z.seq + 1 }))} />
-          {!preview && (
           <button
             className="btn controls-btn"
             onClick={() => setShowControls((v) => !v)}
@@ -1784,7 +1751,6 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           >
             ⌨ Controls
           </button>
-          )}
           {showControls && (
             <div className="controls-card card" role="dialog" aria-label="Editor controls">
               <div className="row-between" style={{ marginBottom: 6 }}>
@@ -1860,7 +1826,7 @@ export default function EditorPage({ tryMode = false, session }: { tryMode?: boo
           )}
           {/* 3D transform card: rotate & resize the selected fixture (the
               ⤢ rail toggle below Select turns the card on) */}
-          {view3d && transform3d && !preview && selected?.shape === 'rect' && (() => {
+          {view3d && transform3d && selected?.shape === 'rect' && (() => {
             const g = selected.geom as RectGeom;
             const deg = Math.round(((g.rot % 360) + 360) % 360);
             const setRot = (rot: number) =>
