@@ -21,14 +21,27 @@ export const worldToScreen = (p: WorldPt, vp: Viewport): WorldPt => ({
   y: p.y * vp.scale + vp.ty,
 });
 
-/** Compute a viewport that fits `worldW × worldH` inside a `cw × ch` container with padding. */
-export function fitViewport(worldW: number, worldH: number, cw: number, ch: number, pad = 40): Viewport {
-  const scale = Math.min((cw - pad * 2) / worldW, (ch - pad * 2) / worldH);
+/** Screen edges (px) a fitted map must keep clear — floating controls. */
+export interface FitInsets {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}
+
+/**
+ * Compute a viewport that fits `worldW × worldH` inside a `cw × ch` container
+ * with padding. `insets` reserve strips of the container for controls laid
+ * over the map: the map fits — and centres — in what remains.
+ */
+export function fitViewport(worldW: number, worldH: number, cw: number, ch: number, pad = 40, insets?: FitInsets): Viewport {
+  const { top = 0, bottom = 0, left = 0, right = 0 } = insets ?? {};
+  const scale = Math.min((cw - left - right - pad * 2) / worldW, (ch - top - bottom - pad * 2) / worldH);
   const s = Math.max(scale, 0.02);
   return {
     scale: s,
-    tx: (cw - worldW * s) / 2,
-    ty: (ch - worldH * s) / 2,
+    tx: left + (cw - left - right - worldW * s) / 2,
+    ty: top + (ch - top - bottom - worldH * s) / 2,
   };
 }
 

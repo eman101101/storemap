@@ -4,7 +4,7 @@ import { groupDisplayName, locationFlags } from '../types';
 import {
   elementContains, elementPoints, fitViewport, HANDLE_TYPES, handleCursor, polyPoints, polyMidpoint, rectCorners,
   resizeRect, rotateRectTo, shelfAnchor, snap, snapPt, translateElement,
-  type HandleType, type Viewport, type WorldPt,
+  type FitInsets, type HandleType, type Viewport, type WorldPt,
 } from '../lib/geometry';
 import { TYPE_COLOR, TYPE_STROKE, shade } from '../lib/mapColors';
 import { placeGlyph } from '../lib/placeSymbols';
@@ -92,6 +92,9 @@ interface Props {
   focusPinId?: string | null;
   highlightElementIds?: Set<string>;
   fitSignal?: number;
+  /** How the fit frames the floor: `pad` is the air around it (default 40px),
+   *  `insets` the screen edges kept clear for controls laid over the map. */
+  fit?: { pad?: number; insets?: FitInsets };
   zoomCommand?: { k: number; seq: number };
   focus?: { x: number; y: number; seq: number };
   /** Walking route polyline (world meters) drawn under the pins. */
@@ -129,7 +132,7 @@ export default function MapCanvas(props: Props) {
     floor, elements, pins, viewport, onViewport, edit = false, tool = 'select', grid = 0.25,
     selectedId, selectedIds, onMultiSelect, bgOpacity = 0.95, draftPts = [], onSelect, onElementsChange, onAddElement, showLabels = true, locked = false, onMapContextMenu,
     onDraftAdd, onDraftFinish, onDraftCancel, onPlaceProduct, placeMode = 'group', ownerOfPin, onPinClick, onElementClick,
-    focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null,
+    focusPinId, highlightElementIds, fitSignal = 0, zoomCommand, focus, route = null, fit: fitProps,
     pickFilter = 'all', onPinMove, onPinSelect, tripStops, stockPins = [],
     showItems = true, showDepartments = false,
   } = props;
@@ -169,8 +172,8 @@ export default function MapCanvas(props: Props) {
   }, []);
 
   const fit = useCallback(() => {
-    onViewport(fitViewport(floor.width_m, floor.height_m, size.w, size.h));
-  }, [floor.width_m, floor.height_m, size.w, size.h, onViewport]);
+    onViewport(fitViewport(floor.width_m, floor.height_m, size.w, size.h, fitProps?.pad, fitProps?.insets));
+  }, [floor.width_m, floor.height_m, size.w, size.h, onViewport, fitProps?.pad, fitProps?.insets]);
 
   useEffect(() => {
     fit();

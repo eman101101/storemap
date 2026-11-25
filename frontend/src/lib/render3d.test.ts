@@ -6,7 +6,7 @@ import {
   project, fitCamera, boxFaces, routeFaces, buildSceneFaces, scaleColor, ROUTE, pickFixture,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
   buildSceneBSP, traverseFaceBSP, MODERN_THEME, DARK_THEME, NEAR,
-  screenToWorldFloor, elementHeight, shelfFaces, shelfDetailForDist, SHELF_LOD,
+  screenToWorldFloor, elementHeight, shelfFaces, shelfDetailForDist, SHELF_LOD, DIST_MIN, DIST_MAX, distMaxFor,
   type Face, type Camera3D,
 } from './render3d';
 
@@ -325,6 +325,89 @@ describe('fitCamera', () => {
     expect(cam.dist).toBeCloseTo(20 * 1.25);
     expect(cam.pitch).toBeGreaterThan(0);
     expect(cam.pitch).toBeLessThan(Math.PI / 2);
+  });
+
+  /** Whether every corner of the floor lands inside a `w × h` canvas. */
+  const floorFits = (cam: ReturnType<typeof fitCamera>, fl: typeof floor, w: number, h: number) => {
+    for (const x of [0, fl.width_m]) {
+      for (const y of [0, fl.height_m]) {
+        const p = project(cam, w, h, { x, y, z: 0 });
+        if (!p || p.x < 0 || p.x > w || p.y < 0 || p.y > h) return false;
+      }
+    }
+    return true;
+  };
+
+  it('leaves a wide canvas exactly where it was', () => {
+    expect(fitCamera(floor, 16 / 9)).toEqual(fitCamera(floor));
+    expect(fitCamera(floor, 2.5)).toEqual(fitCamera(floor));
+  });
+
+  it('backs the eye up until the whole floor fits a narrow canvas', () => {
+    // the big-box example floor on a portrait phone, a portrait tablet, and
+    // the homepage hero's box on a phone
+    const big = { ...floor, width_m: 96, height_m: 62 };
+    for (const [w, h] of [[390, 844], [320, 568], [768, 1024], [342, 444]]) {
+      expect(floorFits(fitCamera(big), big, w, h), `${w}×${h}: the shape-blind camera`).toBe(false);
+      const cam = fitCamera(big, w / h);
+      expect(floorFits(cam, big, w, h), `${w}×${h}`).toBe(true);
+      expect(cam.dist, `${w}×${h}: farther than the default`).toBeGreaterThan(fitCamera(big).dist);
+    }
+  });
+
+  /** Whether every corner of the floor lands between the canvas's left and right edges. */
+  const floorFitsWidth = (cam: ReturnType<typeof fitCamera>, fl: typeof floor, w: number, h: number) =>
+    [0, fl.width_m].every((x) => [0, fl.height_m].every((y) => {
+      const p = project(cam, w, h, { x, y, z: 0 });
+      return !!p && p.x >= 0 && p.x <= w;
+    }));
+
+  it('frames closer on request — but a closer view never crops the floor\'s sides', () => {
+    const big = { ...floor, width_m: 96, height_m: 62 };
+    for (const [w, h] of [[1280, 374], [390, 460], [342, 300], [768, 460]]) {
+      const closer = fitCamera(big, w / h, 0.7);
+      expect(closer.dist, `${w}×${h}`).toBeLessThanOrEqual(fitCamera(big, w / h).dist);
+      expect(floorFitsWidth(closer, big, w, h), `${w}×${h}`).toBe(true);
+    }
+    // on a wide box the closer view is simply 30% nearer than the full fit
+    expect(fitCamera(big, 2.5, 0.7).dist).toBeCloseTo(fitCamera(big, 2.5).dist * 0.7);
+  });
+
+  it('only backs up — the narrower the canvas, the farther the eye, never the reverse', () => {
+    const base = fitCamera(floor).dist;
+    let prev = base;
+    for (const aspect of [3, 2.5, 2, 1.5, 1, 0.75, 0.5]) {
+      const d = fitCamera(floor, aspect).dist;
+      expect(d, `aspect ${aspect}`).toBeGreaterThanOrEqual(base - 1e-9);
+      expect(d, `aspect ${aspect}`).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = d;
+    }
+  });
+
+  it('always leaves the camera inside the range its own zoom clamps to', () => {
+    // a portrait phone, a tablet, a desktop window — and floors from a corner
+    // shop to something far larger than any real store
+    for (const [w, h] of [[320, 568], [390, 844], [768, 1024], [1280, 860]]) {
+      for (const [fw, fh] of [[12, 12], [40, 30], [96, 62], [200, 140], [400, 280]]) {
+        const fl = { ...floor, width_m: fw, height_m: fh };
+        const dist = fitCamera(fl, w / h).dist;
+        const max = distMaxFor(fl, w / h);
+        expect(max, `${w}×${h}, ${fw}×${fh} m`).toBeGreaterThanOrEqual(dist);
+        // and the ＋/− glide from a fitted view is exactly one zoom step, not a snap
+        expect(Math.min(max, Math.max(DIST_MIN, dist / 1.3)), `${w}×${h}, ${fw}×${fh} m`).toBeCloseTo(dist / 1.3);
+      }
+    }
+  });
+
+  it('keeps the usual zoom-out ceiling wherever the fit never reaches it', () => {
+    // a small floor fits inside 160 m on any canvas; the big-box floor only
+    // outgrows it once the canvas is portrait
+    const big = { ...floor, width_m: 96, height_m: 62 };
+    expect(distMaxFor(floor)).toBe(DIST_MAX);
+    expect(distMaxFor(floor, 0.5)).toBe(DIST_MAX);
+    expect(distMaxFor(big, 16 / 9)).toBe(DIST_MAX);
+    expect(distMaxFor(big, 390 / 844)).toBeCloseTo(fitCamera(big, 390 / 844).dist);
+    expect(distMaxFor(big, 390 / 844)).toBeGreaterThan(DIST_MAX);
   });
 });
 

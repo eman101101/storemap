@@ -30,6 +30,22 @@ describe('coordinate transforms', () => {
     expect(c2.y).toBeLessThanOrEqual(600);
   });
 
+  it('keeps a fitted map clear of reserved edges and centres it in what remains', () => {
+    // a portrait phone: the top bar over the map, controls along the bottom
+    const v = fitViewport(96, 62, 390, 844, 12, { top: 118, bottom: 90 });
+    const c1 = worldToScreen({ x: 0, y: 0 }, v);
+    const c2 = worldToScreen({ x: 96, y: 62 }, v);
+    expect(c1.x).toBeGreaterThanOrEqual(12 - 1e-9);
+    expect(c2.x).toBeLessThanOrEqual(390 - 12 + 1e-9);
+    expect(c1.y).toBeGreaterThanOrEqual(118 + 1e-9);
+    expect(c2.y).toBeLessThanOrEqual(844 - 90 + 1e-9);
+    expect(c1.y - 118).toBeCloseTo(844 - 90 - c2.y); // top air = bottom air
+  });
+
+  it('fits exactly as before when no edge is reserved', () => {
+    expect(fitViewport(40, 30, 800, 600, 40, {})).toEqual(fitViewport(40, 30, 800, 600));
+  });
+
   it('snaps to the grid', () => {
     expect(snap(2.3, 0.5)).toBeCloseTo(2.5);
     expect(snap(2.3, null)).toBe(2.3);

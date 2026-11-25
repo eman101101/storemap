@@ -81,6 +81,13 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const [cam3d, setCam3d] = useState<Camera3D | null>(null);
   // 2D programmatic zoom (the ＋/− pad) — MapCanvas animates the glide
   const [zoomCmd, setZoomCmd] = useState<{ k: number; seq: number } | null>(null);
+  // Phone layout: the layers under the top bar hang from the bar's REAL bottom
+  // edge, measured and published as a CSS variable on the map. Its height
+  // moves with wrapping, touch targets and the safe area — a hard-coded offset
+  // overlapped the moment it did. The map's own size shapes the camera fit.
+  const mapRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const [chrome, setChrome] = useState<{ w: number; h: number; top: number } | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { resolved } = useTheme();
@@ -222,6 +229,32 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     } catch { /* fall through to the pin's position */ }
     return shelfContaining(loc.x, loc.y, elements.filter((e) => e.floor_id === loc.floor_id));
   };
+
+  // (measured once the map and its bar exist — they mount after the load)
+  useEffect(() => {
+    const map = mapRef.current;
+    const bar = topBarRef.current;
+    if (!map || !bar) return;
+    const measure = () => {
+      const m = map.getBoundingClientRect();
+      if (!m.width || !m.height) return;
+      const top = Math.ceil(bar.getBoundingClientRect().bottom - m.top);
+      map.style.setProperty('--viewer-top', `${top}px`);
+      setChrome((c) => (c && c.w === m.width && c.h === m.height && c.top === top ? c : { w: m.width, h: m.height, top }));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(map);
+    ro.observe(bar);
+    measure();
+    return () => ro.disconnect();
+  }, [!!data && !!floor]);
+  /** Canvas width ÷ height — what the 3D camera is fitted to. */
+  const aspect = chrome ? chrome.w / chrome.h : undefined;
+  /** The 2D fit on a phone: the full width, clear of the bar and the controls. */
+  const mapFit = useMemo(
+    () => (chrome && chrome.w <= 760 ? { pad: 12, insets: { top: chrome.top + 8, bottom: 96 } } : undefined),
+    [chrome]
+  );
 
   const search = q.trim().toLowerCase();
   const hasSearch = search.length > 0;
@@ -415,7 +448,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       switching ? 80 : 0
     );
     // a new item search starts from the store's original 3D angle
-    setCam3d(fitCamera(locFloor));
+    setCam3d(fitCamera(locFloor, aspect));
 
     // walking route from the entrance to this product, on the product's floor
     // (the cached grid belongs to the floor on screen — reuse it for that one only)
@@ -468,7 +501,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
    *  sum to 1, so a pan covers ~18% of the view and a zoom step is ×0.78. */
   const cam3dMove = (dirX: number, dirY: number, zoom: number, dt: number) => {
     setCam3d((c) => {
-      const base = c ?? fitCamera(floor);
+      const base = c ?? fitCamera(floor, aspect);
       const next = { ...base };
       if (zoom) next.dist = Math.min(DIST_MAX, Math.max(DIST_MIN, next.dist * Math.exp(-0.25 * zoom * dt)));
       if (dirX || dirY) {
@@ -494,7 +527,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
 
   return (
     <div className="viewer-full">
-      <div className="viewer-map">
+      <div className={'viewer-map' + (view3d && camPadOpen ? ' pad-open' : '')} ref={mapRef}>
         {view3d ? (
             <Map3D
               floor={floor}
@@ -555,16 +588,21 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
               if (p) focusResult(p);
             }}
             zoomCommand={zoomCmd ?? undefined}
+            fit={mapFit}
           />
         )}
-        {view3d && (camPadOpen ? (
-          <CameraPad onMove={cam3dMove} onClose={() => setCamPadOpen(false)} />
-        ) : (
-          <CameraToggle onOpen={() => setCamPadOpen(true)} />
-        ))}
-        <ZoomPad onZoom={(dir) => setZoomCmd({ k: dir > 0 ? 1.3 : 0.77, seq: (zoomCmd?.seq ?? 0) + 1 })} />
+        {/* the control column: on a phone the pan pad (3D) stacks above the zoom
+            buttons along the right edge — display: contents elsewhere */}
+        <div className="viewer-side">
+          {view3d && (camPadOpen ? (
+            <CameraPad onMove={cam3dMove} onClose={() => setCamPadOpen(false)} />
+          ) : (
+            <CameraToggle onOpen={() => setCamPadOpen(true)} />
+          ))}
+          <ZoomPad onZoom={(dir) => setZoomCmd({ k: dir > 0 ? 1.3 : 0.77, seq: (zoomCmd?.seq ?? 0) + 1 })} />
+        </div>
 
-        <div className="viewer-ui-top">
+        <div className="viewer-ui-top" ref={topBarRef}>
           <div className="store-pill" title={data.store.hours || undefined}>
             {data.store.logo_url && <img src={data.store.logo_url} alt="" width={26} height={26} />}
             <span className="store-pill-name">
@@ -603,174 +641,186 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
             </button>
           </div>
           <ThemeSettings />
+          {/* phones: the bar wraps right here — identity and view on one row, search below */}
+          <span className="viewer-top-break" aria-hidden />
         </div>
 
-        {activeRoute && !hasSearch && (
-          <div className="route-badge">
-            <span className="route-badge-dot" aria-hidden />
-            <button className="route-badge-x" onClick={clearRoute} aria-label="Clear route">
-              ✕
-            </button>
-          </div>
-        )}
-
-        {browseCat && !hasSearch && (
-          <div className="browse-badge">
-            <span className="dot" style={{ background: browseCat.color }} aria-hidden />
-            <b>{browseCat.name}</b>
-            <span>· {pins.length} on the map</span>
-            <button className="route-badge-x" onClick={() => setBrowseCat(null)} aria-label="Stop browsing this category">
-              ✕
-            </button>
-          </div>
-        )}
-
-        {data.floors.length > 1 && (
-          <div className="floor-float">
-            <div className="floor-tabs">
-              {data.floors.map((f) => (
-                <button
-                  key={f.id}
-                  className={`floor-tab ${f.id === floor.id ? 'active' : ''}`}
-                  onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); setHighlightFacingId(null); }}
-                >
-                  {f.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* the aisle directory button was removed — dirOpen stays false and
-            the panel below is kept for the data it renders */}
-        {dirOpen && (
-          <div className="dir-panel card" role="dialog" aria-label="Aisle directory">
-            <div className="row-between" style={{ marginBottom: 4 }}>
-              <b>What's where</b>
-              <button className="route-badge-x" onClick={() => setDirOpen(false)} aria-label="Close directory">
+        {/* the stack: on a phone these share the bottom-left, one above the other — display: contents elsewhere */}
+        <div className="viewer-stack">
+          {activeRoute && !hasSearch && (
+            <div className="route-badge">
+              <span className="route-badge-dot" aria-hidden />
+              <button className="route-badge-x" onClick={clearRoute} aria-label="Clear route">
                 ✕
               </button>
             </div>
-            {directory.length === 0 ? (
-              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                No labelled aisles on this floor yet — label shelves in the editor to build the directory.
-              </p>
-            ) : (
-              directory.map((row) => (
-                <div key={row.label} className="dir-row">
+          )}
+
+          {browseCat && !hasSearch && (
+            <div className="browse-badge">
+              <span className="dot" style={{ background: browseCat.color }} aria-hidden />
+              <b>{browseCat.name}</b>
+              <span>· {pins.length} on the map</span>
+              <button className="route-badge-x" onClick={() => setBrowseCat(null)} aria-label="Stop browsing this category">
+                ✕
+              </button>
+            </div>
+          )}
+
+          {data.floors.length > 1 && (
+            <div className="floor-float">
+              <div className="floor-tabs">
+                {data.floors.map((f) => (
                   <button
-                    className="dir-open"
-                    onClick={() => { setDirOpen(false); setShelfPopupId(row.shelfIds[0]); }}
-                    title="Show this aisle's shelf layout"
+                    key={f.id}
+                    className={`floor-tab ${f.id === floor.id ? 'active' : ''}`}
+                    onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); setHighlightFacingId(null); }}
                   >
-                    <b>{row.label}</b>
-                    <span className="muted">{row.count} item{row.count === 1 ? '' : 's'} · tap</span>
+                    {f.name}
                   </button>
-                  <div className="dir-cats">
-                    {row.categories.slice(0, 4).map((c) => (
-                      <button
-                        key={c.name}
-                        className="dir-cat"
-                        title={`Show ${c.name} on the map`}
-                        onClick={() => {
-                          clearRoute();
-                          setBrowseCat({ name: c.name, color: c.color });
-                          setDirOpen(false);
-                        }}
-                      >
-                        <span className="dot" style={{ background: c.color }} aria-hidden />
-                        {c.name}
-                      </button>
-                    ))}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* the aisle directory button was removed — dirOpen stays false and
+              the panel below is kept for the data it renders */}
+          {dirOpen && (
+            <div className="dir-panel card" role="dialog" aria-label="Aisle directory">
+              <div className="row-between" style={{ marginBottom: 4 }}>
+                <b>What's where</b>
+                <button className="route-badge-x" onClick={() => setDirOpen(false)} aria-label="Close directory">
+                  ✕
+                </button>
+              </div>
+              {directory.length === 0 ? (
+                <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                  No labelled aisles on this floor yet — label shelves in the editor to build the directory.
+                </p>
+              ) : (
+                directory.map((row) => (
+                  <div key={row.label} className="dir-row">
+                    <button
+                      className="dir-open"
+                      onClick={() => { setDirOpen(false); setShelfPopupId(row.shelfIds[0]); }}
+                      title="Show this aisle's shelf layout"
+                    >
+                      <b>{row.label}</b>
+                      <span className="muted">{row.count} item{row.count === 1 ? '' : 's'} · tap</span>
+                    </button>
+                    <div className="dir-cats">
+                      {row.categories.slice(0, 4).map((c) => (
+                        <button
+                          key={c.name}
+                          className="dir-cat"
+                          title={`Show ${c.name} on the map`}
+                          onClick={() => {
+                            clearRoute();
+                            setBrowseCat({ name: c.name, color: c.color });
+                            setDirOpen(false);
+                          }}
+                        >
+                          <span className="dot" style={{ background: c.color }} aria-hidden />
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
+                ))
+              )}
+            </div>
+          )}
 
-        {offline && !preview && (
-          <div className="offline-banner">⚡ Offline — showing the saved map. Search and routes still work.</div>
-        )}
+          {offline && !preview && (
+            <div className="offline-banner">⚡ Offline — showing the saved map. Search and routes still work.</div>
+          )}
 
-        {/* live text for screen readers (A3/G1) */}
-        <div aria-live="polite" className="sr-only">{liveMessage}</div>
+          {/* live text for screen readers (A3/G1) */}
+          <div aria-live="polite" className="sr-only">{liveMessage}</div>
 
-        {/* A4: selected-item sheet — photo · name · close, then the actions */}
-        {sheetProduct && (
-          <div className="product-sheet card">
-            {sheetProduct.image_url || sheetProduct.image_crop_url
-              ? <img src={sheetProduct.image_crop_url || sheetProduct.image_url} alt="" width={40} height={40} style={{ borderRadius: 8, objectFit: 'contain', background: 'var(--chip)' }} />
-              : <span className="dot" style={{ background: sheetProduct.category_color || '#2f6f3e' }} />}
-            <div className="sheet-info">
-              <b>{sheetProduct.name}</b>
-              <span>
-                {[sheetProduct.brand, sheetProduct.price != null ? `$${sheetProduct.price.toFixed(2)}` : '', sheetProduct.category_name]
-                  .filter(Boolean)
-                  .join(' · ')}
+          {/* A4: selected-item sheet — photo · name · close, then the actions */}
+          {sheetProduct && (
+            <div className="product-sheet card">
+              {sheetProduct.image_url || sheetProduct.image_crop_url
+                ? <img src={sheetProduct.image_crop_url || sheetProduct.image_url} alt="" width={40} height={40} style={{ borderRadius: 8, objectFit: 'contain', background: 'var(--chip)' }} />
+                : <span className="dot" style={{ background: sheetProduct.category_color || '#2f6f3e' }} />}
+              <div className="sheet-info">
+                <b>{sheetProduct.name}</b>
+                <span>
+                  {[sheetProduct.brand, sheetProduct.price != null ? `$${sheetProduct.price.toFixed(2)}` : '', sheetProduct.category_name]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </div>
+              <button className="route-badge-x" onClick={() => setSheetProduct(null)} aria-label="Close">✕</button>
+              <div className="sheet-actions">
+                <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
+                  ＋ Add to list
+                </button>
+                {shelfOfSheet && (
+                  <button
+                    className="btn sm"
+                    title="See this shelf's full planogram"
+                    onClick={() => setShelfPopupId(shelfOfSheet.id)}
+                  >
+                    ▦ View shelf
+                  </button>
+                )}
+                {FLY_ENABLED && <button className="fly-btn" onClick={startFlight}>✈ Fly</button>}
+              </div>
+            </div>
+          )}
+
+          {/* A1/A2/A3: multi-stop trip panel */}
+          {trip.length > 0 && (
+            <div className="trip-panel card">
+              <div className="row-between" style={{ marginBottom: 4 }}>
+                <b>
+                  Trip · {trip.length} stop{trip.length === 1 ? '' : 's'}
+                  {tripResult ? ` · ${Math.round(tripResult.tour.totalM)} m · ≈${Math.max(1, Math.round(tripResult.tour.totalM / WALK_M_PER_MIN))} min` : ''}
+                </b>
+                <button className="route-badge-x" onClick={() => setTrip([])} aria-label="Clear trip">✕</button>
+              </div>
+              {tripResult ? (
+                <ol className="trip-steps">
+                  {tripResult.legs.map((leg, i) => (
+                    <li key={i}>
+                      <span className="step-n">{i + 1}</span>
+                      <span className="step-text">
+                        <b>{leg.to}</b>
+                        <span>{leg.text}</span>
+                      </span>
+                      <button
+                        className="route-badge-x"
+                        aria-label={`Remove ${leg.to}`}
+                        onClick={() => setTrip((t) => t.filter((x) => x.product.name !== leg.to))}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Routing…</p>
+              )}
+            </div>
+          )}
+
+          {!activeRoute && !searchOpen && (
+            <div className="map-hint map-hint-center">
+              <span className="hint-fine">
+                {view3d
+                  ? 'Hover an aisle to peek inside · search an item to see the route'
+                  : 'Hover or tap a shelf to see what\'s on it · pinch or scroll to zoom'}
+              </span>
+              <span className="hint-coarse">
+                {view3d
+                  ? 'Tap a shelf to open its planogram · search an item to see the route'
+                  : 'Tap a shelf to see what\'s on it · pinch to zoom'}
               </span>
             </div>
-            <button className="route-badge-x" onClick={() => setSheetProduct(null)} aria-label="Close">✕</button>
-            <div className="sheet-actions">
-              <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
-                ＋ Add to list
-              </button>
-              {shelfOfSheet && (
-                <button
-                  className="btn sm"
-                  title="See this shelf's full planogram"
-                  onClick={() => setShelfPopupId(shelfOfSheet.id)}
-                >
-                  ▦ View shelf
-                </button>
-              )}
-              {FLY_ENABLED && <button className="fly-btn" onClick={startFlight}>✈ Fly</button>}
-            </div>
-          </div>
-        )}
-
-        {/* A1/A2/A3: multi-stop trip panel */}
-        {trip.length > 0 && (
-          <div className="trip-panel card">
-            <div className="row-between" style={{ marginBottom: 4 }}>
-              <b>
-                Trip · {trip.length} stop{trip.length === 1 ? '' : 's'}
-                {tripResult ? ` · ${Math.round(tripResult.tour.totalM)} m · ≈${Math.max(1, Math.round(tripResult.tour.totalM / WALK_M_PER_MIN))} min` : ''}
-              </b>
-              <button className="route-badge-x" onClick={() => setTrip([])} aria-label="Clear trip">✕</button>
-            </div>
-            {tripResult ? (
-              <ol className="trip-steps">
-                {tripResult.legs.map((leg, i) => (
-                  <li key={i}>
-                    <span className="step-n">{i + 1}</span>
-                    <span className="step-text">
-                      <b>{leg.to}</b>
-                      <span>{leg.text}</span>
-                    </span>
-                    <button
-                      className="route-badge-x"
-                      aria-label={`Remove ${leg.to}`}
-                      onClick={() => setTrip((t) => t.filter((x) => x.product.name !== leg.to))}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Routing…</p>
-            )}
-          </div>
-        )}
-
-        {!activeRoute && !searchOpen && (
-          <div className="map-hint map-hint-center">
-            {view3d
-              ? 'Hover an aisle to peek inside · search an item to see the route'
-              : 'Hover or tap a shelf to see what\'s on it · pinch or scroll to zoom'}
-          </div>
-        )}
+          )}
+        </div>
 
         {!preview && (
           <Link to="/" className="powered-by" aria-label="item.place — home">

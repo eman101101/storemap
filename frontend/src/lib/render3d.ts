@@ -78,6 +78,17 @@ export const NEAR = 0.25; // near plane, meters
 export const DIST_MIN = 3;
 export const DIST_MAX = 160;
 
+/**
+ * The farthest the camera may be pulled back for this floor on a canvas of
+ * this shape: the usual ceiling, or as far back as a whole-floor fit needs —
+ * whichever is farther. A fitted view (fitCamera with an aspect) is thereby
+ * always inside its own zoom range: clamping it at the plain ceiling would
+ * make the first pinch snap a portrait view in from ~290 m to 160 m.
+ */
+export function distMaxFor(floor: Floor, aspect?: number): number {
+  return Math.max(DIST_MAX, fitCamera(floor, aspect).dist);
+}
+
 export interface CamPt {
   x1: number;
   up: number;
@@ -136,18 +147,61 @@ export function clipPolygonNear(pts: CamPt[]): CamPt[] {
   return out;
 }
 
-/** Camera that fits a whole floor on screen — nudged up a little so the
- *  bottom-edge controls (zoom, hints) don't sit on the floor. */
-export function fitCamera(floor: Floor): Camera3D {
+/** Share of the canvas width a fitted floor may span — a little air at each edge. */
+const FIT_WIDTH = 0.92;
+
+/**
+ * Camera that fits a whole floor on screen — nudged up a little so the
+ * bottom-edge controls (zoom, hints) don't sit on the floor.
+ *
+ * `aspect` (canvas width ÷ height) keeps that true on a narrow canvas. The
+ * field of view is the VERTICAL one, so the sideways view narrows with the
+ * canvas: a portrait phone at this distance sees a ~24° slice and crops the
+ * floor at both edges. Given the shape, the eye backs up only as far as it
+ * takes for the floor's full width to fit — a wide canvas is left exactly
+ * where it was.
+ *
+ * `zoom` < 1 frames closer than the full fit (the homepage hero does, for a
+ * bolder view) — but only down to that width limit, so a closer view never
+ * crops the floor's sides.
+ */
+export function fitCamera(floor: Floor, aspect?: number, zoom = 1): Camera3D {
   const span = Math.max(floor.width_m, floor.height_m);
-  return {
+  const cam: Camera3D = {
     yaw: -0.62,
     pitch: 0.95, // ~54° — tilted, readable, still clearly 3D
-    dist: span * 1.25,
+    dist: span * 1.25 * zoom,
     tx: floor.width_m / 2,
     ty: floor.height_m / 2 + span * 0.05,
     tz: 0,
   };
+  if (aspect !== undefined && aspect > 0) cam.dist = Math.max(cam.dist, widthFitDistance(floor, cam, aspect));
+  return cam;
+}
+
+/**
+ * The eye distance at which every corner of the floor is inside the canvas's
+ * sideways view. Each corner needs `f·|x|/depth ≤ FIT_WIDTH·w/2`; with the
+ * focal length f = (h/2)/tan(fov/2) that is a lower bound on its depth, and a
+ * corner's depth is the eye distance less its offset along the view axis.
+ */
+function widthFitDistance(floor: Floor, cam: Camera3D, aspect: number): number {
+  const cosY = Math.cos(cam.yaw);
+  const sinY = Math.sin(cam.yaw);
+  const cosP = Math.cos(cam.pitch);
+  const halfTan = Math.tan((cam.fov ?? DEFAULT_FOV) / 2) * FIT_WIDTH * aspect;
+  // the floor's centre relative to where the camera looks
+  const ox = floor.width_m / 2 - cam.tx;
+  const oy = floor.height_m / 2 - cam.ty;
+  let need = 0;
+  for (const dx of [ox - floor.width_m / 2, ox + floor.width_m / 2]) {
+    for (const dy of [oy - floor.height_m / 2, oy + floor.height_m / 2]) {
+      const x = dx * cosY - dy * sinY; // across the view
+      const along = dx * sinY + dy * cosY; // toward the far edge
+      need = Math.max(need, Math.abs(x) / halfTan + along * cosP);
+    }
+  }
+  return need;
 }
 
 /**

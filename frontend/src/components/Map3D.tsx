@@ -4,7 +4,7 @@ import { groupDisplayName, locationFlags } from '../types';
 import {
   buildSceneBSP, buildSceneFaces, camFromEyeLook, fitCamera, pathSampler,
   renderScene, screenToWorldFloor, pickFixture, scaleColor, routeFaces, stockFaces as buildStockFaces, MODERN_THEME,
-  DIST_MIN, DIST_MAX, shelfDetailForDist,
+  DIST_MIN, distMaxFor, shelfDetailForDist,
   type Camera3D, type Face, type MapTheme, type Pin3D, type PinHit, type AisleHit, type StockItem, type ShelfDetail,
 } from '../lib/render3d';
 import { snap, elementPoints, shelfAnchor, translateElement, type WorldPt } from '../lib/geometry';
@@ -125,7 +125,15 @@ function tweenCamera(from: Camera3D, to: Partial<Camera3D>, apply: (c: Camera3D)
 export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, route, flythrough, onPinClick, stockPins = [], showItems = true, stockFaces = true, camera, onCamera, tripStops, theme = MODERN_THEME, onElementClick, edit = false, grid = 0.25, selectedId, onSelectElement, onElementDrag, onElementsChange, focusElement, fitSignal = 0, zoomCommand = null, wheelZoom = 'always', touchAction = 'none', locked = false, pickFilter = 'all' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
-  const cam = camera ?? fitCamera(floor); // parent owns the camera across 2D↔3D toggles
+  // the camera is fitted to the canvas's SHAPE: a portrait canvas needs the
+  // eye farther back to keep the whole floor in its narrow sideways view
+  const cam = camera ?? fitCamera(floor, size.w / size.h); // parent owns the camera across 2D↔3D toggles
+  // how far the eye may be pulled back on THIS canvas: a view fitted to a
+  // narrow one sits beyond the plain ceiling, and must still zoom from there
+  const distMax = useMemo(() => distMaxFor(floor, size.w / size.h), [floor, size.w, size.h]);
+  // …read through a ref by the always-attached wheel listener, which must not go stale
+  const distMaxRef = useRef(distMax);
+  distMaxRef.current = distMax;
   const setCam = onCamera;
   const [flying, setFlying] = useState(false);
   const tweenSignal = useRef({ cancelled: false });
@@ -282,7 +290,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
   useEffect(() => {
     if (fitSignal === lastFit.current) return;
     lastFit.current = fitSignal;
-    setCam(fitCamera(floor));
+    setCam(fitCamera(floor, size.w / size.h));
   }, [fitSignal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // zoom buttons (the vertical ＋/− pad, shared with the 2D map): a new
@@ -297,7 +305,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     const c = camRef.current;
     // zoomCommand.k follows the 2D convention: k > 1 = zoom IN — in 3D that
     // means a SHORTER camera distance, so divide (multiplying reversed +/−)
-    tweenCamera(c, { dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist / zoomCommand.k)) }, setCam, signal);
+    tweenCamera(c, { dist: Math.min(distMax, Math.max(DIST_MIN, c.dist / zoomCommand.k)) }, setCam, signal);
   }, [zoomCommand?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // selection made elsewhere (outline/panel) → aim the camera target at it
@@ -569,7 +577,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       e.preventDefault();
       stopFlySignal();
       const c = camRef.current;
-      setCam({ ...c, dist: Math.min(DIST_MAX, Math.max(DIST_MIN, c.dist * Math.exp(e.deltaY * 0.0016))) });
+      setCam({ ...c, dist: Math.min(distMaxRef.current, Math.max(DIST_MIN, c.dist * Math.exp(e.deltaY * 0.0016))) });
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -745,7 +753,7 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
       const cy = (pts[0].y + pts[1].y) / 2;
       let next = { ...camRef.current };
       if (p.dist > 0) {
-        next.dist = Math.min(DIST_MAX, Math.max(DIST_MIN, (p.startDist * d) / p.dist));
+        next.dist = Math.min(distMax, Math.max(DIST_MIN, (p.startDist * d) / p.dist));
       }
       const dx = cx - p.cx;
       const dy = cy - p.cy;

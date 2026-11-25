@@ -182,17 +182,25 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 /* ---------- Landing ---------- */
 .hero {
   display: grid;
-  grid-template-columns: 1fr; /* the rotating example map, then the one CTA */
+  /* the rotating example map, then the one CTA. minmax(0, 1fr): a child's
+     minimum width must not stretch the track — a CTA row too wide to wrap
+     once pushed the whole hero 167px past the edge of a phone */
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   padding: 26px 6px 26px;
 }
-.hero-cta { display: flex; justify-content: center; }
+.hero-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .hero-cta .btn { padding: 12px 30px; font-size: 16px; }
 .hero-visual {
   position: relative;
   border-radius: 18px;
   overflow: hidden;
-  height: clamp(420px, 60dvh, 660px);
+  /* as tall as the first screen has room for below the wordmark: the hero
+     ends — its carousel bar included — inside the first screen. A fixed share
+     of the viewport left that bar below the fold on nearly every screen.
+     --hero-above is this section's measured offset from the top of the page
+     (Landing sets it); the 36px is the section's own top padding plus air. */
+  height: clamp(300px, calc(100dvh - var(--hero-above, 434px) - 36px), 660px);
   box-shadow: 0 18px 50px rgba(25, 35, 25, 0.14);
   /* same base colour as the page, with a cool wash: blue in light mode,
      dark purple in dark mode */
@@ -208,8 +216,16 @@ label.field > span { display: block; font-size: 13px; font-weight: 600; color: v
 .hero-map { position: absolute; inset: 0; }
 @media (max-width: 860px) {
   .hero { padding-top: 20px; gap: 14px; }
-  .hero-visual { height: clamp(340px, 55dvh, 460px); }
+  /* the same, leaving the CTA row (~110px) on the first screen too */
+  .hero-visual { height: clamp(260px, calc(100dvh - var(--hero-above, 236px) - 130px), 460px); }
 }
+/* an example still loading, or one that failed — never a silent blank slide */
+.hero-wait {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  text-align: center; color: var(--ink-soft); font-size: 14px;
+}
+.hero-wait p { margin: 0; }
 
 /* keyboard focus + search dropdown polish */
 :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 6px; }
@@ -426,6 +442,22 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 .viewer-map > svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 
 /* top floating bar: store pill · search · view toggle */
+
+/* The shopper map's floating layers are grouped in two wrappers that lay
+ * nothing down themselves: the control column (pan pad, zoom) and the stack
+ * of panels along the bottom-left. Every other layout positions the layers
+ * individually — on phones the wrappers take over (see "Phone: the shopper
+ * viewer" at the end of this file). */
+.viewer-side, .viewer-stack { display: contents; }
+/* where the top bar breaks into its second row on a phone */
+.viewer-top-break { display: none; }
+/* the map hint says "hover" to a mouse and "tap" to a finger */
+.hint-coarse { display: none; }
+@media (pointer: coarse) {
+  .hint-fine { display: none; }
+  .hint-coarse { display: inline; }
+}
+
 .viewer-ui-top {
   position: absolute; top: 12px; left: 12px; right: 12px; z-index: 8;
   display: flex; align-items: flex-start; gap: 10px; pointer-events: none;
@@ -568,16 +600,6 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 .view-toggle button + button { border-left: 1px solid var(--line); }
 .view-toggle button.active { background: var(--green); color: #fff; }
 
-@media (max-width: 640px) {
-  .viewer-ui-top { flex-wrap: wrap; }
-  .store-pill { order: 1; }
-  .edit-btn { order: 2; }
-  .view-toggle { order: 3; }
-  .theme-settings { order: 3; }
-  .fly-btn { order: 4; flex: 1 1 100%; height: 44px; }
-  .search-float { order: 5; flex: 1 1 100%; }
-}
-
 .cat-chip {
   border: 1px solid var(--line); background: var(--surface-solid); border-radius: 999px;
   padding: 5px 12px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink-soft);
@@ -595,10 +617,6 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
   left: 50%; transform: translateX(-50%); bottom: 14px;
   background: var(--surface-glass); border-color: transparent;
 }
-@media (max-width: 640px) {
-  .map-hint-center { bottom: 40px; max-width: calc(100vw - 24px); }
-}
-
 .powered-by {
   position: absolute; right: 12px; bottom: 12px; z-index: 7;
   display: inline-flex; align-items: center; gap: 5px;
@@ -684,13 +702,15 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 
 /* ---------- Trip + product sheet (shopper) ---------- */
 .offline-banner {
-  position: absolute; top: 66px; left: 50%; transform: translateX(-50%); z-index: 9;
+  position: absolute; top: calc(var(--viewer-top, 66px) + 2px); left: 50%; transform: translateX(-50%); z-index: 9;
   background: #43302a; color: #ffe9d6; font-size: 12.5px; font-weight: 600;
   padding: 7px 14px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);
 }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .product-sheet {
-  position: absolute; top: 66px; left: 50%; transform: translateX(-50%); z-index: 8;
+  /* just under the top bar's measured bottom edge — a fixed offset overlapped
+     the moment the bar was a pixel taller than assumed */
+  position: absolute; top: calc(var(--viewer-top, 66px) + 2px); left: 50%; transform: translateX(-50%); z-index: 8;
   /* photo · name · close on one row, the actions on their own row below —
      sharing a row, three buttons squeezed the name down to "Greek …" */
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 10px;
@@ -722,13 +742,18 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 /* G4: comfortable touch targets on coarse pointers */
 @media (pointer: coarse) {
   .view-toggle button, .edit-btn, .fly-btn, .route-badge-x, .search-clear { min-width: 44px; min-height: 44px; }
+  /* the search field's two buttons both grow to 44px — laid side by side they
+     no longer land on each other (the ✕ used to cover half of the 🖼) */
+  .search-clear { right: 2px; }
+  .search-img-toggle { right: 48px; width: 44px; height: 44px; }
+  .search-float .input { padding-right: 96px; }
 }
 
 /* ---------- Route overlay (shared by 2D SVG and 3D canvas views) ---------- */
 .viewer-map > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
 
 .route-badge {
-  position: absolute; top: 66px; left: 12px; z-index: 7;
+  position: absolute; top: calc(var(--viewer-top, 66px) + 2px); left: 12px; z-index: 7;
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--surface-glass); border: 1px solid var(--line); border-radius: 10px;
   padding: 7px 11px; font-size: 13px; color: var(--ink-soft);
@@ -744,11 +769,6 @@ html[data-mode='dark'] .tool-rail .tool-btn.danger:not(:disabled):hover { backgr
 
 .route-casing { stroke: #ffffff; stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; }
 .route-line { stroke: #e4572e; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-
-@media (max-width: 640px) {
-  /* clear the wrapped top bar: pill+toggle row, fly CTA row, search row */
-  .route-badge { top: 172px; }
-}
 
 /* ---------- Global polish ---------- */
 ::selection { background: var(--green-soft); color: var(--green-dark); }
@@ -926,8 +946,11 @@ html[data-mode='dark'] .store-status.live { color: #6cc180; }
 }
 .cam-toggle:hover { background: var(--hover); color: var(--ink); }
 .side-open .cam-toggle { right: 332px; }
-.viewer-map .cam-toggle { top: 54px; }
-.viewer-map .pan-pad { top: 54px; right: 12px; }
+/* the viewer's sit just under the top bar's measured bottom edge (a fixed
+   54px assumed a 42px bar — with a store that shows its hours the toggle's
+   top was hidden behind the bar) */
+.viewer-map .cam-toggle { top: calc(var(--viewer-top, 54px) + 6px); }
+.viewer-map .pan-pad { top: calc(var(--viewer-top, 54px) + 6px); right: 12px; }
 /* ＋/− zoom — bottom-right in both the 2D and 3D views, lifted clear of the
    bottom hint strip */
 .zoom-column {
@@ -1144,7 +1167,7 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 .dir-cat .dot { width: 8px; height: 8px; border-radius: 50%; }
 
 .browse-badge {
-  position: absolute; top: 66px; left: 12px; z-index: 7;
+  position: absolute; top: calc(var(--viewer-top, 66px) + 2px); left: 12px; z-index: 7;
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--surface-glass); border: 1px solid var(--line); border-radius: 10px;
   padding: 7px 11px; font-size: 13px; color: var(--ink-soft);
@@ -1160,10 +1183,6 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
 }
 @media (pointer: coarse) {
   .dir-btn { min-height: 44px; }
-}
-@media (max-width: 640px) {
-  .browse-badge { top: 172px; } /* clear the wrapped top bar, like route-badge */
-  .dir-panel { bottom: 62px; }
 }
 
 /* ---------- Sandbox editor (/try/:slug — no-account trial) ---------- */
@@ -1265,9 +1284,6 @@ html[data-mode='dark'] .gh-walker circle { stroke: #131518; }
   .controls-card { width: min(320px, calc(100vw - 24px)); }
   .tool-hint { max-width: calc(100% - 140px); font-size: 11.5px; }
 
-  /* viewer: the wrapped top bar pushes the pads down clear of it */
-  .viewer-map .pan-pad { top: 118px; }
-  .viewer-map .zoom-column { bottom: 64px; }
 }
 
 @media (max-width: 1024px) and (min-width: 761px) {
@@ -1499,3 +1515,83 @@ kbd {
 .group-item-row .input { flex: 1; min-width: 0; }
 .group-item-row .select { flex-shrink: 1; min-width: 120px; max-width: 160px; }
 .group-item-price { width: 76px !important; flex: 0 0 76px !important; }
+
+/* ---------- Phone: the shopper viewer on a tall, narrow screen ----------
+   Each layer used to be pinned to one ASSUMED top-bar height (66px, or 172px
+   once the bar wrapped). The bar's real height moves with wrapping, touch
+   targets and the safe area, so those layers overlapped as soon as it did.
+   Two rules replace the guesses:
+   · `--viewer-top` is the bar's MEASURED bottom edge (ViewerPage sets it);
+     everything that belongs under the bar hangs from it.
+   · The layers divide the screen into zones that cannot meet — the bar on
+     top, a stack along the bottom-left, a control column on the right. */
+@media (max-width: 760px) {
+  /* the map is the stack's flex container: the stack needs no position of its
+     own, so the product sheet inside it still anchors to the map itself */
+  .viewer-map { display: flex; flex-direction: column; }
+
+  /* the bar — exactly two 44px rows: identity · view · appearance, then search · edit */
+  .viewer-ui-top {
+    top: calc(8px + env(safe-area-inset-top, 0px)); left: 8px; right: 8px; gap: 8px;
+    flex-wrap: wrap; align-items: center;
+  }
+  .store-pill { order: 1; flex: 1 1 0; max-width: none; height: 44px; padding: 0 12px; }
+  .store-pill-name { min-width: 0; }
+  .view-toggle { order: 2; margin-left: 0; }
+  .view-toggle button { height: 44px; }
+  .theme-settings { order: 3; }
+  .viewer-ui-top .theme-gear { width: 44px; height: 44px; }
+  .viewer-top-break { display: block; order: 4; flex: 0 0 100%; height: 0; }
+  .search-float { order: 5; flex: 1 1 0; margin: 0; }
+  .search-float .input { height: 44px; }
+  .edit-btn { order: 6; height: 44px; }
+  .fly-btn { order: 7; flex: 1 1 100%; height: 44px; }
+
+  /* the control column: the pan pad (3D, once opened) above the zoom buttons */
+  .viewer-side {
+    position: absolute; right: 8px; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); z-index: 6;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  }
+  .viewer-map .pan-pad, .viewer-map .cam-toggle, .viewer-map .zoom-column { position: static; }
+  .viewer-map .pan-pad { grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; box-shadow: var(--shadow); }
+
+  /* the stack: whatever is showing, one above the other — clear of the control
+     column on its right, and lifted above the watermark row (25px) underneath */
+  .viewer-stack {
+    margin-top: auto; padding: 0 68px calc(41px + env(safe-area-inset-bottom, 0px)) 8px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px; z-index: 7;
+    pointer-events: none;
+  }
+  .viewer-stack > :not(.product-sheet):not(.sr-only) { position: static; transform: none; }
+  /* (the stack itself ignores taps, so its padding never steals them from the
+     map — each panel inside opts back in, the product sheet included) */
+  .viewer-stack .route-badge, .viewer-stack .browse-badge, .viewer-stack .floor-float,
+  .viewer-stack .trip-panel, .viewer-stack .dir-panel, .viewer-stack .product-sheet { pointer-events: auto; }
+  .offline-banner { order: 1; align-self: center; }
+  .floor-float { order: 2; max-width: 100%; overflow-x: auto; }
+  .route-badge, .browse-badge { order: 3; }
+  .dir-panel { order: 4; width: auto; max-width: 100%; }
+  .trip-panel { order: 5; width: auto; max-width: 100%; max-height: 34dvh; overflow-y: auto; }
+  .map-hint { order: 6; max-width: 100%; text-align: center; }
+  /* an opened pan pad is 138px wide: the stack steps aside for it */
+  .viewer-map.pad-open .viewer-stack { padding-right: 154px; }
+
+  /* under the bar, across the width: the selected item */
+  .product-sheet {
+    top: calc(var(--viewer-top, 66px) + 8px); left: 8px; right: 8px; transform: none;
+    width: auto; max-width: none;
+  }
+  .powered-by { right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---------- Phone: the homepage hero ---------- */
+@media (max-width: 640px) {
+  /* the three names cannot sit beside the arrows — and the store pill above
+     already names the example on show — so the tabs become dots */
+  .hero-dots { flex: 0 0 auto; gap: 6px; }
+  .hero-dots button {
+    width: 32px; height: 32px; max-width: none; padding: 0; border-radius: 50%;
+    font-size: 0; /* the name leaves the screen, not the accessibility tree */
+    background: var(--chip); border-color: var(--line);
+  }
+}

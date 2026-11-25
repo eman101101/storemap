@@ -56,9 +56,13 @@ export async function serveMedia(env: Env, file: string, ifNoneMatch?: string): 
     // the example maps reference these from their first boot: with nothing
     // stored at all, the photo set was never loaded into this database (a
     // single missing photo is just that — no need to cry wolf over it)
-    if (!warnedEmpty && !(await env.DB.prepare('SELECT 1 FROM media LIMIT 1').first())) {
+    if (!warnedEmpty) {
+      // claimed BEFORE the probe: the first burst of photo requests to reach a
+      // cold isolate would otherwise all pass the check, and each log it
       warnedEmpty = true;
-      console.warn('[media] no stored photos — the demo photo set was not loaded into this database. Run `npm run photos` in worker/ (scripts/load-demo-photos.mjs)');
+      if (!(await env.DB.prepare('SELECT 1 FROM media LIMIT 1').first())) {
+        console.warn('[media] no stored photos — the demo photo set was not loaded into this database. Run `npm run photos` in worker/ (scripts/load-demo-photos.mjs)');
+      }
     }
     return null;
   }

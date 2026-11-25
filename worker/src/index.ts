@@ -26,14 +26,28 @@ type AppEnvFull = AppEnv & { Variables: { user: any; config: any; store: any; bo
 
 const app = new Hono<AppEnvFull>();
 
+/**
+ * Keep the request alive until `pending` settles (ctx.waitUntil). The app is
+ * also driven without an execution context (the unit tests) — nothing to do there.
+ */
+function keepAlive(c: Context<AppEnvFull>, pending: Promise<unknown>): void {
+  try {
+    c.executionCtx.waitUntil(pending);
+  } catch {
+    /* no execution context — not running inside a Worker request */
+  }
+}
+
 /* ---- Per-request setup: config from bindings, then first-boot bootstrap.
  * Mounted globally: /s/* and SEO routes need config too (bootstrap itself is
  * memoised per isolate, so the cost is one-time). ---- */
 app.use('*', async (c, next) => {
   const origin = new URL(c.req.url).origin;
   const cfg = makeConfig(c.env, origin);
-  // First boot on a fresh D1: migrations + generated session secret + demo maps.
-  cfg.sessionSecret = await bootstrap(c.env, cfg.selfHosted);
+  // First boot on a fresh isolate: migrations + generated session secret + demo maps.
+  // The request that starts the bootstrap keeps it alive: a promise dies with
+  // the request that created it (see bootstrap()).
+  cfg.sessionSecret = await bootstrap(c.env, cfg.selfHosted, (pending) => keepAlive(c, pending));
   c.set('config', cfg);
   await next();
 });

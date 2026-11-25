@@ -358,52 +358,45 @@ function splitStatements(sql: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
-/** Apply pending migrations; memoised per isolate (a rejection un-memoises it). */
+/**
+ * Apply pending migrations. Safe to run again at any time — another isolate
+ * may be mid-migration, or this one may be recovering an abandoned bootstrap
+ * (see bootstrap()): every statement is an IF NOT EXISTS, a tolerated
+ * duplicate or a re-runnable backfill, and the ledger insert is OR IGNORE.
+ */
 export async function migrate(env: Env): Promise<void> {
-  if ((migrate as any).done) return;
-  const attempt = (async () => {
-    await run(
-      env,
-      `CREATE TABLE IF NOT EXISTS migrations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );`
-    );
-    const applied = new Set((await all(env, 'SELECT name FROM migrations')).map((r) => r.name as string));
-    for (const m of MIGRATIONS) {
-      if (applied.has(m.name)) continue;
-      // ALTER TABLE can't run inside a D1 batch with other DDL; statements run
-      // one by one — each migration is idempotent via IF NOT EXISTS / its guard.
-      // EXCEPT migrations flagged `batch`: they need pragma state (e.g.
-      // foreign_keys=OFF around a table rebuild) to hold across statements,
-      // which only survives within a single batch/transaction.
-      try {
-        if (m.batch) {
-          await env.DB.batch(splitStatements(m.sql).map((s) => env.DB.prepare(s)));
-        } else {
-          for (const statement of splitStatements(m.sql)) {
-            await run(env, statement);
-          }
+  await run(
+    env,
+    `CREATE TABLE IF NOT EXISTS migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );`
+  );
+  const applied = new Set((await all(env, 'SELECT name FROM migrations')).map((r) => r.name as string));
+  for (const m of MIGRATIONS) {
+    if (applied.has(m.name)) continue;
+    // ALTER TABLE can't run inside a D1 batch with other DDL; statements run
+    // one by one — each migration is idempotent via IF NOT EXISTS / its guard.
+    // EXCEPT migrations flagged `batch`: they need pragma state (e.g.
+    // foreign_keys=OFF around a table rebuild) to hold across statements,
+    // which only survives within a single batch/transaction.
+    try {
+      if (m.batch) {
+        await env.DB.batch(splitStatements(m.sql).map((s) => env.DB.prepare(s)));
+      } else {
+        for (const statement of splitStatements(m.sql)) {
+          await run(env, statement);
         }
-      } catch (err) {
-        // 004/005 ALTERs fail if another cold start applied them first — accept.
-        const msg = String((err as Error).message || '');
-        if (!/duplicate column|already exists|unique constraint/i.test(msg)) throw err;
       }
-      // OR IGNORE: a concurrent isolate may have recorded this migration first
-      // (the UNIQUE constraint on name is the loser's only failure mode).
-      await run(env, 'INSERT OR IGNORE INTO migrations (name) VALUES (?)', m.name);
+    } catch (err) {
+      // 004/005 ALTERs fail if another cold start applied them first — accept.
+      const msg = String((err as Error).message || '');
+      if (!/duplicate column|already exists|unique constraint/i.test(msg)) throw err;
     }
-  })();
-  (migrate as any).done = attempt;
-  try {
-    await attempt;
-  } catch (err) {
-    // Never memoise failure — a losing isolate must be able to retry on the
-    // next request instead of 500ing for its whole lifetime.
-    (migrate as any).done = undefined;
-    throw err;
+    // OR IGNORE: a concurrent isolate may have recorded this migration first
+    // (the UNIQUE constraint on name is the loser's only failure mode).
+    await run(env, 'INSERT OR IGNORE INTO migrations (name) VALUES (?)', m.name);
   }
 }
 
@@ -417,13 +410,72 @@ async function resolveSessionSecret(env: Env): Promise<string> {
   return (stored?.value as string) || secret;
 }
 
+/* ---- once per isolate, shared by every request ---- */
+
+/** The bootstrap in flight on this isolate — the one started by whichever request got here first. */
+let booting: Promise<string> | null = null;
+/** Set the moment a bootstrap succeeds; every later request just reads it. */
+let booted: string | null = null;
+
+/**
+ * How long a request waits on a bootstrap that ANOTHER request started before
+ * it gives up on that one and runs its own. A cold start is ~1.5 s of D1
+ * round-trips, so this is only ever reached by a run that was abandoned.
+ */
+const FOLLOW_MS = 10_000;
+
+/**
+ * Wait on another request's bootstrap — never without a way out. A promise
+ * belongs to the request that created it: if that request ends while the
+ * bootstrap is still pending, the promise can never settle, and the runtime
+ * either rejects the wait or leaves it hanging. An isolate left holding such a
+ * promise failed EVERY request it got for the rest of its life. Resolves null
+ * when the wait failed or has taken implausibly long, so the caller can start
+ * a bootstrap of its own instead.
+ */
+function follow(attempt: Promise<string>): Promise<string | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), FOLLOW_MS);
+    attempt.then(
+      (secret) => {
+        clearTimeout(timer);
+        resolve(secret);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}
+
 /**
  * Full first-boot bootstrap: migrations, session secret, and (in local mode,
  * when the database is empty) the demo maps — the same behavior as the Node
  * backend's SELF_HOSTED=true boot. Resolves with the session secret.
+ *
+ * Once per isolate: requests that arrive while it is in flight share the one
+ * run. `keepAlive` is that run's lifeline — the request that starts it hands
+ * the promise to ctx.waitUntil(), which keeps the request (and so the promise)
+ * alive until the run settles even if the request itself ends first. Should a
+ * run be abandoned anyway, the next request waits it out (follow()) and then
+ * runs a bootstrap of its own, so the isolate heals instead of staying dead.
  */
-export async function bootstrap(env: Env, selfHosted: boolean): Promise<string> {
-  if ((bootstrap as any).done) return (bootstrap as any).done;
+export async function bootstrap(
+  env: Env,
+  selfHosted: boolean,
+  keepAlive?: (pending: Promise<unknown>) => void
+): Promise<string> {
+  if (booted !== null) return booted;
+  // A failure clears `booting` itself; an abandoned run has nobody left to do
+  // that, so the waiter does. Either way, look again before starting one: other
+  // waiters may already have got a new run going.
+  for (let waited = 0; booting && waited < 2; waited++) {
+    const running = booting;
+    const secret = await follow(running);
+    if (secret !== null) return (booted ??= secret);
+    if (booting === running) booting = null;
+  }
   const attempt = (async () => {
     await migrate(env);
     const secret = await resolveSessionSecret(env);
@@ -442,12 +494,17 @@ export async function bootstrap(env: Env, selfHosted: boolean): Promise<string> 
     }
     return secret;
   })();
-  (bootstrap as any).done = attempt;
+  booting = attempt;
+  // the derived promise never rejects: waitUntil() logs a rejection as an uncaught exception
+  keepAlive?.(attempt.catch(() => {}));
   try {
-    return await attempt;
+    const secret = await attempt;
+    booted = secret;
+    return secret;
   } catch (err) {
-    // same rule as migrate(): don't memoise failure, so the isolate can retry.
-    (bootstrap as any).done = undefined;
+    // Never memoise failure — a losing isolate must be able to retry on the
+    // next request instead of 500ing for its whole lifetime.
+    if (booting === attempt) booting = null;
     throw err;
   }
 }

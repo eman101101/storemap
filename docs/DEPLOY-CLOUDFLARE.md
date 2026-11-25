@@ -121,6 +121,11 @@ bundle them — load them once (per database):
 cd worker && npm run photos -- --remote      # needs `wrangler login`
 ```
 
+Every photo on the site answering **404** means this step was skipped on that
+database — the Worker logs `[media] no stored photos …` once per isolate to
+say so. The command is idempotent: re-run it after the photo set changes, it
+rewrites only what differs.
+
 ```bash
 curl https://<your-host>/api/health           # {"ok":true,...}
 curl -sI https://<your-host>/api/public/stores/home-depot-example | grep -i x-cache

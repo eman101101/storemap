@@ -7,13 +7,14 @@ import { PlanogramSvg } from './ShelfDetail';
 import { compactFilledLayout, computeShelfLayout, type ShelfLayout, type ShelfSlot } from '../lib/shelfLayout';
 import { buildGroupPins } from '../lib/itemGroups';
 import { useAuth } from '../App';
-import type { MapElement, Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
+import type { Product, ProductLocation, PublicStorePayload, RectGeom } from '../types';
 import { parseElement, groupDisplayName, locationFlags } from '../types';
 import type { WorldPt } from '../lib/geometry';
 import type { Camera3D } from '../lib/render3d';
 import { fitCamera, MODERN_THEME, DARK_THEME } from '../lib/render3d';
-import { computeRoute } from '../lib/navgrid';
+import { buildNavGrid, computeRoute } from '../lib/navgrid';
 import PricingModal from './PricingModal';
+import { useExamplePayloads, type ExampleLoad } from './useExamplePayloads';
 import { useTheme } from '../theme';
 
 /** The homepage examples — the seeded demo stores, opened as no-account
@@ -23,12 +24,16 @@ const EXAMPLES = [
   { slug: 'home-depot-example', name: 'Home Depot Example', kind: 'Hardware Store' },
   { slug: 'convenience-store-example', name: 'Corner Store Example', kind: 'Convenience Store' },
 ];
+/** Stable identity for the effect that loads them (EXAMPLES is module-level). */
+const EXAMPLE_SLUGS = EXAMPLES.map((ex) => ex.slug);
 
 /** The hero's settle-in motion: a slow, decelerating swing (~29°) that glides
  *  to a stop — a hint of life, not the endless orbit it replaced. */
 const HERO_SPIN_RAD = 0.5;
 const HERO_SPIN_MS = 2600;
 const DEMO_EVERY_MS = 5000;
+/** How long each example holds the hero before the carousel moves on. */
+const SLIDE_MS = 8000;
 
 /** What the hero is showing: an item, the group its pin stands for, and the
  *  route from the entrance. */
@@ -48,6 +53,22 @@ interface Demo {
 function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
   const [cam, setCam] = useState<Camera3D | null>(null);
   const userDrove = useRef(false);
+  // the hero's box is wide on a desktop and tall on a phone — the camera is
+  // fitted to its shape, or a portrait phone crops the store at both edges
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) setBox((b) => (b && b.w === r.width && b.h === r.height ? b : { w: r.width, h: r.height }));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
   // the preview is a live map: any visitor gesture takes over the camera and
   // cancels the intro swing
   const onCamera = useCallback((c: Camera3D) => {
@@ -66,6 +87,10 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
   // every shelf group shows ONE pin; an item is planogram-only, so the demo
   // routes to the pin of the group it sits in
   const groupPins = useMemo(() => buildGroupPins(data.locations, shelves), [data, shelves]);
+  // the demo re-routes every few seconds, but the walkable grid changes only
+  // with the fixtures — built once (the store view does the same)
+  const floorEls = useMemo(() => elements.filter((e) => e.floor_id === floor?.id), [elements, floor?.id]);
+  const navGrid = useMemo(() => (floor ? buildNavGrid(floor, floorEls) : null), [floor, floorEls]);
 
   /** Route from the entrance to an item's GROUP pin and show it. Returns the
    *  pin, or null when the item has no pin to show. */
@@ -73,7 +98,7 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
     (facing: ProductLocation, product: Product): ProductLocation | null => {
       const pin = groupPins.of(facing);
       if (!floor || locationFlags(pin).groupOnly) return null;
-      const r = computeRoute(floor, elements.filter((e) => e.floor_id === floor.id), { x: pin.x, y: pin.y });
+      const r = computeRoute(floor, floorEls, { x: pin.x, y: pin.y }, {}, navGrid ?? undefined);
       setDemo({
         name: product.name,
         where: groupPins.nameOf(facing) ?? floor.name,
@@ -84,7 +109,7 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
       });
       return pin;
     },
-    [elements, floor, groupPins]
+    [floorEls, floor, groupPins, navGrid]
   );
 
   // every few seconds: route a shopper from the entrance to a random item
@@ -110,9 +135,11 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
   // start a bit closer than a full-floor fit, then swing slowly to a stop —
   // still for visitors who prefer reduced motion; a user gesture ends it early
   useEffect(() => {
-    if (!floor) return;
-    const fit = fitCamera(floor);
-    const start = { ...fit, dist: Math.max(10, fit.dist * 0.7) };
+    if (!floor || !box) return;
+    // closer than a full fit — the bolder view the hero wants — yet never so
+    // close that the store's sides leave a tall, narrow box
+    const fit = fitCamera(floor, box.w / box.h, 0.7);
+    const start = { ...fit, dist: Math.max(10, fit.dist) };
     if (cam === null) setCam(start);
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     let raf = 0;
@@ -126,28 +153,32 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [cam === null, floor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cam === null, floor, box]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!floor || !cam) return null;
+  if (!floor) return null;
   const demoPins = demo ? [{ location: demo.loc, product: demo.product }] : [];
   return (
     <>
-      <div className="hero-map">
+      {/* mounted before the camera exists: its measured shape is what the
+          camera is fitted to */}
+      <div className="hero-map" ref={boxRef}>
         {/* live and interactive: drag orbits, ctrl/⌘+wheel zooms, vertical
             swipes still scroll the page (touch-action: pan-y) */}
-        <Map3D
-          floor={floor}
-          elements={elements.filter((e: MapElement) => e.floor_id === floor.id)}
-          pins={demoPins}
-          stockPins={demoPins}
-          focusPinId={demo?.loc.id ?? null}
-          route={demo?.points ?? undefined}
-          camera={cam}
-          onCamera={onCamera}
-          theme={sceneTheme}
-          wheelZoom="ctrl"
-          touchAction="pan-y"
-        />
+        {cam && (
+          <Map3D
+            floor={floor}
+            elements={floorEls}
+            pins={demoPins}
+            stockPins={demoPins}
+            focusPinId={demo?.loc.id ?? null}
+            route={demo?.points ?? undefined}
+            camera={cam}
+            onCamera={onCamera}
+            theme={sceneTheme}
+            wheelZoom="ctrl"
+            touchAction="pan-y"
+          />
+        )}
       </div>
       <div className="hero-top">
         <div className="hero-store-pill">
@@ -343,21 +374,25 @@ function ShelfCard({ pick }: { pick: PlanogramPick }) {
 }
 
 /** The hero visual cycles the live examples; each carries edit + view actions. */
-function HeroCarousel({ payloads }: { payloads: Record<string, PublicStorePayload | null> }) {
+function HeroCarousel({ loads, onRetry }: { loads: Record<string, ExampleLoad>; onRetry: () => void }) {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
 
   // rotate through the examples until the visitor takes over
   const reduced =
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // one countdown per example, restarted by every slide change: a manual ‹ ›
+  // or tab click always gets its full turn, where a free-running interval
+  // could move on again a moment later
   useEffect(() => {
     if (paused || reduced) return;
-    const t = window.setInterval(() => setIdx((i) => (i + 1) % EXAMPLES.length), 8000);
-    return () => window.clearInterval(t);
-  }, [paused, reduced]);
+    const t = window.setTimeout(() => setIdx((i) => (i + 1) % EXAMPLES.length), SLIDE_MS);
+    return () => window.clearTimeout(t);
+  }, [idx, paused, reduced]);
 
   const current = EXAMPLES[idx];
-  const data = payloads[current.slug];
+  const load = loads[current.slug];
+  const data = load?.status === 'ready' ? load.data : null;
   const go = (dir: number) => setIdx((i) => (i + dir + EXAMPLES.length) % EXAMPLES.length);
 
   return (
@@ -366,7 +401,21 @@ function HeroCarousel({ payloads }: { payloads: Record<string, PublicStorePayloa
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
     >
-      {data && <HeroMap key={current.slug} data={data} kind={current.kind} />}
+      {data ? (
+        <HeroMap key={current.slug} data={data} kind={current.kind} />
+      ) : (
+        // never a silent blank slide: say so, and offer another go
+        <div className="hero-wait" role="status">
+          {load?.status === 'failed' ? (
+            <>
+              <p>This example didn't load.</p>
+              <button className="btn sm" onClick={onRetry}>Try again</button>
+            </>
+          ) : (
+            <p>Loading {current.name}…</p>
+          )}
+        </div>
+      )}
       <div className="hero-carousel">
         <div className="hero-carousel-nav">
           <button aria-label="Previous example" onClick={() => go(-1)}>‹</button>
@@ -402,30 +451,45 @@ function HeroCarousel({ payloads }: { payloads: Record<string, PublicStorePayloa
 export default function Landing() {
   const { user } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
-  const [payloads, setPayloads] = useState<Record<string, PublicStorePayload | null>>({});
+  const { loads, retry } = useExamplePayloads(EXAMPLE_SLUGS);
+  // what the planogram band scores: an example's map, or nothing (yet)
+  const payloads = useMemo<Record<string, PublicStorePayload | null>>(
+    () =>
+      Object.fromEntries(
+        EXAMPLE_SLUGS.map((slug) => {
+          const load = loads[slug];
+          return [slug, load?.status === 'ready' ? load.data : null];
+        })
+      ),
+    [loads]
+  );
+  const picks = usePlanogramPicks(payloads);
 
-  // the example stores, fetched once for the carousel and the planogram band
+  // how much of the first screen sits above the hero — the hero is sized to
+  // what is left, so its carousel bar ends inside the first screen
+  const heroRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    let live = true;
-    for (const { slug } of EXAMPLES) {
-      api.publicStore(slug)
-        .then((p) => live && setPayloads((prev) => ({ ...prev, [slug]: p })))
-        .catch(() => live && setPayloads((prev) => ({ ...prev, [slug]: null })));
-    }
+    const hero = heroRef.current;
+    if (!hero) return;
+    const publish = () =>
+      hero.style.setProperty('--hero-above', `${Math.round(hero.getBoundingClientRect().top + window.scrollY)}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(document.body);
+    window.addEventListener('resize', publish);
     return () => {
-      live = false;
+      ro.disconnect();
+      window.removeEventListener('resize', publish);
     };
   }, []);
-
-  const picks = usePlanogramPicks(payloads);
 
   return (
     <main className="container">
       <GridHero />
       <p className="hero-tagline">Customer facing maps and planograms.</p>
 
-      <section className="hero">
-        <HeroCarousel payloads={payloads} />
+      <section className="hero" ref={heroRef}>
+        <HeroCarousel loads={loads} onRetry={retry} />
         <div className="hero-cta">
           <Link to={user ? '/dashboard' : '/try/blank'} className="btn primary" aria-label="Create a Map">
             <BlockText text="Create a Map" cell={4} />

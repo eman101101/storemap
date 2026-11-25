@@ -59,12 +59,17 @@ describe('stored demo photos', () => {
   });
 
   it('says so once when nothing is stored at all — the set was never loaded', async () => {
-    const { env } = envWith({});
+    vi.resetModules(); // the flag is per isolate, and the test above spent it — start cold
+    const { serveMedia } = await import('../src/media');
+    const { env, queries } = envWith({});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await serveMedia(env, 'a.jpg')).toBeNull();
-    expect(await serveMedia(env, 'b.jpg')).toBeNull();
+    // the first page of photos reaches a cold isolate together — still one say
+    expect(await Promise.all([serveMedia(env, 'a.jpg'), serveMedia(env, 'b.jpg'), serveMedia(env, 'c.jpg')])).toEqual([null, null, null]);
+    expect(await serveMedia(env, 'd.jpg')).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/not loaded.*npm run photos/);
+    // one "is anything stored" probe for the four requests, not one each
+    expect(queries.filter((q) => q.startsWith('SELECT 1 FROM media'))).toHaveLength(1);
     warn.mockRestore();
   });
 });
