@@ -399,7 +399,7 @@ export function walmartSpec(): Spec {
     description:
       'Big-box example built from the reference floor plan: every area is a department and every shelf one titled item group — the map shows ONE pin per group (sized to the group), the items live only inside its planogram. Grocery wing carries real product photos; general merchandise plans as diagram tiles.',
     hours: '6am–11pm daily', floorName: 'Main floor', w: WW, h: WH,
-    elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 4,
+    elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 6,
   };
 }
 
@@ -575,7 +575,7 @@ export function homeDepotSpec(): Spec {
     description:
       'Hardware-store example: lumber and paint along the top, tool and trade aisles down the middle, appliances and flooring on the right, and the garden center yard in the corner. Every shelf is one titled item group and every catalog item faces inside its planogram.',
     hours: '6am–10pm daily', floorName: 'Main floor', w: HD_W, h: HD_H,
-    elements, categories: HD_CATS, products, locations, skuPrefix: 'HDX', skuPad: 3,
+    elements, categories: HD_CATS, products, locations, skuPrefix: 'HDX', skuPad: 5,
   };
 }
 
@@ -702,7 +702,7 @@ export function cornerStoreSpec(): Spec {
     description:
       'Convenience-store example on a small floorplan: cooler wall along the top, snack shelves in the middle, coffee corner, hot-food case, essentials on the back wall and an ice-cream freezer by the door. Every shelf is one titled item group.',
     hours: '6am–11pm daily', floorName: 'Shop floor', w: CS_W, h: CS_H,
-    elements, categories: CS_CATS, products, locations, skuPrefix: 'CNV', skuPad: 3,
+    elements, categories: CS_CATS, products, locations, skuPrefix: 'CNV', skuPad: 4,
   };
 }
 
@@ -738,6 +738,20 @@ interface Spec {
 }
 
 
+
+/**
+ * Bumped whenever a spec's layout or SKU scheme changes in a way only a
+ * rebuild can deliver (parity with backend/scripts/demo-catalog.mjs). The
+ * version a store was laid out under is kept under `seed:layout:<slug>`; a
+ * present store laid out under another version is rebuilt — which is also
+ * what retires a loaded catalogue, since its rows go with the rebuild.
+ */
+const LAYOUT_VERSION = 2;
+const layoutKey = (slug: string) => `seed:layout:${slug}`;
+/** A store's generated catalogue is recorded as loaded under this key (scripts/load-demo-catalog.mjs writes it). */
+const catalogKey = (slug: string) => `seed:catalog:${slug}`;
+/** A generated catalogue's facings carry their place along the shelf (meta.u — see demo-catalog.mjs); the demo's own facings never do. */
+const OWNED_FACINGS = "json_extract(meta, '$.u') IS NULL";
 
 const skuOf = (spec: Spec, i: number) => `${spec.skuPrefix}-${String(i + 1).padStart(spec.skuPad ?? 3, '0')}`;
 
@@ -795,7 +809,11 @@ const markPhotosInSync = (env: Env, spec: Spec, print: string) =>
  * seeded before photos were tracked, so its empty photo fields are filled too.
  */
 async function repointPhotos(env: Env, spec: Spec, storeId: string, firstSync: boolean): Promise<number> {
-  const rows = await all(env, 'SELECT id, sku, image_url FROM products WHERE store_id = ?', storeId);
+  // only the demo's own items are looked at: a loaded catalogue (120,000 SKUs
+  // without photos) is left out by its first SKU
+  const marker = await first(env, 'SELECT value FROM app_settings WHERE key = ?', catalogKey(spec.slug));
+  const fromSku = marker ? String(JSON.parse(String(marker.value)).fromSku ?? '') : '';
+  const rows = await all(env, 'SELECT id, sku, image_url FROM products WHERE store_id = ? AND sku < ?', storeId, fromSku);
   const bySku = new Map(rows.map((r) => [String(r.sku), r]));
   const updates: D1PreparedStatement[] = [];
   spec.products.forEach((p, i) => {
@@ -832,26 +850,30 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
   });
   const shelfRow = await first(env, "SELECT COUNT(*) AS n FROM map_elements WHERE floor_id = ? AND type = 'shelf'", floorId);
   let shelves = Number(shelfRow?.n ?? 0);
-  // A store can be left stale two ways: half-seeded (shelves + products
-  // written, pins never inserted — an older seed version's work) or seeded by
-  // an older spec (its pin count no longer matches this spec's). The
-  // skip-when-present check below would keep it frozen forever, so treat a
-  // location-count mismatch as stale and rebuild — but only while the store
-  // is still the demo's own (a user-claimed store is left exactly as its
-  // owner made it).
-  const locRow = await first(env, 'SELECT COUNT(*) AS n FROM product_locations WHERE floor_id = ?', floorId);
+  // A store can be left stale three ways: half-seeded (shelves + products
+  // written, pins never inserted — an older seed version's work), seeded by
+  // an older spec (its pin count no longer matches this spec's), or laid out
+  // under another layout/SKU version. The skip-when-present check below
+  // would keep it frozen forever, so rebuild — but only while the store is
+  // still the demo's own (a user-claimed store is left as its owner made it).
+  // Only the demo's own facings are counted: a loaded catalogue's facings are
+  // not part of the layout, and go with it when it is rebuilt.
+  const locRow = await first(env, `SELECT COUNT(*) AS n FROM product_locations WHERE floor_id = ? AND ${OWNED_FACINGS}`, floorId);
   const demoOwned = String(prior?.owner_id ?? '') === String(ownerId);
-  const locDrift = shelves > 0 && demoOwned && Number(locRow?.n ?? 0) !== spec.locations.length;
-  if (shelves > 0 && (sizeChanged || locDrift)) {
+  const laidOut = await first(env, 'SELECT value FROM app_settings WHERE key = ?', layoutKey(spec.slug));
+  const layoutChanged = laidOut?.value !== String(LAYOUT_VERSION);
+  const locDrift = Number(locRow?.n ?? 0) !== spec.locations.length;
+  if (shelves > 0 && (sizeChanged || (demoOwned && (locDrift || layoutChanged)))) {
     await env.DB.batch([
       env.DB.prepare('DELETE FROM product_locations WHERE floor_id = ?').bind(floorId),
       env.DB.prepare('DELETE FROM products WHERE store_id = ?').bind(storeId),
       env.DB.prepare('DELETE FROM categories WHERE store_id = ?').bind(storeId),
       env.DB.prepare('DELETE FROM map_elements WHERE floor_id = ?').bind(floorId),
+      env.DB.prepare('DELETE FROM app_settings WHERE key = ?').bind(catalogKey(spec.slug)),
       env.DB.prepare('UPDATE stores SET description = ?, hours = ? WHERE id = ?').bind(spec.description, spec.hours, storeId),
     ]);
     shelves = 0;
-    console.log(`[boot] ${spec.name} ${sizeChanged ? 'spec changed' : `stale pins (${locRow?.n} vs ${spec.locations.length})`} — rebuilding layout`);
+    console.log(`[boot] ${spec.name} ${sizeChanged ? 'spec changed' : locDrift ? `stale pins (${locRow?.n} vs ${spec.locations.length})` : 'layout version changed'} — rebuilding layout`);
   }
   if (shelves > 0) {
     // present: keep it, but bring its photos up to date in place. Changed
@@ -906,6 +928,12 @@ async function seedExample(env: Env, spec: Spec, ownerEmail: string, ownerName: 
   await insertAll(env, PRODUCT_SQL, prodRows);
   await insertAll(env, LOCATION_SQL, locRows);
   await markPhotosInSync(env, spec, await photoFingerprint(spec));
+  await run(
+    env,
+    'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    layoutKey(spec.slug),
+    String(LAYOUT_VERSION)
+  );
   console.log(`[boot] seeded ${spec.name}: ${spec.elements.length} elements, ${spec.products.length} products (${spec.locations.length} pinned)`);
 }
 

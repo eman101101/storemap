@@ -184,7 +184,7 @@ function HeroMap({ data, kind }: { data: PublicStorePayload; kind: string }) {
         <div className="hero-store-pill">
           <b>{data.store.name}</b>
           <span className="badge">{kind}</span>
-          <span className="muted">{data.products.length} products</span>
+          <span className="muted">{(data.catalog?.products ?? data.products.length).toLocaleString('en-US')} products</span>
         </div>
         {demo && (
           <div className="hero-demo-chip">

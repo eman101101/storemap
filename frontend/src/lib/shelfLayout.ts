@@ -192,19 +192,22 @@ export function computeShelfLayout(shelf: MapElement, pins: ShelfPin[]): ShelfLa
   }
 
   const slots: ShelfSlot[] = inside.map(({ location, product }) => {
+    const meta = safeParse(location.meta);
+    // a facing's place along the shelf is its pin's — unless it records one
+    // itself (meta.u: a generated item of a loaded catalogue, which is placed
+    // by number and not by a pin on the map)
     const local = worldToShelfLocal(r, location);
     // One shelf face: the persisted planogram row wins; unpinned rows sit on
     // the bottom board.
-    const level =
-      clampInt((location.meta && safeParse(location.meta).shelf_level) as number, 1, levelCount) ?? 1;
+    const level = clampInt(meta.shelf_level as number, 1, levelCount) ?? 1;
     return {
       product,
       locationId: location.id,
-      u: Math.min(1, Math.max(0, local.x / physWidth)),
+      u: Math.min(1, Math.max(0, typeof meta.u === 'number' ? meta.u : local.x / physWidth)),
       level,
       // per-item width (meta.w, set in the planogram editor) wins over the
       // shelf-wide default
-      facingWidth: clampNum((location.meta && safeParse(location.meta).w) as number, 0.05, 3) ?? facing,
+      facingWidth: clampNum(meta.w as number, 0.05, 3) ?? facing,
     };
   });
 

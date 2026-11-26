@@ -46,6 +46,15 @@ raw.exec(`
     price REAL,
     image_url TEXT NOT NULL DEFAULT ''
   );
+  CREATE TABLE product_locations (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    floor_id TEXT NOT NULL,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    rot REAL NOT NULL DEFAULT 0,
+    meta TEXT NOT NULL DEFAULT '{}'
+  );
   CREATE TABLE migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,

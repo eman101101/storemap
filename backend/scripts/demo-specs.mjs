@@ -316,7 +316,7 @@ export function walmartSpec() {
     description:
       'Big-box example built from the reference floor plan: every area is a department and every shelf one titled item group — the map shows ONE pin per group (sized to the group), the items live only inside its planogram, each with a product photo.',
     hours: '6am–11pm daily', floorName: 'Main floor', w: WW, h: WH,
-    elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 4,
+    elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 6,
   };
 }
 
@@ -480,7 +480,7 @@ export function homeDepotSpec() {
     description:
       'Hardware-store example: lumber and paint along the top, tool and trade aisles down the middle, appliances and flooring on the right, and the garden center yard in the corner. Every shelf is one titled item group and every catalog item faces inside its planogram, with a photo.',
     hours: '6am–10pm daily', floorName: 'Main floor', w: HD_W, h: HD_H,
-    elements, categories: HD_CATS, products, locations, skuPrefix: 'HDX', skuPad: 3,
+    elements, categories: HD_CATS, products, locations, skuPrefix: 'HDX', skuPad: 5,
   };
 }
 
@@ -603,7 +603,7 @@ export function cornerStoreSpec() {
     description:
       'Convenience-store example on a small floorplan: cooler wall along the top, snack shelves in the middle, coffee corner, hot-food case, essentials on the back wall and an ice-cream freezer by the door. Every shelf is one titled item group with a photo per item.',
     hours: '6am–11pm daily', floorName: 'Shop floor', w: CS_W, h: CS_H,
-    elements, categories: CS_CATS, products, locations, skuPrefix: 'CNV', skuPad: 3,
+    elements, categories: CS_CATS, products, locations, skuPrefix: 'CNV', skuPad: 4,
   };
 }
 

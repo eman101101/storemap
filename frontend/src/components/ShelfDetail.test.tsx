@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ShelfDetail from './ShelfDetail';
 import { parseElement, elementToRow, isRect, isPoint, isPoly } from '../types';
-import type { MapElementRow, Product, ProductLocation } from '../types';
+import type { MapElementRow, Product, ProductLocation, ShelfWindow, ShelfWindowSlot } from '../types';
 
 const row: MapElementRow = {
   id: 'shelf-1', floor_id: 'f1', type: 'shelf', shape: 'rect',
@@ -364,5 +364,113 @@ describe('ShelfDetail', () => {
     fireEvent.click(container.querySelector('g[style*="cursor"]')!);
     expect(screen.queryByRole('button', { name: '＋ Add another item' })).toBeNull();
     expect(screen.getByRole('button', { name: '＋ Add copy' })).toBeTruthy();
+  });
+});
+
+describe('ShelfDetail: a window on a long shelf (a store with a loaded catalogue)', () => {
+  // three boards; the server sends a stretch of the shelf, not the whole of it
+  const shelf = parseElement({ ...row, meta: JSON.stringify({ bays: 2, levels: 3 }) });
+  const facing = (id: string, level: number, u: number): ShelfWindowSlot => ({
+    location: {
+      ...pin(id, id, 2.5, 0.5),
+      meta: JSON.stringify({ shelfId: 'shelf-1', shelf_level: level, w: 1, groupOnly: 1, u }),
+    },
+    product: { ...product(id, `${id} Flakes`), brand: 'Kellogg\'s', category_name: 'Cereal' },
+  });
+  const win = (from: number, to: number, slots: ShelfWindowSlot[]): ShelfWindow => ({
+    shelfId: 'shelf-1', u: (from + to) / 2, from, to,
+    levels: [{ level: 1, count: 220 }, { level: 2, count: 230 }, { level: 3, count: 226 }],
+    slots,
+  });
+  /** every facing drawn, in order: its item's name and the group that draws it */
+  const drawn = (container: HTMLElement) =>
+    [...container.querySelectorAll('svg g[style*="cursor"]')].map((g) => [g.querySelector('title')!.textContent, g] as const);
+  const clickFacing = (container: HTMLElement) => fireEvent.click(container.querySelector('svg g[style*="cursor"]')!);
+
+  it('draws the stretch as the whole board, each facing on its own board, and says where the item is', () => {
+    const { container } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[]}
+        onClose={() => {}}
+        shelfWindow={win(0.2, 0.26, [facing('a', 3, 0.23), facing('b', 1, 0.23)])}
+        highlightLocationId="a"
+        onShiftWindow={() => {}}
+        elsewhere="Also in 1 other place — this is the closest."
+      />
+    );
+    const dialog = screen.getByRole('dialog');
+    // the shelf's name, the size of the whole shelf, and what part of it is on show
+    expect(dialog).toHaveTextContent('Aisle 1');
+    expect(dialog).not.toHaveTextContent('— planogram');
+    expect(dialog).toHaveTextContent('676 products on this shelf · a stretch of it 20–26% of the way along');
+    // 23% along the shelf is "toward the left end", on board 3 of 3 "the top shelf"
+    expect(dialog).toHaveTextContent("a Flakes is on the top shelf, toward the left end. Also in 1 other place — this is the closest.");
+    expect(dialog).not.toHaveTextContent('b Flakes is');
+    // both facings are drawn, at their real boards: the bottom one sits lower than the top one
+    expect(drawn(container).map(([name]) => name)).toEqual(['a Flakes', 'b Flakes']);
+    const [, top] = drawn(container)[0];
+    const [, bottom] = drawn(container)[1];
+    const y = (g: Element) => Number(g.querySelector('rect')!.getAttribute('y'));
+    expect(y(top)).toBeLessThan(y(bottom));
+    // the highlighted one wears the ring
+    expect(top.querySelector('.facing-highlight')).not.toBeNull();
+    expect(bottom.querySelector('.facing-highlight')).toBeNull();
+  });
+
+  it('pages along the shelf, and never past its ends', () => {
+    const shifts: number[] = [];
+    render(
+      <ShelfDetail shelf={shelf} pins={[]} onClose={() => {}} shelfWindow={win(0.8, 1, [])} onShiftWindow={(d) => shifts.push(d)} />
+    );
+    const left = screen.getByRole('button', { name: /Further left/ });
+    const right = screen.getByRole('button', { name: /Further right/ });
+    expect(right).toBeDisabled();
+    expect(left).not.toBeDisabled();
+    fireEvent.click(left);
+    expect(shifts).toEqual([-1]);
+  });
+
+  it('says where a picked item sits in the shelf, not where the drawing puts it', () => {
+    const { container } = render(
+      <ShelfDetail shelf={shelf} pins={[]} onClose={() => {}} shelfWindow={win(0, 0.05, [facing('a', 2, 0.03)])} />
+    );
+    clickFacing(container);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Cereal · On the middle shelf, toward the left end');
+    expect(dialog).not.toHaveTextContent('Bay 1 · Row');
+  });
+
+  it('hands the picked facing back with the item, for the map and the trip', () => {
+    let placed: ProductLocation | undefined;
+    const { container } = render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[]}
+        onClose={() => {}}
+        shelfWindow={win(0, 0.05, [facing('a', 2, 0.03)])}
+        onAddToList={(_p, f) => (placed = f)}
+      />
+    );
+    clickFacing(container);
+    fireEvent.click(screen.getByRole('button', { name: /Add to list/ }));
+    expect(placed?.id).toBe('a');
+    expect(JSON.parse(placed!.meta)).toMatchObject({ shelfId: 'shelf-1', shelf_level: 2, u: 0.03 });
+  });
+
+  it('a window that could not be loaded leaves the store\'s own items, says so, and offers no paging', () => {
+    render(
+      <ShelfDetail
+        shelf={shelf}
+        pins={[{ location: pin('l1', 'p1', 1, 0.5), product: product('p1', 'Oat Milk') }]}
+        onClose={() => {}}
+        shelfWindow={null}
+        onShiftWindow={() => {}}
+      />
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Oat Milk');
+    expect(dialog).toHaveTextContent('could not be reached');
+    expect(screen.queryByRole('button', { name: /Further left/ })).toBeNull();
   });
 });

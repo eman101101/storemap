@@ -23,11 +23,12 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Modal } from './ui';
-import type { MapElement, Product, RectGeom } from '../types';
+import type { MapElement, Product, ProductLocation, RectGeom, ShelfWindow } from '../types';
 import {
   compactFilledLayout, computeShelfLayout, shelfPlanogramView, worldToShelfLocal,
   type PlanogramView, type ShelfLayout, type ShelfPin, type ShelfSlot,
 } from '../lib/shelfLayout';
+import { facingPlace, shelfFacings, whereOnShelf, windowLayout } from '../lib/shelfWindow';
 
 /** Base drawing scale: pixels per metre of shelf length. A row is always
  *  `meta.rowH` px tall, so on a long shelf this alone would squeeze each
@@ -89,6 +90,9 @@ export function PlanogramSvg({
   // a just-finished drag suppresses the svg's click-deselect, so the moved
   // facing STAYS selected after you let go
   const lastDragAt = useRef(0);
+  // facings whose photo did not load: they fall back to the named tile, the
+  // way a product without a photo is drawn — never a broken-image glyph
+  const [noPhoto, setNoPhoto] = useState<Set<string>>(() => new Set());
 
   const bayEdges = layout.bays.map((b) => b.from);
   // clip-path ids are document-global — namespace per shelf so multiple
@@ -238,7 +242,7 @@ export function PlanogramSvg({
             <rect x={box.x + FRAME - 2} y={box.y - 2} width={box.w + 4} height={box.h + 4} rx={6} fill="none" stroke="#e4572e" strokeWidth={3} />
           </>
         );
-        if (mode === 'images' && productPhoto(s.product)) {
+        if (mode === 'images' && productPhoto(s.product) && !noPhoto.has(s.locationId)) {
           // the photo IS the facing — full-bleed cover; the name/details live
           // in the bottom panel once the tile is selected
           return (
@@ -257,6 +261,9 @@ export function PlanogramSvg({
                 // proportions kept (a "slice" fill cropped bottles to slivers)
                 preserveAspectRatio="xMidYMax meet"
                 clipPath={`url(#${clipBase}-${i})`}
+                onError={() =>
+                  setNoPhoto((seen) => (seen.has(s.locationId) ? seen : new Set(seen).add(s.locationId)))
+                }
               />
               {halo}
             </g>
@@ -295,14 +302,25 @@ export function PlanogramSvg({
 
 export default function ShelfDetail({
   shelf, pins, onClose, onPickProduct, editing, onEditFacing, onMoveFacing, onAddCopy, onRemoveFacing, onShelfResize, onRowHeightChange, onRowsChange, onAddAnotherItem, onAddItem, onEditItem, highlightLocationId, onViewModeChange, onAddToList,
+  shelfWindow, windowLoading, elsewhere, onShiftWindow,
 }: {
   shelf: MapElement;
   pins: ShelfPin[];
   onClose: () => void;
+  /**
+   * A stretch of a long shelf (a store with a loaded catalogue): drawn as the
+   * whole board in place of the store's own facings. Null while it loads.
+   */
+  shelfWindow?: ShelfWindow | null;
+  windowLoading?: boolean;
+  /** for an item that faces elsewhere too: a sentence saying so ("Also on 2 other shelves — this is the closest") */
+  elsewhere?: string | null;
+  /** look one stretch further left (−1) or right (+1) along the shelf */
+  onShiftWindow?: (dir: -1 | 1) => void;
   /** viewer: "Show on map" in the details panel — close + focus the product */
-  onPickProduct?: (p: Product) => void;
+  onPickProduct?: (p: Product, facing?: ProductLocation) => void;
   /** viewer: "＋ Add to list" in the details panel */
-  onAddToList?: (p: Product) => void;
+  onAddToList?: (p: Product, facing?: ProductLocation) => void;
   /** a facing to spotlight (e.g. the shopper's search hit) — orange border */
   highlightLocationId?: string | null;
   /** editor: persist the shelf's default planogram view (meta.planogramView) */
@@ -332,6 +350,9 @@ export default function ShelfDetail({
   const layout = useMemo(() => computeShelfLayout(shelf, pins), [shelf, pins]);
   const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // a shelfWindow with no facings is a shelf the catalogue does not stock: the
+  // store's own facings are all it has
+  const showingWindow = !!shelfWindow && shelfWindow.levels.length > 0;
 
   // switching shelves resets manual view + selection
   useEffect(() => {
@@ -343,10 +364,19 @@ export default function ShelfDetail({
   // gets the compact re-grid that always fits the items
   const displayLayout = useMemo(() => {
     if (!layout) return null;
+    if (showingWindow && shelfWindow) return windowLayout(shelf, shelfWindow, layout.bays.flatMap((b) => b.slots));
     if (editing) return layout;
     const slots = layout.bays.flatMap((b) => b.slots);
     return slots.length ? compactFilledLayout(layout, slots) : layout;
-  }, [layout, editing]);
+  }, [layout, editing, showingWindow, shelfWindow, shelf]);
+  // where the highlighted item sits, in the words a shopper would look for it
+  const highlighted = useMemo(() => {
+    if (!shelfWindow || !highlightLocationId) return null;
+    const slot = shelfWindow.slots.find((s) => s.location.id === highlightLocationId);
+    if (!slot) return null;
+    const place = facingPlace(slot.location);
+    return { name: slot.product.name, where: whereOnShelf(place.u ?? shelfWindow.u, place.level ?? 1, displayLayout?.levels ?? 1) };
+  }, [shelfWindow, highlightLocationId, displayLayout?.levels]);
 
   // the persisted per-shelf default (the owner's choice) wins; otherwise the
   // planogram starts on Image — tiles without a photo degrade to diagram
@@ -389,13 +419,61 @@ export default function ShelfDetail({
         .flatMap((b) => b.slots.map((s) => ({ s, bay: b.index })))
         .find((x) => x.s.locationId === selectedId) ?? null
     : null;
+  // a window's facing, as the server placed it: its real shelf, level and
+  // place along the shelf (the map pin and the trip stop at it)
+  const selectedFacing = showingWindow && shelfWindow
+    ? shelfWindow.slots.find((s) => s.location.id === selectedId)?.location ?? null
+    : null;
+  const selectedPlace = selectedFacing ? facingPlace(selectedFacing) : null;
+  // in a window the drawing's bays are not the shelf's: say where the item
+  // really sits, in the words of the direction line
+  const selectedWhere = showingWindow && selectedPlace
+    ? whereOnShelf(selectedPlace.u ?? shelfWindow?.u ?? 0.5, selectedPlace.level ?? 1, displayLayout.levels)
+    : null;
 
   return (
-    <Modal title={`${layout.label} — planogram`} onClose={onClose} xwide style={{ maxWidth: dialogWidth }}>
+    <Modal title={showingWindow ? layout.label : `${layout.label} — planogram`} onClose={onClose} xwide style={{ maxWidth: dialogWidth }}>
       <p className="muted" style={{ marginTop: -8, marginBottom: 10 }}>
-        {layout.bays.length} bays × {layout.levels} rows · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
-        shelf · {layout.width.toFixed(1)} m wide
+        {showingWindow && shelfWindow ? (
+          <>
+            {shelfFacings(shelfWindow).toLocaleString('en-US')} products on this shelf · a stretch of it{' '}
+            {Math.round(shelfWindow.from * 100)}
+            {Math.round(shelfWindow.to * 100) !== Math.round(shelfWindow.from * 100) ? `–${Math.round(shelfWindow.to * 100)}` : ''}%
+            of the way along
+            {windowLoading ? ' · loading…' : ''}
+          </>
+        ) : (
+          <>
+            {layout.bays.length} bays × {layout.levels} rows · {totalSlots} product{totalSlots === 1 ? '' : 's'} on this
+            shelf · {layout.width.toFixed(1)} m wide
+            {shelfWindow === null
+              ? ' · this store keeps the rest of the shelf on its server, which could not be reached — its own items are shown'
+              : windowLoading
+                ? ' · loading the rest…'
+                : ''}
+          </>
+        )}
       </p>
+
+      {showingWindow && shelfWindow && onShiftWindow && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <button type="button" className="btn sm" disabled={shelfWindow.from <= 0 || windowLoading} onClick={() => onShiftWindow(-1)}>
+              ◀ Further left
+            </button>
+            <span className="muted planogram-window-note" style={{ fontSize: 12.5 }}>a stretch of a long shelf — look along it for more</span>
+            <button type="button" className="btn sm" disabled={shelfWindow.to >= 1 || windowLoading} onClick={() => onShiftWindow(1)}>
+              Further right ▶
+            </button>
+          </div>
+          {highlighted && (
+            <p className="planogram-direction" role="status">
+              <span aria-hidden>🔍</span> <b>{highlighted.name}</b> is {highlighted.where}.
+              {elsewhere && <span className="muted"> {elsewhere}</span>}
+            </p>
+          )}
+        </>
+      )}
 
       {editing && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 10 }}>
@@ -477,17 +555,19 @@ export default function ShelfDetail({
                   selectedSlot.s.product.brand,
                   selectedSlot.s.product.price != null ? `$${selectedSlot.s.product.price.toFixed(2)}` : '',
                   selectedSlot.s.product.category_name,
-                  `Bay ${selectedSlot.bay + 1} · Row ${selectedSlot.s.level}`,
+                  selectedWhere
+                    ? `${selectedWhere.charAt(0).toUpperCase()}${selectedWhere.slice(1)}`
+                    : `Bay ${selectedSlot.bay + 1} · Row ${selectedSlot.s.level}`,
                 ].filter(Boolean).join(' · ')}
               </span>
             </div>
             {!editing && onPickProduct && (
-              <button type="button" className="btn sm" onClick={() => onPickProduct(selectedSlot.s.product)}>
+              <button type="button" className="btn sm" onClick={() => onPickProduct(selectedSlot.s.product, selectedFacing ?? undefined)}>
                 🧭 Show on map
               </button>
             )}
             {!editing && onAddToList && (
-              <button type="button" className="btn sm" onClick={() => onAddToList(selectedSlot.s.product)}>
+              <button type="button" className="btn sm" onClick={() => onAddToList(selectedSlot.s.product, selectedFacing ?? undefined)}>
                 ＋ Add to list
               </button>
             )}
@@ -545,11 +625,13 @@ export default function ShelfDetail({
         <p className="muted" style={{ fontSize: 12.5, marginTop: 12 }}>
           Select an item on the planogram to edit it, add copies, or drag it to another spot.
         </p>
-      ) : (
+      ) : showingWindow ? null : (
+        // (a window's bays are only the drawing's: its tiles carry the names)
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
           {displayLayout.bays.map((bay) => (
             <div key={bay.index} className="badge" style={{ fontSize: 12 }}>
-              Bay {bay.index + 1}: {bay.slots.length ? bay.slots.map((s) => s.product.name).join(', ') : 'empty'}
+              Bay {bay.index + 1}:{' '}
+              {bay.slots.length ? `${bay.slots.slice(0, 8).map((s) => s.product.name).join(', ')}${bay.slots.length > 8 ? ` … and ${bay.slots.length - 8} more` : ''}` : 'empty'}
             </div>
           ))}
         </div>

@@ -5,17 +5,18 @@ import MapCanvas from './MapCanvas';
 import { shelfContaining } from '../lib/departments';
 import Map3D from './Map3D';
 import ShelfDetail from './ShelfDetail';
-import SearchBox, { searchHits } from './SearchBox';
+import SearchBox, { searchHits, type SearchHit } from './SearchBox';
 import { BlockText } from './GridHero';
 import { CameraPad, CameraToggle, ZoomPad } from './ui';
 import type {
-  Floor, MapElement, Product, ProductLocation, PublicStorePayload,
+  Floor, MapElement, Product, ProductLocation, PublicStorePayload, SearchResult, ShelfWindow, ShelfWindowSlot,
 } from '../types';
-import { parseElement, locationFlags } from '../types';
+import { parseElement, locationFlags, groupDisplayName } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
 import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
 import { shelfDirectory } from '../lib/aisleInfo';
-import { pinInShelf } from '../lib/shelfLayout';
+import { computeShelfLayout } from '../lib/shelfLayout';
+import { closestFacing, facingPlace, shelfFacings, whereOnShelf } from '../lib/shelfWindow';
 import { buildGroupPins } from '../lib/itemGroups';
 import { formatStoreHours } from '../lib/storeHours';
 import { getViewPref, setViewPref } from '../lib/prefs';
@@ -33,6 +34,44 @@ interface FloorRoute {
   floorId: string;
   points: WorldPt[];
   distanceM: number;
+}
+
+/**
+ * Where the item in the sheet was sent to: the facing ringed in the planogram,
+ * its shelf and — so the sheet and the planogram can say where to look — its
+ * board and its place along the shelf. `elsewhere` is how many other places
+ * stock the same item.
+ */
+interface SentTo {
+  productId: string;
+  facingId: string;
+  shelfId: string | null;
+  level: number | null;
+  /** 0..1 from the left end of the shelf */
+  u: number | null;
+  /** how many OTHER shelves stock the same item (a second facing on this shelf is not another place) */
+  elsewhere: number;
+}
+
+/** A row of the server's search as the results dropdown shows it. Where the
+ *  item faces comes with the row: a catalogue item is not in the map payload. */
+function remoteHit(row: SearchResult): SearchHit {
+  const place = facingPlace({ meta: row.location_meta });
+  return {
+    product: {
+      id: row.id, store_id: '', category_id: null, name: row.name, brand: row.brand, sku: row.sku,
+      barcode: '', description: '', price: row.price, image_url: row.image_url, image_crop_url: '',
+      category_name: row.category_name, category_color: row.category_color,
+    },
+    located: !!(place.shelfId || (row.x != null && row.y != null)),
+    focusId: null,
+    facing: { shelfId: place.shelfId, shelfLabel: row.shelf_label ?? null, level: place.level, u: place.u },
+    sub: [
+      row.brand,
+      row.price != null ? `$${row.price.toFixed(2)}` : '',
+      row.shelf_label ? `in ${row.shelf_label}` : row.category_name,
+    ].filter(Boolean),
+  };
 }
 
 /** Editor preview: the shopper view fed from the editor's live map instead
@@ -60,6 +99,24 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const [viewport, setViewport] = useState<Viewport>({ scale: 15, tx: 0, ty: 0 });
   const [elements, setElements] = useState<MapElement[]>(() => preview?.payload.elements.map(parseElement) ?? []);
   const [shelfPopupId, setShelfPopupId] = useState<string | null>(null);
+  // A tap on a shelf — the fixture itself or its group's titled pin — shows
+  // the GROUP: its name and one way in, "View shelf". It used to open the
+  // planogram straight away (the fixture) or to route the shopper to one item
+  // of it (the pin); the shopper asked for the group, not for an item.
+  const [groupSheetId, setGroupSheetId] = useState<string | null>(null);
+  // a store with a loaded catalogue keeps its generated SKUs on the server:
+  // the search goes there, and a shelf's planogram is a window fetched per shelf
+  const [shelfWin, setShelfWin] = useState<{ shelfId: string; u: number; win: ShelfWindow | null; loading: boolean } | null>(null);
+  const winSeq = useRef(0);
+  /** where a catalogue item faces, as the server said it (an item picked twice is not asked twice) */
+  const facingsOf = useRef(new Map<string, ShelfWindowSlot[]>());
+  /** the catalogue items the shopper has been sent to — each one's pin on the map */
+  const [remotePins, setRemotePins] = useState<Pin[]>([]);
+  /** the item the map is focused on, in the payload or in the catalogue */
+  const [focusProduct, setFocusProduct] = useState<Product | null>(null);
+  const [sentTo, setSentTo] = useState<SentTo | null>(null);
+  const focusSeq = useRef(0);
+  const deepLinkAsked = useRef('');
   // search-result photos, on by default — the 🖼 chip turns them off. Every
   // demo item carries a photo (or a generated packshot), so the results read
   // as a shelf of products rather than a list of dots
@@ -146,7 +203,19 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     if (product) {
       deepLinked.current = true;
       focusResult(product);
+      return;
     }
+    // a catalogue item is not in the payload: ask the server for it, once
+    if (!data.catalog || deepLinkAsked.current === `${slug}:${p}`) return;
+    deepLinkAsked.current = `${slug}:${p}`;
+    api.publicProduct(data.store.slug, p)
+      .then(({ product: found }) => {
+        deepLinked.current = true;
+        focusResult({ product: found, located: true, focusId: null, sub: [] });
+      })
+      .catch(() => {
+        deepLinked.current = true;
+      });
   }, [data, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A8: viewer keyboard shortcuts (when not typing) — the handler is kept in
@@ -256,9 +325,47 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     [chrome]
   );
 
+  // a store with a loaded catalogue (the big-box examples): its generated SKUs
+  // are on the server, so the search goes there
+  const isRemote = !!data?.catalog;
   const search = q.trim().toLowerCase();
   const hasSearch = search.length > 0;
-  const hits = useMemo(() => (data ? searchHits(data, search, groupPins) : []), [data, search, groupPins]);
+  // the store's own items answer from the payload at once, and stand in when
+  // the server cannot be asked (offline, a one-letter query)
+  const localHits = useMemo(() => (data ? searchHits(data, search, groupPins) : []), [data, search, groupPins]);
+  const [remoteHits, setRemoteHits] = useState<SearchHit[]>([]);
+  const remotePinsRef = useRef(remotePins);
+  remotePinsRef.current = remotePins;
+  useEffect(() => {
+    if (!isRemote || !data) return;
+    setRemoteHits(localHits);
+    if (search.length < 2) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      api.searchPublic(data.store.slug, search)
+        .then((rows) => {
+          if (!alive) return;
+          setRemoteHits(
+            rows.length
+              ? rows.map((row) => {
+                  const hit = remoteHit(row);
+                  // the row of the item the map is on reads selected, as any hit's does
+                  const pin = remotePinsRef.current.find((x) => x.product.id === row.id);
+                  return pin ? { ...hit, focusId: pin.location.id } : hit;
+                })
+              : localHits
+          );
+        })
+        .catch(() => {
+          /* offline, or the server's search is down: the payload's own items stay */
+        });
+    }, 160);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [search, isRemote, data, localHits]);
+  const hits = isRemote ? remoteHits : localHits;
   const matching = useMemo(() => hits.map((h) => h.product), [hits]);
   const productIds = useMemo(() => new Set(matching.map((p) => p.id)), [matching]);
   // pre-search browsing: every product in the category picked from the directory
@@ -267,10 +374,6 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     const name = browseCat.name.toLowerCase();
     return new Set(data.products.filter((p) => (p.category_name ?? '').trim().toLowerCase() === name).map((p) => p.id));
   }, [data, browseCat]);
-  const focusedProductId = useMemo(
-    () => data?.locations.find((l) => l.id === focusPinLocationId)?.product_id ?? null,
-    [data, focusPinLocationId]
-  );
   // the map preview stays clean — items appear only while searching or browsing a
   // category, and the selected item's pin remains afterwards
   const pins: Pin[] = useMemo(() => {
@@ -280,8 +383,8 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       ? productIds
       : catProductIds
         ? new Set([...catProductIds, ...tripIds])
-        : focusedProductId
-          ? new Set([focusedProductId, ...tripIds])
+        : focusProduct
+          ? new Set([focusProduct.id, ...tripIds])
           : trip.length
             ? new Set(tripIds)
             : null;
@@ -293,6 +396,12 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     const floorLocs = data.locations.filter((l) => l.floor_id === floor.id);
     const out: Pin[] = [];
     for (const productId of wanted) {
+      // a catalogue item shows as the pin it was sent to
+      const sent = remotePins.find((x) => x.product.id === productId);
+      if (sent) {
+        out.push(sent);
+        continue;
+      }
       const product = data.products.find((p) => p.id === productId);
       if (!product) continue;
       const seen = new Set<string>();
@@ -305,16 +414,23 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       }
     }
     return out;
-  }, [data, floor?.id, productIds, catProductIds, hasSearch, focusedProductId, trip, groupPins]);
+  }, [data, floor?.id, productIds, catProductIds, hasSearch, focusProduct, remotePins, trip, groupPins]);
 
-  // All pins on the current floor (unfiltered) — used to draw the shelf layout.
-  const floorPins: Pin[] = useMemo(() => {
+  // The store's own facings on the current floor (unfiltered) — what the
+  // shelves are stocked with and what the planogram draws.
+  const ownPins: Pin[] = useMemo(() => {
     if (!data || !floor) return [];
     return data.locations
       .filter((l) => l.floor_id === floor.id)
       .map((location) => ({ location, product: data.products.find((p) => p.id === location.product_id)! }))
       .filter((p) => p.product);
   }, [data, floor?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // …and, for the maps, a catalogue item's pin where it is not one of them: a
+  // shelf with no group pin of its own stands the item's facing in at its centre
+  const floorPins: Pin[] = useMemo(() => {
+    const extra = remotePins.filter((p) => p.location.floor_id === floor?.id && !ownPins.some((x) => x.location.id === p.location.id));
+    return extra.length ? [...ownPins, ...extra] : ownPins;
+  }, [ownPins, remotePins, floor?.id]);
 
   // pre-search directory: this floor's labelled aisles + what's on them
   const directory = useMemo(
@@ -322,28 +438,35 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       floor
         ? shelfDirectory(
             elements.filter((e) => e.floor_id === floor.id),
-            floorPins.map((p) => ({ location: p.location, product: p.product }))
+            ownPins.map((p) => ({ location: p.location, product: p.product }))
           )
         : [],
-    [floor, elements, floorPins]
+    [floor, elements, ownPins]
   );
 
-  const selectedShelf = useMemo(
-    () => (shelfPopupId ? elements.find((e) => e.id === shelfPopupId && e.type === 'shelf') ?? null : null),
-    [shelfPopupId, elements]
-  );
+  const shelfById = (id: string | null | undefined): MapElement | null =>
+    (id ? elements.find((e) => e.id === id && e.type === 'shelf') ?? null : null);
 
-  // the shelf a viewed item sits on — powers the sheet's "View shelf" button
-  const shelfOfSheet = useMemo(() => {
-    if (!sheetProduct || !data) return null;
-    const loc = data.locations.find((l) => l.product_id === sheetProduct.id);
-    if (!loc) return null;
-    const pin = { location: loc, product: sheetProduct };
-    return (
-      elements.find((el) => el.type === 'shelf' && el.shape === 'rect' && pinInShelf(el, pin)) ??
-      null
-    );
-  }, [sheetProduct, data, elements]);
+  const selectedShelf = useMemo(() => shelfById(shelfPopupId), [shelfPopupId, elements]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the group whose card is showing
+  const groupSheet = useMemo(() => shelfById(groupSheetId), [groupSheetId, elements]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the shelf the item in the sheet was sent to — powers the sheet's "View shelf" button
+  const sheetShelf = useMemo(
+    () => (sentTo && sentTo.productId === sheetProduct?.id ? shelfById(sentTo.shelfId) : null),
+    [sentTo, sheetProduct?.id, elements] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // …and the sheet says where on that shelf to look, in the words of the planogram
+  const sheetPlace = useMemo(() => {
+    if (!sentTo || sentTo.productId !== sheetProduct?.id || !sentTo.shelfId || sentTo.u == null) return null;
+    const shelf = shelfById(sentTo.shelfId);
+    if (!shelf) return null;
+    const n = sentTo.elsewhere;
+    return {
+      u: sentTo.u,
+      text: `in ${groupDisplayName(shelf) ?? 'its shelf'} · ${whereOnShelf(sentTo.u, sentTo.level ?? 1, computeShelfLayout(shelf, [])?.levels ?? 1)}`,
+      more: n > 0 ? ` · also in ${n} other ${n === 1 ? 'place' : 'places'} — this is the closest` : '',
+    };
+  }, [sentTo, sheetProduct?.id, elements]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeRoute = route && floor && route.floorId === floor.id ? route : null;
   const walkMin = activeRoute ? Math.max(1, Math.round(activeRoute.distanceM / WALK_M_PER_MIN)) : 0;
@@ -405,38 +528,79 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const liveMessage = tripResult
     ? `Trip with ${tripResult.tour.order.length} stops, ${Math.round(tripResult.tour.totalM)} meters total, about ${Math.max(1, Math.round(tripResult.tour.totalM / WALK_M_PER_MIN))} minutes.`
     : activeRoute
-      ? `Route to ${data?.products.find((p) => p.id === data.locations.find((l) => l.id === focusPinLocationId)?.product_id)?.name ?? 'item'}: ${Math.round(activeRoute.distanceM)} meters, about ${walkMin} minute${walkMin === 1 ? '' : 's'}.`
+      ? `Route to ${focusProduct?.name ?? 'item'}: ${Math.round(activeRoute.distanceM)} meters, about ${walkMin} minute${walkMin === 1 ? '' : 's'}.`
       : '';
 
   // NOTE: kept above the loading/error early returns — the deep-link effect
   // can call it on a render that returned early (e.g. a floor-less store)
-  const focusResult = (product: Product) => {
-    if (!data) return;
-    // an item can sit in several groups: head to the closest one — the
-    // current 3D camera target when viewing in 3D, the map centre in 2D
-    const facings = data.locations.filter((l) => l.product_id === product.id);
+  /** Where the map is looking — what an equal walk comes down to (the 3D
+   *  camera target in 3D, the map centre in 2D). */
+  const viewRef = (): { x: number; y: number } | null => {
     const camTarget = view3d && cam3d ? { x: cam3d.tx, y: cam3d.ty } : null;
-    const mapEl = document.querySelector('.viewer-map');
-    const mrect = mapEl?.getBoundingClientRect();
-    const ref = camTarget ?? (mrect && viewport.scale
+    if (camTarget) return camTarget;
+    const mrect = document.querySelector('.viewer-map')?.getBoundingClientRect();
+    return mrect && viewport.scale
       ? { x: (mrect.width / 2 - viewport.tx) / viewport.scale, y: (mrect.height / 2 - viewport.ty) / viewport.scale }
-      : null);
-    // the planogram rings the item's own facing — the map focus below lands
-    // on the item's GROUP pin, the highlight stays on the searched item
-    const own = ref
-      ? facings.reduce<ProductLocation>(
-          (best, l) => (!best || Math.hypot(l.x - ref.x, l.y - ref.y) < Math.hypot(best.x - ref.x, best.y - ref.y) ? l : best),
-          facings[0]
-        )
-      : facings[0];
-    setHighlightFacingId(own?.id ?? null);
-    // a planogram-only facing has no map pin — head to its group's pin
-    const loc = own ? groupPins.of(own) : undefined;
-    setQ('');
-    setSearchOpen(false);
-    setSheetProduct(product);
-    setBrowseCat(null); // searching takes over from category browsing
-    if (!loc || locationFlags(loc).groupOnly) return;
+      : null;
+  };
+
+  /**
+   * The pin a shopper is sent to for a facing: its group's titled pin. A shelf
+   * with no pin of its own gets the facing itself, standing in at the shelf's
+   * centre as a plain pin — a generated item's facing is planogram-only and
+   * would never draw.
+   */
+  const pinFor = (facing: ProductLocation): ProductLocation | null => {
+    const group = groupPins.of(facing);
+    if (!locationFlags(group).groupOnly) return group;
+    const shelf = shelfById(groupPins.shelfIdOf(facing));
+    return shelf ? { ...facing, meta: JSON.stringify({ shelfId: shelf.id }) } : null;
+  };
+
+  /**
+   * Of an item's facings, the one to send the shopper to. An item stocked in
+   * more than one place goes to the closest, as a shopper in the store would:
+   * the one with the shortest walk from the entrance — the route the map
+   * draws. Facings equally far to walk (two of one shelf, above all) go to
+   * the board nearest the middle, then to the one nearest where the map looks.
+   */
+  const nearestFacing = <T extends { location: ProductLocation }>(facings: T[]): T | undefined => {
+    if (facings.length < 2) return facings[0];
+    const ref = viewRef();
+    const dist = (f: T) => {
+      const p = pinFor(f.location);
+      return p && ref ? Math.hypot(p.x - ref.x, p.y - ref.y) : Infinity;
+    };
+    // only the facings on this floor are worth routing; of an item with many,
+    // only the few nearest the view
+    const here = facings.filter((f) => f.location.floor_id === floor?.id);
+    const candidates = [...(here.length ? here : facings)].sort((a, b) => dist(a) - dist(b)).slice(0, 6);
+    let shortest = Infinity;
+    const walked = candidates.map((f) => {
+      const pin = pinFor(f.location);
+      const on = pin ? data?.floors.find((x) => x.id === pin.floor_id) : null;
+      const route = pin && on
+        ? computeRoute(
+            on, elements.filter((e) => e.floor_id === on.id), { x: pin.x, y: pin.y }, {},
+            on.id === floor?.id ? navGrid ?? undefined : undefined
+          )
+        : null;
+      const m = route ? route.distanceM : Infinity;
+      shortest = Math.min(shortest, m);
+      return { f, m };
+    });
+    if (!Number.isFinite(shortest)) return candidates[0];
+    const tied = walked.filter((w) => w.m - shortest <= 1e-6).map((w) => w.f);
+    if (tied.length === 1) return tied[0];
+    const shelf = shelfById(groupPins.shelfIdOf(tied[0].location));
+    return closestFacing(tied, (l) => pinFor(l), ref, (shelf ? computeShelfLayout(shelf, [])?.levels : undefined) ?? 3) ?? tied[0];
+  };
+
+  /** Send the map to an item: focus its pin, zoom to it, and draw the walk from the entrance. */
+  const landOn = (product: Product, loc: ProductLocation | null) => {
+    setFocusProduct(product);
+    setGroupSheetId(null); // an item takes over from a group's card
+    if (!loc || !data) return;
     const locFloor = data.floors.find((f) => f.id === loc.floor_id) ?? floor;
     if (!locFloor) return;
     const switching = floor ? loc.floor_id !== floor.id : true;
@@ -457,6 +621,139 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       locFloor, elements.filter((e) => e.floor_id === loc.floor_id), { x: loc.x, y: loc.y }, {}, sameFloor ? navGrid ?? undefined : undefined
     );
     setRoute(r ? { floorId: loc.floor_id, points: r.points, distanceM: r.distanceM } : null);
+  };
+
+  // (focusResult calls focusRemote, declared just below it — a function
+  // expression, bound by the time any handler or effect runs)
+
+  /** Focus a search hit or an item. `facing` is one the shopper picked on a
+   *  planogram: for a catalogue item that is the one to go to, not the closest. */
+  const focusResult = (target: SearchHit | Product, facing?: ProductLocation) => {
+    const hit: SearchHit | null = 'product' in target ? target : null;
+    const product: Product = 'product' in target ? target.product : target;
+    if (!data) return;
+    // a catalogue item is not in the payload — the server says where it faces
+    if (isRemote && !data.products.some((p) => p.id === product.id)) {
+      void focusRemote(product, facing ?? null);
+      return;
+    }
+    // the planogram rings the item's own facing — of an item stocked more
+    // than once, the closest; the map focus below lands on its GROUP pin
+    const facings = data.locations.filter((l) => l.product_id === product.id).map((location) => ({ location }));
+    const own = nearestFacing(facings)?.location ?? null;
+    setHighlightFacingId(own?.id ?? null);
+    // where that facing sits on its shelf, from the layout the planogram draws
+    const shelf = own ? shelfById(groupPins.shelfIdOf(own)) : null;
+    const placed = own && shelf ? computeShelfLayout(shelf, [{ location: own, product }])?.bays.flatMap((b) => b.slots)[0] : undefined;
+    setSentTo(
+      own
+        ? {
+            productId: product.id, facingId: own.id, shelfId: shelf?.id ?? null,
+            level: placed?.level ?? null, u: placed?.u ?? null,
+            elsewhere: facings.filter((f) => groupPins.shelfIdOf(f.location) !== shelf?.id).length,
+          }
+        : null
+    );
+    setQ('');
+    setSearchOpen(false);
+    setSheetProduct(product);
+    setBrowseCat(null); // searching takes over from category browsing
+    // a planogram-only facing has no map pin — head to its group's
+    landOn(product, own ? pinFor(own) : null);
+  };
+
+  /** A catalogue item (not in the payload): the server says where it faces,
+   *  then it lands on the map like any item. */
+  const focusRemote = async (product: Product, picked: ProductLocation | null): Promise<void> => {
+    if (!data) return;
+    const seq = ++focusSeq.current;
+    setQ('');
+    setSearchOpen(false);
+    setSheetProduct(product);
+    setBrowseCat(null); // searching takes over from category browsing
+    let facings: ShelfWindowSlot[] = [];
+    try {
+      facings = facingsOf.current.get(product.id) ?? (await api.publicProduct(data.store.slug, product.id)).facings;
+      facingsOf.current.set(product.id, facings);
+    } catch {
+      /* the server could not say where it faces: the item is shown, not placed */
+    }
+    if (seq !== focusSeq.current) return; // a newer pick superseded this one
+    const chosen = (picked && facings.find((f) => f.location.id === picked.id)) || nearestFacing(facings);
+    const place = chosen ? facingPlace(chosen.location) : null;
+    const pin = chosen ? pinFor(chosen.location) : null;
+    setHighlightFacingId(chosen?.location.id ?? null);
+    setSentTo(
+      chosen
+        ? {
+            productId: product.id, facingId: chosen.location.id, shelfId: place?.shelfId ?? null,
+            level: place?.level ?? null, u: place?.u ?? null,
+            elsewhere: facings.filter((f) => facingPlace(f.location).shelfId !== place?.shelfId).length,
+          }
+        : null
+    );
+    if (pin) setRemotePins((list) => (list.some((x) => x.product.id === product.id) ? list : [...list, { location: pin, product }]));
+    landOn(product, pin);
+  };
+
+  /** Fetch the stretch of a shelf around a place (0..1 from its left end). */
+  const loadWindow = (shelfId: string, u: number | null | undefined) => {
+    if (!data) return;
+    const at = Math.min(1, Math.max(0, u ?? 0.5));
+    if (shelfWin?.shelfId === shelfId && Math.abs(shelfWin.u - at) < 1e-4 && (shelfWin.win || shelfWin.loading)) return;
+    const seq = ++winSeq.current;
+    setShelfWin((s) => (s?.shelfId === shelfId ? { ...s, u: at, loading: true } : { shelfId, u: at, win: null, loading: true }));
+    // a phone shows a tighter stretch: the board is narrow, and a window is
+    // scrolled sideways rather than squashed
+    api.shelfWindow(data.store.slug, shelfId, at, chrome && chrome.w <= 760 ? 3 : 6)
+      .then((win) => {
+        if (seq === winSeq.current) setShelfWin({ shelfId, u: at, win, loading: false });
+      })
+      .catch(() => {
+        // keep what the shelf already shows; a first window that cannot be
+        // loaded leaves the store's own facings, and the planogram says so
+        if (seq === winSeq.current) setShelfWin((s) => (s?.shelfId === shelfId ? { ...s, loading: false } : s));
+      });
+  };
+
+  /** Open a shelf's planogram — for a catalogue store the window around `u`,
+   *  by default around the item the shopper is being sent to if it is on this shelf. */
+  const openShelf = (shelfId: string, u?: number | null) => {
+    setGroupSheetId(null);
+    if (isRemote) loadWindow(shelfId, u ?? (sentTo?.shelfId === shelfId ? sentTo.u : null));
+    setShelfPopupId(shelfId);
+  };
+
+  /** Look one stretch further along the shelf that is open. */
+  const shiftWindow = (dir: -1 | 1) => {
+    if (!shelfWin?.win) return;
+    loadWindow(shelfWin.shelfId, shelfWin.u + dir * (shelfWin.win.to - shelfWin.win.from) * 0.8);
+  };
+
+  /** A tap on a shelf or on its group's pin: the group's card. The planogram
+   *  is the card's one button, so a catalogue store fetches its window now. */
+  const tapShelf = (shelfId: string) => {
+    setSheetProduct(null);
+    setGroupSheetId(shelfId);
+    if (isRemote) loadWindow(shelfId, sentTo?.shelfId === shelfId ? sentTo.u : null);
+  };
+
+  const onPinTap = (productId: string) => {
+    // a group's titled pin is the group — never the one item it happens to carry
+    const pin = floorPins.find((x) => x.location.product_id === productId && locationFlags(x.location).groupPin);
+    const shelfId = pin ? shelfIdOfPin(pin.location) : null;
+    if (shelfId) {
+      tapShelf(shelfId);
+      return;
+    }
+    // a catalogue item's stand-in pin, or a plain (legacy) pin: that item
+    const sent = remotePins.find((x) => x.product.id === productId);
+    if (sent) {
+      focusResult(sent.product, sent.location);
+      return;
+    }
+    const p = data?.products.find((pr) => pr.id === productId);
+    if (p) focusResult(p);
   };
 
     if (error) {
@@ -483,16 +780,28 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const clearRoute = () => {
     setRoute(null);
     setFocusPinLocationId(null);
+    setFocusProduct(null);
     setHighlightFacingId(null);
+    setSentTo(null);
     setSheetProduct(null);
   };
 
-  /** Add the selected item as the next trip stop (A1). */
-  const addToTrip = (product: Product) => {
-    const facing = data?.locations.find((l) => l.product_id === product.id);
-    if (!facing) return;
-    // the trip stops at the item's GROUP pin — the same spot a search routes to
-    const loc = groupPins.of(facing);
+  /** Add an item as the next trip stop (A1). `facing` is one the shopper
+   *  picked on a planogram: for a catalogue item that was never searched for
+   *  it is the only way to know where the item stands. */
+  const addToTrip = (product: Product, facing?: ProductLocation) => {
+    const catalogue = !!data?.catalog && !data?.products.some((p) => p.id === product.id);
+    const first = data?.locations.find((l) => l.product_id === product.id);
+    const loc = catalogue
+      ? facing
+        ? pinFor(facing)
+        : (remotePins.find((x) => x.product.id === product.id)?.location ?? null)
+      : // the trip stops at the item's GROUP pin — the same spot a search routes to
+        first
+        ? groupPins.of(first)
+        : null;
+    if (!loc) return;
+    if (catalogue) setRemotePins((list) => (list.some((x) => x.product.id === product.id) ? list : [...list, { location: loc, product }]));
     setTrip((t) => (t.some((x) => x.product.id === product.id) ? t : [...t, { product, loc }]));
     setSheetProduct(null);
   };
@@ -525,6 +834,25 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
 
   const results = hits.slice(0, 40);
 
+  // what a group's card says under its name: how much the shelf holds. A
+  // catalogue store's total arrives with the window the card has fetched.
+  const ownCount = groupSheet ? computeShelfLayout(groupSheet, ownPins)?.bays.reduce((n, b) => n + b.slots.length, 0) ?? 0 : 0;
+  const groupNote = !groupSheet
+    ? ''
+    : isRemote
+      ? shelfWin?.shelfId === groupSheet.id && shelfWin.win
+        ? `≈${shelfFacings(shelfWin.win).toLocaleString('en-US')} products`
+        : ''
+      : `${ownCount} product${ownCount === 1 ? '' : 's'}`;
+  // the planogram's direction line, for an item that faces elsewhere too
+  const elsewhereNote =
+    sentTo && sentTo.facingId === highlightFacingId && sentTo.elsewhere > 0
+      ? `Also in ${sentTo.elsewhere} other ${sentTo.elsewhere === 1 ? 'place' : 'places'} — this is the closest.`
+      : null;
+  // the sheet's "＋ Add to list" needs to know where the item stands
+  const canList =
+    !!sheetProduct && (sentTo?.productId === sheetProduct.id || !!data?.locations.some((l) => l.product_id === sheetProduct.id));
+
   return (
     <div className="viewer-full">
       <div className={'viewer-map' + (view3d && camPadOpen ? ' pad-open' : '')} ref={mapRef}>
@@ -543,21 +871,8 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
               onCamera={setCam3d}
               theme={sceneTheme}
               zoomCommand={zoomCmd ?? undefined}
-              onElementClick={(el) => el.type === 'shelf' && setShelfPopupId(el.id)}
-              onPinClick={(productId) => {
-                // a group pin opens its shelf's planogram — same contract as
-                // the 2D map; plain (legacy) pins focus the item as usual
-                const pin = pins.find((x) => x.product.id === productId);
-                if (pin && locationFlags(pin.location).groupPin) {
-                  const shelfId = shelfIdOfPin(pin.location);
-                  if (shelfId) {
-                    setShelfPopupId(shelfId);
-                    return;
-                  }
-                }
-                const p = data.products.find((pr) => pr.id === productId);
-                if (p) focusResult(p);
-              }}
+              onElementClick={(el) => el.type === 'shelf' && tapShelf(el.id)}
+              onPinClick={onPinTap}
             />
         ) : (
           <MapCanvas
@@ -572,21 +887,8 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
             focus={focusCmd ?? undefined}
             route={tripLegsFlat ?? activeRoute?.points ?? null}
             tripStops={tripResult ? tripResult.tour.order : undefined}
-            onElementClick={(el) => el.type === 'shelf' && setShelfPopupId(el.id)}
-            onPinClick={(productId) => {
-              // a group pin opens its shelf's planogram; a plain (legacy) pin
-              // focuses the item as usual
-              const pin = pins.find((x) => x.product.id === productId);
-              if (pin && locationFlags(pin.location).groupPin) {
-                const shelfId = shelfIdOfPin(pin.location);
-                if (shelfId) {
-                  setShelfPopupId(shelfId);
-                  return;
-                }
-              }
-              const p = data.products.find((pr) => pr.id === productId);
-              if (p) focusResult(p);
-            }}
+            onElementClick={(el) => el.type === 'shelf' && tapShelf(el.id)}
+            onPinClick={onPinTap}
             zoomCommand={zoomCmd ?? undefined}
             fit={mapFit}
           />
@@ -624,7 +926,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
             value={q}
             onChange={(v) => { setQ(v); setBrowseCat(null); }}
             hits={results}
-            onPick={(hit) => focusResult(hit.product)}
+            onPick={(hit) => focusResult(hit)}
             open={searchOpen}
             setOpen={setSearchOpen}
             placeholder="Search an item… e.g. milk"
@@ -674,7 +976,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
                   <button
                     key={f.id}
                     className={`floor-tab ${f.id === floor.id ? 'active' : ''}`}
-                    onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); setHighlightFacingId(null); }}
+                    onClick={() => { setActiveFloorId(f.id); setFocusPinLocationId(null); setFocusProduct(null); setHighlightFacingId(null); }}
                   >
                     {f.name}
                   </button>
@@ -702,7 +1004,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
                   <div key={row.label} className="dir-row">
                     <button
                       className="dir-open"
-                      onClick={() => { setDirOpen(false); setShelfPopupId(row.shelfIds[0]); }}
+                      onClick={() => { setDirOpen(false); openShelf(row.shelfIds[0]); }}
                       title="Show this aisle's shelf layout"
                     >
                       <b>{row.label}</b>
@@ -738,7 +1040,24 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
           {/* live text for screen readers (A3/G1) */}
           <div aria-live="polite" className="sr-only">{liveMessage}</div>
 
-          {/* A4: selected-item sheet — photo · name · close, then the actions */}
+          {/* a tapped shelf or group: its name, and the one way in */}
+          {groupSheet && (
+            <div className="product-sheet group-sheet card" role="dialog" aria-label={groupDisplayName(groupSheet) ?? 'Shelf'}>
+              <span className="dot" style={{ background: groupSheet.color || '#2f6f3e' }} />
+              <div className="sheet-info">
+                <b>{groupDisplayName(groupSheet) ?? 'Shelf'}</b>
+                {groupNote && <span>{groupNote}</span>}
+              </div>
+              <button className="route-badge-x" onClick={() => setGroupSheetId(null)} aria-label="Close">✕</button>
+              <div className="sheet-actions">
+                <button className="btn sm primary" onClick={() => openShelf(groupSheet.id)}>
+                  ▦ View shelf
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* A4: selected-item sheet — photo · name · where to look · close, then the actions */}
           {sheetProduct && (
             <div className="product-sheet card">
               {sheetProduct.image_url || sheetProduct.image_crop_url
@@ -751,17 +1070,23 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
                     .filter(Boolean)
                     .join(' · ')}
                 </span>
+                  {sheetPlace && (
+                    <span className="sheet-where">
+                      {sheetPlace.text}
+                      {sheetPlace.more}
+                    </span>
+                  )}
               </div>
               <button className="route-badge-x" onClick={() => setSheetProduct(null)} aria-label="Close">✕</button>
               <div className="sheet-actions">
-                <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!data?.locations.some((l) => l.product_id === sheetProduct.id)}>
+                <button className="btn sm" onClick={() => addToTrip(sheetProduct)} disabled={!canList}>
                   ＋ Add to list
                 </button>
-                {shelfOfSheet && (
+                {sheetShelf && (
                   <button
                     className="btn sm"
-                    title="See this shelf's full planogram"
-                    onClick={() => setShelfPopupId(shelfOfSheet.id)}
+                    title="See this shelf's planogram around the item"
+                    onClick={() => openShelf(sheetShelf.id, sheetPlace?.u)}
                   >
                     ▦ View shelf
                   </button>
@@ -815,7 +1140,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
               </span>
               <span className="hint-coarse">
                 {view3d
-                  ? 'Tap a shelf to open its planogram · search an item to see the route'
+                  ? "Tap a shelf or group to see what's on it · search an item to see the route"
                   : 'Tap a shelf to see what\'s on it · pinch to zoom'}
               </span>
             </div>
@@ -832,13 +1157,20 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
         {selectedShelf && (
           <ShelfDetail
             shelf={selectedShelf}
-            pins={floorPins}
-            highlightLocationId={highlightFacingId ?? focusPinLocationId}
+            pins={ownPins}
+            // a catalogue store's planogram is the window fetched for this shelf
+            shelfWindow={isRemote ? (shelfWin?.shelfId === selectedShelf.id ? shelfWin.win : null) : undefined}
+            windowLoading={isRemote && shelfWin?.shelfId === selectedShelf.id && shelfWin.loading}
+            elsewhere={elsewhereNote}
+            onShiftWindow={isRemote ? shiftWindow : undefined}
+            // the window rings the item sent to, and only that (the focused
+            // group's pin is no item of the planogram)
+            highlightLocationId={isRemote ? highlightFacingId : highlightFacingId ?? focusPinLocationId}
             onClose={() => setShelfPopupId(null)}
             onAddToList={addToTrip}
-            onPickProduct={(p) => {
+            onPickProduct={(p, facing) => {
               setShelfPopupId(null);
-              focusResult(p);
+              focusResult(p, facing);
             }}
           />
         )}

@@ -6,7 +6,7 @@
  * what happens when a result is picked.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { ProductLocation, PublicStorePayload } from '../types';
+import type { HitFacing, ProductLocation, PublicStorePayload } from '../types';
 import type { GroupPins } from '../lib/itemGroups';
 
 /** One search result. `sub` is the grey line under the name. */
@@ -16,6 +16,10 @@ export interface SearchHit {
   located: boolean;
   /** the map pin a pick routes to (the item's group pin), null if none */
   focusId: string | null;
+  /** where the item faces when the payload did not carry it (a catalogue item
+   *  found by the server): its shelf and, for a generated item, its level and
+   *  place along the shelf */
+  facing?: HitFacing | null;
   sub: string[];
 }
 

@@ -29,8 +29,11 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
 First boot with an empty database automatically seeds the demo maps
-(set `SEED_DEMO=false` to skip). Sign in with the **Open the demo maps**
-button on `/login` and start editing.
+(set `SEED_DEMO=false` to skip), catalogues included — the example stores
+carry 120,000 / 40,000 / 8,000 SKUs, so allow the seed a minute. Sign in with
+the **Open the demo maps** button on `/login` and start editing. A later boot
+touches an example store only when the seed's layout or catalogue version
+changed, bringing it up to date once.
 
 > Rule of thumb: never scale past **one replica** — SQLite is single-writer
 > and the volume is per-machine.

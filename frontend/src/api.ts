@@ -1,5 +1,5 @@
 import type { StoreMember, MemberRole,
-  AuthInfo, Category, Floor, MapElementRow, Product, ProductLocation, PublicStorePayload,
+  AuthInfo, Category, Floor, MapElementRow, Product, ProductFacings, ProductLocation, PublicStorePayload, SearchResult, ShelfWindow,
   Store, StoreFull, StoreSummary, StockRow, StockMovement, ApiKeyRow,
 } from './types';
 import { compressImage } from './lib/image';
@@ -211,7 +211,22 @@ export const api = {
   },
 
   // Public
-  publicStore: (slug: string) => request<PublicStorePayload>(`/api/public/stores/${slug}`),
+  /** A store's public map, asked for under this build's stamp so that no
+   *  cache which outlives a deploy (the offline service worker's) can answer
+   *  with an earlier build's map. Offline with nothing saved under the stamp,
+   *  the plain address is tried: a saved map beats no map at all. */
+  publicStore: (slug: string): Promise<PublicStorePayload> =>
+    request<PublicStorePayload>(`/api/public/stores/${slug}?b=${__BUILD_ID__}`).catch((e: unknown) =>
+      e instanceof TypeError ? request<PublicStorePayload>(`/api/public/stores/${slug}`) : Promise.reject(e)
+    ),
+  /** the store's search over its whole catalogue (a store with a loaded catalogue cannot be searched in the browser) */
+  searchPublic: async (slug: string, q: string): Promise<SearchResult[]> =>
+    (await request<{ results: SearchResult[] }>(`/api/public/stores/${slug}/search?q=${encodeURIComponent(q)}`)).results,
+  /** a shelf's planogram window: the stretch of shelf around a place (0..1 from the left end) */
+  shelfWindow: (slug: string, shelfId: string, u: number, each = 8): Promise<ShelfWindow> =>
+    request<ShelfWindow>(`/api/public/stores/${slug}/shelves/${shelfId}/window?u=${u.toFixed(5)}&each=${each}`),
+  /** a product with everywhere it faces — for an item the map payload did not carry */
+  publicProduct: (slug: string, id: string): Promise<ProductFacings> => request<ProductFacings>(`/api/public/stores/${slug}/products/${id}`),
 
   // ---- Stock tracking & integrations ----
   stock: (storeId: string) =>

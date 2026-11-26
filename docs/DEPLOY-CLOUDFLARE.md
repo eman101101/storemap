@@ -30,9 +30,9 @@ and provisions automatically:
 
 - **Worker** `storemap` + the built SPA served from the edge
   (`frontend/dist` is built for you by the configured build command)
-- **D1 database** `storemap` — schema migrations + the four demo stores
-  (annex-market, freshmart-downtown, harbor-warehouse, megamart-central)
-  apply on the first request
+- **D1 database** `storemap` — schema migrations + the three example stores
+  (walmart-example, home-depot-example, convenience-store-example) apply on
+  the first request; their big-box catalogues are loaded in step 2a below
 - **R2 bucket** `storemap-media` — all uploaded images
 
 Finish → you get `https://storemap.<your-subdomain>.workers.dev`.
@@ -49,6 +49,47 @@ CLI alternative (same result, no button):
 ```bash
 npx wrangler deploy        # from the repo root; builds + deploys
 ```
+
+## 2a · Load the example stores' catalogues
+
+The example stores carry big-box assortments — **Walmart 120,000 · Home Depot
+40,000 · Corner Store 8,000 SKUs** — made by `backend/scripts/demo-catalog.mjs`:
+real brands, no photos, every SKU stocked on the shelf of its department that
+holds its sort of product, with the board it stands on and its place along
+the shelf. Far too many rows for a Worker to write on a request, so the
+Worker seeds only each store's floor plan and its own demo items (the ones
+with photos), and the catalogue is loaded from your machine **after every
+deploy that changed the layout or the catalogue**:
+
+```bash
+curl -s https://storemap.<you>.workers.dev/api/health   # first hit: migrates + lays out the example stores
+node worker/scripts/load-demo-catalog.mjs --remote      # needs `wrangler login`
+```
+
+- A store reports `as sent` when its catalogue is complete. The script is
+  idempotent — an up-to-date catalogue is skipped, a changed one replaced
+  whole — so run it again whenever in doubt: it writes only what is missing.
+- A run that stops part-way (a lost connection, the day's write allowance)
+  leaves the store working and light: from its first file on, the store is
+  served without its catalogue inline. The next run looks up what the earlier
+  one wrote and sends only the rest.
+- A shopper's map is cached at the edge for 5 minutes. For up to that long
+  after a load, the map may still be the one from before it (search already
+  answers from the new catalogue).
+- What a load writes: the three catalogues are 360,000 rows, which D1 counts
+  as about **1.8 million rows written** (every index and the search index
+  adds to it — roughly 5 per catalogue row: Walmart ≈ 1.3 million, Home Depot
+  ≈ 440,000, the Corner Store ≈ 90,000). **Workers Paid** has no daily cap, so
+  one run loads everything in a few minutes. **Workers Free** allows 100,000
+  rows written a day and nothing can write once past that until 00:00 UTC —
+  on it, load with a budget once a day per store
+  (`--store walmart-example --max-rows 20000`) until it reports `as sent`,
+  which is about two months for Walmart; Workers Paid is the practical option
+  for catalogues this size.
+- To change what the stores stock: edit the catalogue tables, bump
+  `CATALOG_VERSION` in `demo-catalog.mjs`, deploy, run the loader. A changed
+  floor plan (`LAYOUT_VERSION`) makes the Worker rebuild the stores on its
+  next start — load the catalogue after that first hit.
 
 ## 3 · Lock it down (before sharing the URL publicly)
 

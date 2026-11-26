@@ -3,6 +3,34 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { db } from './db.js';
 import { createApp } from './app.js';
+import { CATALOG_VERSION, catalogKey, isBulkStore, layoutKey, LAYOUT_VERSION } from '../scripts/demo-catalog.mjs';
+import { cornerStoreSpec, homeDepotSpec, walmartSpec } from '../scripts/demo-specs.mjs';
+
+/**
+ * An example store that is present but was laid out — or stocked with its
+ * catalogue — by an earlier version of the seed. The seed script brings such
+ * a store up to date, and finds nothing to do on the starts after. (Only the
+ * versions are compared here: generating the catalogue to compare its whole
+ * record is the seed script's job.) A store that is not there at all is left
+ * to the store count below, which is how a fresh database gets its examples.
+ */
+function exampleStoreStale() {
+  const setting = db.prepare('SELECT value FROM app_settings WHERE key = ?');
+  for (const make of [walmartSpec, homeDepotSpec, cornerStoreSpec]) {
+    const { slug } = make();
+    if (!db.prepare('SELECT 1 FROM stores WHERE slug = ?').get(slug)) continue;
+    if (setting.get(layoutKey(slug))?.value !== String(LAYOUT_VERSION)) return true;
+    if (!isBulkStore(slug)) continue;
+    let loaded = null;
+    try {
+      loaded = JSON.parse(setting.get(catalogKey(slug))?.value ?? 'null');
+    } catch {
+      /* an unreadable record is an out-of-date one */
+    }
+    if (loaded?.version !== CATALOG_VERSION) return true;
+  }
+  return false;
+}
 
 const app = createApp();
 // Set before listening so req.ip respects the platform's TLS proxy.
@@ -24,8 +52,11 @@ if (config.selfHosted && config.seedDemo) {
   const photosPending =
     db.prepare('SELECT COUNT(*) n FROM media').get().n === 0 &&
     db.prepare("SELECT COUNT(*) n FROM products WHERE image_url LIKE '/media/%' OR image_url LIKE '/demo-products/%'").get().n > 0;
-  if (n < 6 || photosPending) {
-    console.log(`[boot] ${n === 0 ? 'empty database' : `${n} stores present, demo set grew`} — seeding demo maps (SEED_DEMO=false to disable)`);
+  const stale = n > 0 && exampleStoreStale();
+  if (n < 6 || photosPending || stale) {
+    console.log(
+      `[boot] ${n === 0 ? 'empty database' : stale ? 'an example store is from an earlier version' : `${n} stores present, demo set grew`} — seeding demo maps (SEED_DEMO=false to disable)`
+    );
     const seedPath = fileURLToPath(new URL('../scripts/seed-demo.mjs', import.meta.url));
     spawn(process.execPath, [seedPath], { stdio: 'inherit', env: process.env }).on('exit', (code) =>
       console.log(`[boot] demo seed ${code === 0 ? 'complete' : 'failed'} (${code})`)

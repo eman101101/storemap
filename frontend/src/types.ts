@@ -186,6 +186,21 @@ export interface StoreFull {
   locations: ProductLocation[];
 }
 
+/**
+ * A store's generated catalogue once one is loaded (the example stores carry
+ * 120,000 / 40,000 / 8,000 SKUs). Far too big to ship with the map, so the
+ * payload holds the store's own demo items only and this record instead: the
+ * viewer searches through the API and asks each shelf for a window.
+ */
+export interface CatalogInfo {
+  /** SKUs in the whole store, the demo items included */
+  products: number;
+  /** the first SKU of the generated part (the demo items' SKUs sort before it) */
+  fromSku: string;
+  locations: number;
+  version: number;
+}
+
 export interface PublicStorePayload {
   store: Omit<Store, 'owner_id' | 'is_public'>;
   floors: Floor[];
@@ -193,6 +208,45 @@ export interface PublicStorePayload {
   categories: Category[];
   products: Product[];
   locations: ProductLocation[];
+  /** set when a generated catalogue is loaded behind this store */
+  catalog?: CatalogInfo | null;
+}
+
+/** A facing with its product, as the shelf-window and product routes return them. */
+export interface ShelfWindowSlot {
+  location: ProductLocation;
+  product: Product;
+}
+
+/**
+ * The stretch of one shelf around a place: a few facings either side on
+ * every level — not the whole shelf, which may hold thousands.
+ */
+export interface ShelfWindow {
+  shelfId: string;
+  /** the place asked for, 0..1 from the left end */
+  u: number;
+  /** the stretch actually covered, 0..1 from the left end */
+  from: number;
+  to: number;
+  /** how many facings each level of the shelf carries */
+  levels: { level: number; count: number }[];
+  slots: ShelfWindowSlot[];
+}
+
+/** A product with everywhere it faces in the store. */
+export interface ProductFacings {
+  product: Product;
+  facings: ShelfWindowSlot[];
+}
+
+/** Where a search hit faces — the shelf it is on and, for a generated item,
+ *  its level and place along the shelf. */
+export interface HitFacing {
+  shelfId: string | null;
+  shelfLabel: string | null;
+  level: number | null;
+  u: number | null;
 }
 
 export interface SearchResult {
@@ -208,6 +262,9 @@ export interface SearchResult {
   x: number | null;
   y: number | null;
   floor_name: string | null;
+  /** the facing's meta and its shelf's title (stores with a loaded catalogue) */
+  location_meta?: string | null;
+  shelf_label?: string | null;
 }
 
 /* ---------------- stock tracking ---------------- */

@@ -28,6 +28,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isMediaUrl, putMedia, pruneMedia } from '../src/lib/media.js';
 import { walmartSpec, homeDepotSpec, cornerStoreSpec, stockEverything, PHOTOS } from './demo-specs.mjs';
+import {
+  LAYOUT_VERSION, OWNED_FACINGS, bulkCatalog, catalogKey, catalogMarker, facingMeta, isBulkStore, layoutKey, withRealBrands,
+} from './demo-catalog.mjs';
 // db.js resolves DATA_DIR exactly like the server (via config) and migrate()
 // creates the schema — so the script is safe on a first boot with a brand-new
 // database file.
@@ -141,10 +144,57 @@ function reportUnstocked(slug) {
   if (n) console.warn(`  WARNING: ${n} items of ${slug} have no shelf location — a search lists them as "out of stock".`);
 }
 
+/**
+ * Stock a store's generated catalogue (demo-catalog.mjs): its products and
+ * facings go in beside the demo's own items, and the record that they are
+ * there is kept in app_settings — the public routes serve such a store
+ * without its catalogue inline, and the viewer asks for shelf windows instead.
+ * Returns whether anything was written (false when it is already up to date).
+ */
+function loadBulkCatalog(spec, storeId, floorId) {
+  const key = catalogKey(spec.slug);
+  const marker = catalogMarker(spec.slug, spec);
+  if (db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)?.value === marker) return false;
+  const { products, locations } = bulkCatalog(spec.slug, spec);
+  // elements were written in spec order, so z_index - 1 is the spec's element index
+  const shelfIds = Object.fromEntries(
+    db.prepare("SELECT id, z_index FROM map_elements WHERE floor_id = ? AND type = 'shelf'").all(floorId).map((r) => [r.z_index - 1, r.id])
+  );
+  const catIds = Object.fromEntries(db.prepare('SELECT id, name FROM categories WHERE store_id = ?').all(storeId).map((r) => [r.name, r.id]));
+  const insP = db.prepare(
+    'INSERT INTO products (id, store_id, category_id, name, brand, sku, barcode, description, price, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  const insL = db.prepare('INSERT INTO product_locations (id, product_id, floor_id, x, y, rot, meta) VALUES (?, ?, ?, ?, ?, 0, ?)');
+  const { fromSku } = JSON.parse(marker);
+  db.exec('BEGIN');
+  try {
+    // a catalogue is replaced whole: its facings and its SKUs (from the first one on)
+    db.prepare(`DELETE FROM product_locations WHERE floor_id = ? AND NOT (${OWNED_FACINGS})`).run(floorId);
+    db.prepare('DELETE FROM products WHERE store_id = ? AND sku >= ?').run(storeId, fromSku);
+    for (const p of products) {
+      if (!catIds[p.category]) throw new Error(`${spec.slug}: the store has no department "${p.category}"`);
+      insP.run(p.id, storeId, catIds[p.category], p.name, p.brand, p.sku, '', '', p.price, '');
+    }
+    for (const l of locations) {
+      if (!shelfIds[l.shelf]) throw new Error(`${spec.slug}: shelf ${l.shelf} is not in the store`);
+      insL.run(l.id, products[l.product - spec.products.length].id, floorId, l.x, l.y, JSON.stringify(facingMeta(l, shelfIds[l.shelf])));
+    }
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, marker);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  console.log(`  ${spec.name}: ${products.length.toLocaleString('en-US')} generated SKUs stocked (${locations.length.toLocaleString('en-US')} facings) — no photos, real brands.`);
+  return true;
+}
+
 function seedExample(spec, ownerEmail, ownerName) {
   const resetThis = reset || process.argv.includes(`--reset-${spec.slug}`);
   const added = stockEverything(spec);
   if (added) console.log(`  ${spec.name}: ${added} catalogue items had no facing — added to a group.`);
+  // the hand-picked demo items take real brands where a product line covers them
+  if (isBulkStore(spec.slug)) withRealBrands(spec.slug, spec);
   let st = db.prepare('SELECT id, owner_id FROM stores WHERE slug = ?').get(spec.slug);
   if (!st) {
     let owner = db.prepare('SELECT id FROM users WHERE email = ?').get(ownerEmail);
@@ -175,18 +225,23 @@ function seedExample(spec, ownerEmail, ownerName) {
   // picks up the new layout instead of keeping the stale one forever
   const sizeChanged = Math.abs(fl.width_m - spec.w) > 0.01 || Math.abs(fl.height_m - spec.h) > 0.01;
   let shelves = db.prepare("SELECT COUNT(*) AS n FROM map_elements WHERE floor_id = ? AND type = 'shelf'").get(fl.id).n;
-  // a spec whose pin count changed (items regrouped) also rebuilds — an old
-  // seed's locations otherwise stick around forever
-  const locCount = db.prepare('SELECT COUNT(*) AS n FROM product_locations WHERE floor_id = ?').get(fl.id).n;
-  const locDrift = shelves > 0 && locCount !== spec.locations.length;
-  if (shelves > 0 && (resetThis || (demoOwned && (sizeChanged || locDrift)))) {
+  // a spec whose pin count changed (items regrouped) or whose layout/SKU
+  // scheme was versioned up also rebuilds — an old seed's locations otherwise
+  // stick around forever. Only the demo's own facings are counted: a loaded
+  // catalogue's facings are not part of the layout.
+  const locCount = db.prepare(`SELECT COUNT(*) AS n FROM product_locations WHERE floor_id = ? AND ${OWNED_FACINGS}`).get(fl.id).n;
+  const locDrift = locCount !== spec.locations.length;
+  const laidOut = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(layoutKey(spec.slug))?.value;
+  const layoutChanged = laidOut !== String(LAYOUT_VERSION);
+  if (shelves > 0 && (resetThis || (demoOwned && (sizeChanged || locDrift || layoutChanged)))) {
     db.prepare('DELETE FROM product_locations WHERE floor_id = ?').run(fl.id);
     db.prepare('DELETE FROM products WHERE store_id = ?').run(st.id);
     db.prepare('DELETE FROM categories WHERE store_id = ?').run(st.id);
     db.prepare('DELETE FROM map_elements WHERE floor_id = ?').run(fl.id);
+    db.prepare('DELETE FROM app_settings WHERE key = ?').run(catalogKey(spec.slug)); // the catalogue went with the rebuild
     db.prepare('UPDATE stores SET description = ?, hours = ? WHERE id = ?').run(spec.description, spec.hours, st.id);
     shelves = 0;
-    console.log(`Reset ${spec.name} — rebuilding.`);
+    console.log(`Reset ${spec.name} — rebuilding (${resetThis ? 'asked for' : sizeChanged ? 'spec changed' : locDrift ? 'pin count changed' : 'layout version changed'}).`);
   }
   if (shelves > 0) {
     if (demoOwned) {
@@ -194,6 +249,8 @@ function seedExample(spec, ownerEmail, ownerName) {
       if (photos) console.log(`  ${photos} product photos updated in place.`);
     }
     console.log(`${spec.name} layout already present — skipping (use --reset-${spec.slug} to rebuild).`);
+    // the catalogue follows the same rule as everything else on this path
+    if (demoOwned && isBulkStore(spec.slug)) loadBulkCatalog(spec, st.id, fl.id);
     reportUnstocked(spec.slug);
     return;
   }
@@ -234,12 +291,16 @@ function seedExample(spec, ownerEmail, ownerName) {
       db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
       photoSyncKey(spec.slug), photoFingerprint(spec)
     );
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+      layoutKey(spec.slug), String(LAYOUT_VERSION)
+    );
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
   }
   console.log(`Seeded ${spec.name}: ${spec.w}×${spec.h} m, ${spec.elements.length} elements, ${spec.products.length} products (${spec.locations.length} pinned).`);
+  if (isBulkStore(spec.slug)) loadBulkCatalog(spec, st.id, fl.id);
 }
 
 // The homepage showcases the three example stores. Retire the previous demo

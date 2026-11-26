@@ -345,6 +345,20 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    // A generated catalogue stocks hundreds of thousands of facings, each
+    // placed along its shelf (meta.u — see backend/scripts/demo-catalog.mjs).
+    // A shelf's planogram window asks for one shelf, one level and a run of
+    // positions; this index answers it without reading the whole catalogue.
+    name: '014-bulk-catalog-index',
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_locations_shelf_window ON product_locations (
+        json_extract(meta, '$.shelfId'),
+        json_extract(meta, '$.shelf_level'),
+        json_extract(meta, '$.u')
+      );
+    `,
+  },
 ];
 
 export function migrate() {

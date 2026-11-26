@@ -29,6 +29,7 @@ const EXAMPLES = ['walmart-example', 'home-depot-example', 'convenience-store-ex
 
 const { PHOTOS, walmartSpec, homeDepotSpec, cornerStoreSpec, stockEverything } = await import('../scripts/demo-specs.mjs');
 const SPECS = [walmartSpec, homeDepotSpec, cornerStoreSpec].map((build) => build());
+const { STORE_TOTALS } = await import('../scripts/demo-catalog.mjs');
 
 const seed = () => spawnSync(process.execPath, ['scripts/seed-demo.mjs'], { cwd: ROOT, encoding: 'utf8' });
 const open = () => new DatabaseSync(DB_PATH, { readOnly: true });
@@ -141,25 +142,31 @@ test('the seeder copies the whole photo set into the database, byte for byte', (
   db.close();
 });
 
-test('every item of every example map is stocked, priced and photographed from the database', () => {
+// the store's own (demo) items: their SKUs sort before the generated part of the catalogue
+const OWN_ITEMS = `p.sku < json_extract((SELECT value FROM app_settings WHERE key = 'seed:catalog:' || s.slug), '$.fromSku')`;
+
+test('every item of every example map is stocked and priced; the demo items are photographed from the database', () => {
   const db = open();
-  for (const { slug, products } of SPECS) {
+  for (const { slug } of SPECS) {
     const row = db
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug) AS products,
            (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug
               AND NOT EXISTS (SELECT 1 FROM product_locations l WHERE l.product_id = p.id)) AS unstocked,
-           (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug
+           (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug AND ${OWN_ITEMS}
               AND (p.image_url NOT LIKE '/media/%'
                    OR NOT EXISTS (SELECT 1 FROM media m WHERE '/media/' || m.id = p.image_url))) AS photoless,
+           (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug AND NOT (${OWN_ITEMS})
+              AND p.image_url <> '') AS generatedWithPhoto,
            (SELECT COUNT(*) FROM products p JOIN stores s ON s.id = p.store_id WHERE s.slug = :slug
               AND (p.price IS NULL OR p.price <= 0)) AS unpriced`
       )
       .get({ slug });
-    assert.equal(row.products, products.length, `${slug}: the whole catalogue is written`);
+    assert.equal(row.products, STORE_TOTALS[slug], `${slug}: the whole catalogue is written — the demo items and the generated SKUs`);
     assert.equal(row.unstocked, 0, `${slug}: nothing lists as "out of stock"`);
-    assert.equal(row.photoless, 0, `${slug}: every photo resolves inside the database`);
+    assert.equal(row.photoless, 0, `${slug}: every demo photo resolves inside the database`);
+    assert.equal(row.generatedWithPhoto, 0, `${slug}: the generated SKUs come without photos`);
     assert.equal(row.unpriced, 0, `${slug}: every item has a price`);
   }
   db.close();
@@ -220,13 +227,19 @@ test('a store seeded before photos existed is filled in on its first sync — af
   assert.doesNotMatch(run.stdout, /Reset .* rebuilding/, 'filled in place, not rebuilt');
   const ids = (rows) => rows.map(({ sku, id }) => `${sku} ${id}`);
   const after = open();
-  assert.equal(after.prepare("SELECT COUNT(*) n FROM products WHERE image_url = ''").get().n, 0, 'every product now carries its photo');
+  // the generated SKUs never carry one; every item of the store's own does
+  const photoless = after
+    .prepare(
+      `SELECT COUNT(*) n FROM products p JOIN stores s ON s.id = p.store_id WHERE p.image_url = '' AND ${OWN_ITEMS}`
+    )
+    .get().n;
+  assert.equal(photoless, 0, 'every product now carries its photo');
   assert.deepEqual(ids(after.prepare('SELECT sku, id FROM products ORDER BY store_id, sku').all()), ids(before), 'ids stable');
   after.close();
 
   // the store is in sync from now on: a photo removed again is the owner's choice
   const edit = new DatabaseSync(DB_PATH);
-  const one = edit.prepare("SELECT id FROM products WHERE sku = 'HDX-003'").get().id;
+  const one = edit.prepare("SELECT id FROM products WHERE sku = 'HDX-00003'").get().id;
   edit.prepare("UPDATE products SET image_url = '' WHERE id = ?").run(one);
   edit.close();
   run = seed();
@@ -243,7 +256,7 @@ test('a store someone claimed is never rebuilt or touched up by the demo seeder'
   db.prepare('INSERT INTO users (id, email, provider, provider_sub) VALUES (?, ?, ?, ?)').run('claimant', 'claim@example.com', 'dev', 'claim');
   db.prepare('UPDATE stores SET owner_id = ? WHERE id = ?').run('claimant', store.id);
   // the claimed store keeps a stale url, and has drifted from the spec's pin count
-  db.prepare("UPDATE products SET image_url = '/demo-products/old.jpg' WHERE store_id = ? AND sku = 'HDX-001'").run(store.id);
+  db.prepare("UPDATE products SET image_url = '/demo-products/old.jpg' WHERE store_id = ? AND sku = 'HDX-00001'").run(store.id);
   db.prepare('DELETE FROM product_locations WHERE product_id IN (SELECT id FROM products WHERE store_id = ? LIMIT 1)').run(store.id);
   const locations = db.prepare('SELECT COUNT(*) n FROM product_locations').get().n;
   db.close();
@@ -253,7 +266,7 @@ test('a store someone claimed is never rebuilt or touched up by the demo seeder'
   assert.doesNotMatch(run.stdout, /Reset .* rebuilding/, 'a claimed store is not rebuilt even when it drifted');
 
   const after = open();
-  const row = after.prepare('SELECT image_url FROM products WHERE store_id = ? AND sku = ?').get(store.id, 'HDX-001');
+  const row = after.prepare('SELECT image_url FROM products WHERE store_id = ? AND sku = ?').get(store.id, 'HDX-00001');
   assert.equal(row.image_url, '/demo-products/old.jpg', 'its photos are not re-pointed either');
   assert.equal(after.prepare('SELECT COUNT(*) n FROM product_locations').get().n, locations);
   after.close();
