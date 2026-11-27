@@ -13,8 +13,9 @@ import type {
 } from '../types';
 import { parseElement, locationFlags, groupDisplayName } from '../types';
 import type { Viewport, WorldPt } from '../lib/geometry';
-import { buildNavGrid, computeRoute, computeTrip, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
+import { buildNavGrid, computeRoute, computeTrip, pickStartPoint, WALK_M_PER_MIN, type NavGrid, type TourStop } from '../lib/navgrid';
 import { shelfDirectory } from '../lib/aisleInfo';
+import { buildSections, searchSections, type Box, type Section } from '../lib/sections';
 import { computeShelfLayout } from '../lib/shelfLayout';
 import { closestFacing, facingPlace, shelfFacings, whereOnShelf } from '../lib/shelfWindow';
 import { buildGroupPins } from '../lib/itemGroups';
@@ -93,7 +94,8 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   // the ITEM facing to ring inside the planogram (the map focus lands on the
   // group's pin, the highlight stays on the searched item)
   const [highlightFacingId, setHighlightFacingId] = useState<string | null>(null);
-  const [focusCmd, setFocusCmd] = useState<{ x: number; y: number; seq: number } | null>(null);
+  // `box` set: frame that part of the floor (a section picked in the search), not just centre on the point
+  const [focusCmd, setFocusCmd] = useState<{ x: number; y: number; seq: number; box?: Box & { keepTop?: number } } | null>(null);
   /** the deferred 2D zoom-to-pin from focusResult — cleared on unmount */
   const focusTimer = useRef<number>(0);
   const [viewport, setViewport] = useState<Viewport>({ scale: 15, tx: 0, ty: 0 });
@@ -132,6 +134,9 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   // pre-search browsing: the "What's where" aisle directory + category filter
   const [dirOpen, setDirOpen] = useState(false);
   const [browseCat, setBrowseCat] = useState<{ name: string; color: string } | null>(null);
+  // a section picked in the search — an aisle, a department, an area, a shelf group: its shelves light
+  // up on the map, the walk is drawn to it and its shelf groups are listed in a card
+  const [section, setSection] = useState<Section | null>(null);
   const [sheetProduct, setSheetProduct] = useState<Product | null>(null);
   const [offline, setOffline] = useState(!navigator.onLine);
   // owned here so toggling 2D↔3D keeps the 3D angle
@@ -281,6 +286,9 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     [data, activeFloorId]
   );
 
+  // this floor's own elements: what the pins, the sections and every route work on
+  const floorEls = useMemo(() => elements.filter((e) => e.floor_id === floor?.id), [elements, floor?.id]);
+
   // Every shelf group shows ONE map pin; its items are planogram-only
   // facings. Searches hit items, so each hit resolves to its group's pin
   // here — what the map can light up and route to.
@@ -376,7 +384,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   }, [data, browseCat]);
   // the map preview stays clean — items appear only while searching or browsing a
   // category, and the selected item's pin remains afterwards
-  const pins: Pin[] = useMemo(() => {
+  const searchedPins: Pin[] = useMemo(() => {
     if (!data || !floor) return [];
     const tripIds = trip.map((t) => t.product.id);
     const wanted = hasSearch
@@ -425,6 +433,25 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
       .map((location) => ({ location, product: data.products.find((p) => p.id === location.product_id)! }))
       .filter((p) => p.product);
   }, [data, floor?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** The pins of some shelves — each one's own group pin (a shelf with none of
+   *  its own: its first plain facing), at most one per shelf. */
+  const groupPinsOf = (shelfIds: string[]): Pin[] => {
+    const wanted = new Set(shelfIds);
+    const byShelf = new Map<string, Pin>();
+    for (const p of ownPins) {
+      if (locationFlags(p.location).groupOnly) continue;
+      const shelfId = groupPins.shelfIdOf(p.location);
+      if (!shelfId || !wanted.has(shelfId)) continue;
+      const seen = byShelf.get(shelfId);
+      if (!seen || locationFlags(p.location).groupPin) byShelf.set(shelfId, p);
+    }
+    return [...byShelf.values()];
+  };
+  const sectionPins = useMemo(() => (section ? groupPinsOf(section.shelfIds) : []), [section?.key, ownPins, groupPins]); // eslint-disable-line react-hooks/exhaustive-deps
+  // while a section is showing and nothing is being searched, the maps carry its shelves' pins
+  const pins: Pin[] = useMemo(() => (!hasSearch && section ? sectionPins : searchedPins), [hasSearch, section, sectionPins, searchedPins]);
+  // …and its shelves are outlined
+  const sectionHighlight = useMemo(() => (section && !hasSearch ? new Set(section.shelfIds) : undefined), [section, hasSearch]);
   // …and, for the maps, a catalogue item's pin where it is not one of them: a
   // shelf with no group pin of its own stands the item's facing in at its centre
   const floorPins: Pin[] = useMemo(() => {
@@ -443,6 +470,10 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
         : [],
     [floor, elements, ownPins]
   );
+
+  // the store's sections — its aisles, departments, areas and shelf groups — and those answering the search
+  const sections = useMemo(() => (floor ? buildSections(floorEls, ownPins) : []), [floor, floorEls, ownPins]);
+  const sectionHits = useMemo(() => searchSections(sections, search), [sections, search]);
 
   const shelfById = (id: string | null | undefined): MapElement | null =>
     (id ? elements.find((e) => e.id === id && e.type === 'shelf') ?? null : null);
@@ -528,7 +559,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   const liveMessage = tripResult
     ? `Trip with ${tripResult.tour.order.length} stops, ${Math.round(tripResult.tour.totalM)} meters total, about ${Math.max(1, Math.round(tripResult.tour.totalM / WALK_M_PER_MIN))} minutes.`
     : activeRoute
-      ? `Route to ${focusProduct?.name ?? 'item'}: ${Math.round(activeRoute.distanceM)} meters, about ${walkMin} minute${walkMin === 1 ? '' : 's'}.`
+      ? `Route to ${section?.name ?? focusProduct?.name ?? 'item'}: ${Math.round(activeRoute.distanceM)} meters, about ${walkMin} minute${walkMin === 1 ? '' : 's'}.`
       : '';
 
   // NOTE: kept above the loading/error early returns — the deep-link effect
@@ -658,6 +689,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     setSearchOpen(false);
     setSheetProduct(product);
     setBrowseCat(null); // searching takes over from category browsing
+    setSection(null); // …and from a section
     // a planogram-only facing has no map pin — head to its group's
     landOn(product, own ? pinFor(own) : null);
   };
@@ -671,6 +703,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     setSearchOpen(false);
     setSheetProduct(product);
     setBrowseCat(null); // searching takes over from category browsing
+    setSection(null); // …and from a section
     let facings: ShelfWindowSlot[] = [];
     try {
       facings = facingsOf.current.get(product.id) ?? (await api.publicProduct(data.store.slug, product.id)).facings;
@@ -694,6 +727,50 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
     );
     if (pin) setRemotePins((list) => (list.some((x) => x.product.id === product.id) ? list : [...list, { location: pin, product }]));
     landOn(product, pin);
+  };
+
+  /**
+   * Send the shopper to a section of the store — an aisle, a department, an
+   * area, a shelf group. Its shelves light up and are outlined, 2D frames it
+   * (3D keeps the store-wide angle, as for an item), and the walk is drawn
+   * from the entrance to the shelf of it that is nearest. A place with no
+   * shelves (the restrooms, the checkouts) is walked to its middle.
+   */
+  const focusSection = (picked: Section) => {
+    if (!data || !floor) return;
+    setQ('');
+    setSearchOpen(false);
+    setSheetProduct(null);
+    setGroupSheetId(null);
+    setBrowseCat(null);
+    setFocusProduct(null);
+    setHighlightFacingId(null);
+    setSentTo(null);
+    setSection(picked);
+    const middle = { x: (picked.box.x0 + picked.box.x1) / 2, y: (picked.box.y0 + picked.box.y1) / 2 };
+    // the shelves nearest the entrance the shopper is taken to come from — of
+    // those, the one with the shortest walk is where the route ends
+    const start = pickStartPoint(floorEls, floor, middle);
+    const nearest = groupPinsOf(picked.shelfIds)
+      .map((pin) => ({ pin, d: Math.hypot(pin.location.x - start.x, pin.location.y - start.y) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 3);
+    let best: { pin: Pin | null; route: ReturnType<typeof computeRoute> } = { pin: null, route: null };
+    const walk = (pin: Pin) => computeRoute(floor, floorEls, { x: pin.location.x, y: pin.location.y }, {}, navGrid ?? undefined);
+    for (const { pin } of nearest) {
+      const route = walk(pin);
+      if (route && (!best.route || route.distanceM < best.route.distanceM)) best = { pin, route };
+    }
+    if (!best.route) best = { pin: null, route: computeRoute(floor, floorEls, middle, {}, navGrid ?? undefined) };
+    setFocusPinLocationId(best.pin?.location.id ?? null);
+    window.clearTimeout(focusTimer.current);
+    // a card listing shelves is taller than one that only names a place
+    setFocusCmd({
+      ...middle, seq: (focusCmd?.seq ?? 0) + 1,
+      box: { ...picked.box, keepTop: picked.shelfIds.length ? undefined : 96 },
+    });
+    setCam3d(fitCamera(floor, aspect));
+    setRoute(best.route ? { floorId: floor.id, points: best.route.points, distanceM: best.route.distanceM } : null);
   };
 
   /** Fetch the stretch of a shelf around a place (0..1 from its left end). */
@@ -778,6 +855,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
   };
 
   const clearRoute = () => {
+    setSection(null);
     setRoute(null);
     setFocusPinLocationId(null);
     setFocusProduct(null);
@@ -834,6 +912,17 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
 
   const results = hits.slice(0, 40);
 
+  // the section's card: its shelf groups, and the line under its name
+  const sectionGroups = (section?.shelfIds ?? []).map((id) => shelfById(id)).filter((g): g is MapElement => !!g);
+  const sectionNote = !section
+    ? ''
+    : [
+        ...section.sub,
+        // an aisle's line names its departments; how many shelves line it is said here
+        ...(section.kind === 'aisle' ? [sectionGroups.length === 1 ? '1 shelf' : `${sectionGroups.length} shelves`] : []),
+      ]
+        .join(' · ') || (section.kind === 'area' ? 'Area of the store' : '');
+
   // what a group's card says under its name: how much the shelf holds. A
   // catalogue store's total arrives with the window the card has fetched.
   const ownCount = groupSheet ? computeShelfLayout(groupSheet, ownPins)?.bays.reduce((n, b) => n + b.slots.length, 0) ?? 0 : 0;
@@ -884,6 +973,7 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
             viewport={viewport}
             onViewport={setViewport}
             focusPinId={focusPinLocationId}
+            highlightElementIds={sectionHighlight}
             focus={focusCmd ?? undefined}
             route={tripLegsFlat ?? activeRoute?.points ?? null}
             tripStops={tripResult ? tripResult.tour.order : undefined}
@@ -927,6 +1017,9 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
             onChange={(v) => { setQ(v); setBrowseCat(null); }}
             hits={results}
             onPick={(hit) => focusResult(hit)}
+            sections={sectionHits}
+            onPickSection={focusSection}
+            activeSectionKey={section?.key ?? null}
             open={searchOpen}
             setOpen={setSearchOpen}
             placeholder="Search an item… e.g. milk"
@@ -1054,6 +1147,29 @@ export default function ViewerPage({ preview }: { preview?: ViewerPreview }) {
                   ▦ View shelf
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* a section picked in the search: its name, and the shelf groups inside it (a group's card
+              takes its place while that is open, and gives it back when closed) */}
+          {section && !groupSheet && !sheetProduct && (
+            <div className="product-sheet group-sheet section-sheet card" role="dialog" aria-label={section.name}>
+              <span className="dot" style={{ background: section.color }} />
+              <div className="sheet-info">
+                <b>{section.name}</b>
+                {sectionNote && <span>{sectionNote}</span>}
+              </div>
+              <button className="route-badge-x" onClick={clearRoute} aria-label="Close">✕</button>
+              {sectionGroups.length > 0 && (
+                <div className="sheet-groups" aria-label="Shelves in this section">
+                  {sectionGroups.map((g) => (
+                    <button key={g.id} className="dir-cat" onClick={() => tapShelf(g.id)} title="Show this shelf">
+                      <span className="dot" style={{ background: g.color || section.color }} aria-hidden />
+                      {groupDisplayName(g) ?? 'Shelf'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

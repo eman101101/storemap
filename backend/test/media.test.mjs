@@ -33,7 +33,17 @@ const { STORE_TOTALS } = await import('../scripts/demo-catalog.mjs');
 
 const seed = () => spawnSync(process.execPath, ['scripts/seed-demo.mjs'], { cwd: ROOT, encoding: 'utf8' });
 const open = () => new DatabaseSync(DB_PATH, { readOnly: true });
-const inside = (rect, p) => p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+/** In the rect's own frame, so a rotated run (a vertical shelf is a rot-90
+ *  rect) is judged by its real footprint — the same inverse rotation as the
+ *  app's elementContains. */
+const inside = (rect, p) => {
+  const a = (-(rect.rot ?? 0) * Math.PI) / 180;
+  const dx = p.x - (rect.x + rect.w / 2);
+  const dy = p.y - (rect.y + rect.h / 2);
+  const lx = rect.w / 2 + dx * Math.cos(a) - dy * Math.sin(a);
+  const ly = rect.h / 2 + dx * Math.sin(a) + dy * Math.cos(a);
+  return lx >= 0 && lx <= rect.w && ly >= 0 && ly <= rect.h;
+};
 
 /* ── the specs: what gets written before any database is involved ────────── */
 

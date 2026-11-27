@@ -22,8 +22,9 @@ import WM from "./demo-catalog-walmart.mjs";
 import HD from "./demo-catalog-homedepot.mjs";
 import CS from "./demo-catalog-corner.mjs";
 
-/** Bump when the generated catalogue should be reloaded (lines, totals, naming). */
-export const CATALOG_VERSION = 2;
+/** Bump when the generated catalogue should be reloaded (lines, totals, naming,
+ *  or which shelf a kind of product is picked for). */
+export const CATALOG_VERSION = 3;
 
 /** How many SKUs each example store carries, its original demo items included. */
 export const STORE_TOTALS = {
@@ -301,7 +302,7 @@ export function brandFor(slug, category, index) {
  * `seed:layout:<slug>` and rebuild a present store when it differs — which is
  * also what retires a loaded catalogue (its rows go with the rebuild).
  */
-export const LAYOUT_VERSION = 2;
+export const LAYOUT_VERSION = 3;
 
 /** A loaded catalogue is recorded in app_settings under this key. */
 export const catalogKey = (slug) => `seed:catalog:${slug}`;
@@ -474,52 +475,75 @@ export function facingMeta(facing, shelfId) {
  * stocked on. A product goes to the shelf whose title — plus the extra words
  * SHELF_WORDS gives a title — shares the most words with what it is: its
  * name and its line's product and kind ("BEHR Satin Interior Paint" →
- * "Interior Paint"). Where PICKS names its kind, there. A product no title
- * describes (or that two titles describe equally) follows its line, else the
+ * "Interior Paint"). Where PICKS names its kind, there. Two titles that
+ * describe a product equally: the emptier of them takes it. A product no title
+ * describes follows its line — the shelf most of the line went to — else the
  * shelf with the fewest products so far, so the shelves stay about as full.
  */
-function shelfForProducts(slug, category, lines, shelves, indexes, products) {
+export function shelfForProducts(slug, category, lines, shelves, indexes, products) {
   if (shelves.length === 1) return indexes.map(() => 0);
-  const labels = shelves.map((shelf, si) => new Set([...words(shelf.label), ...(SHELF_WORDS[slug]?.[category]?.[si] ?? []).flatMap((x) => [...words(x)])]));
+  // a shelf as the tables name it: by its title, or — the older tables — by its index
+  const shelfNamed = (ref) => (typeof ref === "number" ? ref : shelves.findIndex((shelf) => shelf.label === ref));
+  const wordsOf = shelves.map(() => []);
+  for (const [key, list] of Object.entries(SHELF_WORDS[slug]?.[category] ?? {})) {
+    const si = shelfNamed(/^\d+$/.test(key) ? Number(key) : key);
+    if (si < 0) throw new Error(`${slug}, "${category}": extra words name a shelf that is not one of the department's ("${key}")`);
+    wordsOf[si].push(...list);
+  }
+  const labels = shelves.map((shelf, si) => new Set([...words(shelf.label), ...wordsOf[si].flatMap((x) => [...words(x)])]));
   const picks = SHELF_PICKS[slug]?.[category] ?? {};
   const lineWords = lines.map((line) => new Set([...words(line.products[0].base ?? ''), ...words(line.kind ?? '')]));
-  const chosen = indexes.map((product) => {
+  // what each product scores against every shelf: everything for its pick, else
+  // how many words the shelf's title (and extra words) share with what the
+  // product is — its own name counting for more than its line's kind name, so a
+  // line called "saladGreens" does not pull every Swiss Chard toward "Salad Bar"
+  const scores = indexes.map((product) => {
     const row = products[product].row;
-    if (picks[lines[row].kind] != null) return picks[lines[row].kind];
-    const sold = new Set([...words(products[product].name), ...lineWords[row]]);
-    let best = -1;
-    let bestScore = 0;
-    let tied = false;
-    labels.forEach((label, si) => {
-      const score = [...label].filter((w) => sold.has(w)).length;
-      if (score > bestScore) {
-        best = si;
-        bestScore = score;
-        tied = false;
-      } else if (score === bestScore && score > 0) tied = true;
-    });
-    return tied ? -1 : best;
+    const picked = picks[lines[row].kind];
+    if (picked != null) {
+      const si = shelfNamed(picked);
+      if (si < 0 || si >= shelves.length) throw new Error(`${slug}, "${category}": "${lines[row].kind}" is picked for a shelf that is not one of the department's ("${picked}")`);
+      return labels.map((_, j) => (j === si ? Infinity : 0));
+    }
+    const own = new Set(words(products[product].name));
+    return labels.map((label) => [...label].reduce((n, w) => n + (own.has(w) ? 10 : lineWords[row].has(w) ? 1 : 0), 0));
   });
-  // the shelf each line's described products went to, where they agree on one
-  const lineShelf = new Map();
+  const load = shelves.map(() => 0);
+  const chosen = scores.map((score) => {
+    const best = Math.max(...score);
+    if (best === 0) return -1; // no title describes it — settled below
+    // two titles describing a product equally: the emptier of them takes it
+    let si = -1;
+    score.forEach((s, j) => { if (s === best && (si < 0 || load[j] < load[si])) si = j; });
+    load[si] += 1;
+    return si;
+  });
+  // where each line's described products went
+  const described = new Map(); // row → per shelf
   indexes.forEach((product, i) => {
     if (chosen[i] < 0) return;
     const row = products[product].row;
-    if (!lineShelf.has(row)) lineShelf.set(row, chosen[i]);
-    else if (lineShelf.get(row) !== chosen[i]) lineShelf.set(row, -1);
+    const tally = described.get(row) ?? shelves.map(() => 0);
+    tally[chosen[i]] += 1;
+    described.set(row, tally);
   });
-  const load = shelves.map((_, si) => chosen.filter((c) => c === si).length);
+  // A product no title describes follows its line — the shelf most of the
+  // line's described products went to — else the shelf with the fewest
+  // products so far, so the shelves stay about as full.
   indexes.forEach((product, i) => {
     if (chosen[i] >= 0) return;
-    const own = lineShelf.get(products[product].row) ?? -1;
-    const shelf = own >= 0 ? own : load.indexOf(Math.min(...load));
+    const tally = described.get(products[product].row);
+    const fullest = tally ? Math.max(...tally) : 0;
+    const shelf = fullest > 0 ? tally.indexOf(fullest) : load.indexOf(Math.min(...load));
     chosen[i] = shelf;
     load[shelf] += 1;
   });
   return chosen;
 }
 
-/** Words a shelf's title does not say but its shelf holds (shelf index → words), for titles too terse to match by. */
+/** Words a shelf's title does not say but its shelf holds (shelf → words), for
+ *  titles too terse to match by. A Walmart shelf is named by its title; a Home
+ *  Depot one by its index among its department's shelves, in spec order. */
 const SHELF_WORDS = {
   "home-depot-example": {
     Lumber: { 1: ["plywood", "osb", "mdf", "particle", "hardboard", "panel", "sheathing"] },
@@ -529,28 +553,176 @@ const SHELF_WORDS = {
     "Lawn & Garden": { 0: ["fertilizer", "weed", "seed", "soil", "mulch", "compost", "insect"], 1: ["mower", "trimmer", "blower", "chainsaw", "tiller", "edger"], 2: ["hose", "sprinkler", "watering", "planter", "bird", "pruner", "shovel", "rake", "trowel", "gloves", "shears"] },
   },
   "walmart-example": {
-    "Toys & Games": { 1: ["game", "puzzle", "board", "card"] },
-    "Outdoor & Garden": { 0: ["lawn", "mower", "fertilizer", "weed"], 1: ["patio", "lights", "string"], 2: ["garden", "bird", "hose", "planter", "seeds"] },
+    // one kind of product split between shelves by what it is
+    "Meat & Seafood": {
+      "Ground Meat & Pork": ["stew", "patties", "tips", "liver", "oxtails", "soup", "bones", "corned", "shoulder"],
+      "Steaks & Roasts": ["ribeye", "sirloin", "strip", "filet", "mignon", "brisket", "flank", "skirt", "tenderloin", "tri-tip", "ribs", "bavette", "hanger", "coulotte", "picanha", "denver"],
+    },
+    "Fresh Produce": {
+      "Melons & Citrus": ["watermelon", "cantaloupe", "honeydew", "melon", "orange", "grapefruit", "lemon", "lime", "tangerine", "clementine", "mandarin", "satsuma", "kumquat", "pomelo", "tangelo"],
+      "Berries & Grapes": ["strawberries", "blueberries", "raspberries", "blackberries", "cranberries", "boysenberries"],
+      "Avocados & Exotics": ["banana", "mangoes", "pineapple", "papaya", "coconut", "plantain", "kiwi", "dragon fruit", "passion fruit", "guava", "starfruit", "pomegranate", "lychee"],
+      "Lettuce & Spinach": ["romaine", "iceberg", "spring mix", "arugula", "kale", "chard", "endive", "escarole", "radicchio", "watercress", "mesclun", "cabbage", "hearts", "power"],
+      "Salad Bar": ["salad kit", "garden salad", "coleslaw", "slaw"],
+      "Broccoli, Cauliflower & Vegetables": ["celery", "asparagus", "beans", "snap peas", "brussels sprouts", "artichokes", "leeks"],
+      "Tomatoes & Peppers": ["cucumber", "zucchini", "squash", "eggplant", "grape"],
+      "Root Vegetables": ["carrots", "radishes", "beets", "garlic", "shallots"],
+    },
+    "Pet Care": {
+      "Dog Food & Treats": ["dental chews", "dog treats"],
+      "Cat Food & Litter": ["cat treats"],
+    },
+    "Toys & Games": {
+      "Toys": ["action figure", "doll", "building set", "plush", "stuffed animal", "robot", "dinosaur", "car", "truck", "train", "playset", "STEM", "learning", "musical", "bath", "baby", "pretend", "dress-up", "collectible"],
+      "Ride-Ons & Outdoor Toys": ["remote control", "RC", "vehicle", "blaster", "ride-on"],
+    },
+    "Seasonal": {
+      "Seasonal & Holiday": ["tree", "light", "advent", "calendar", "candy", "basket", "egg", "card", "wrap"],
+      "Seasonal Décor": ["ornament", "wreath", "garland", "stocking", "tree skirt", "tree topper", "nativity", "nutcracker", "snow globe", "village", "inflatable", "decoration", "figurine"],
+    },
+    "Celebrate": {
+      "Party & Celebrate": ["balloon", "gift wrap", "wrapping paper", "gift bag", "tissue paper", "gift box", "bow", "ribbon", "banner", "candle", "confetti", "streamer", "tablecloth", "napkin"],
+    },
   },
 };
 
-/** Where a kind of product is shelved when a department's shelf titles don't say (shelf index in spec order). */
+/** kind → the shelf it is picked for, written a shelf at a time. */
+const on = (title, kinds) => Object.fromEntries(kinds.map((kind) => [kind, title]));
+
+/** Where a kind of product is shelved when a department's shelf titles don't
+ *  say — or say it for several at once. A Walmart shelf is named by its title
+ *  (it survives the layout being drawn again); a Home Depot one by its index
+ *  among its department's shelves, in spec order. Where PICKS names its kind,
+ *  there. */
 const SHELF_PICKS = {
   "home-depot-example": {
     "Lawn & Garden": { lawnCare: 0, mower: 1, hose: 2 },
   },
   "walmart-example": {
-    "Snacks & Candy": { candyBar: 1, chocolateBar: 1, boxedChocolates: 1, pbCups: 1, caramels: 1, gummy: 1, hardCandy: 1, chewyCandy: 1, jellyBeans: 1, licorice: 1, lollipop: 1, gum: 1, mints: 1 },
-    "Pantry": { ketchup: 1, mustard: 1, mayo: 1, pickles: 1, olives: 1, hotSauce: 1, bbqSauce: 1, steakSauce: 1, soySauce: 1, dressing: 1, jam: 1, syrup: 1, honey: 1, peanutButter: 1, oil: 1, oliveOil: 1, vinegar: 1, spices: 1, salt: 1, cookingSpray: 1, shortening: 1, broth: 1, soup: 1, chili: 1, gravy: 1 },
-    "Sports & Outdoors": { sportGear: 0, fitness: 0, camp: 1, bike: 1 },
-    "Toys & Games": { toy: 0 },
-    "Seasonal": { holiday: 1 },
-    "Paper & Cleaning": { laundryDetergent: 1, fabricCare: 1, dishSoap: 1, dishwasher: 1, cleaners: 1, wipes: 1, sponges: 1, airFresh: 1, trashBags: 1, paperTowels: 0, bathTissue: 0, facialTissue: 0, paperPlates: 0, foodStorage: 1 },
-    "Personal Care": { cosmetics: 1, femCare: 1, cotton: 1, shampoo: 0, conditioner: 0, bodyWash: 0, barSoap: 0, deodorant: 0, toothpaste: 0, oralCare: 0, lotion: 0, sunscreen: 0, shave: 0, hairCare: 0 },
-    "Home & Bedding": { sheetSet: 0, comforter: 0, pillow: 0, curtain: 0, mattressPad: 0, towel: 0, storage: 1, laundryDetergent: 1, fabricCare: 1, officeFurniture: 2, airFresh: 2 },
-    "Kitchen & Dining": { cookware: 1, bakeware: 1, cutlery: 1, smallAppliance: 1, gadgets: 0, dinnerware: 0, drinkware: 0, flatware: 0, kitchenStorage: 0 },
-    "Outdoor & Garden": { lawnCare: 0, mower: 0, hose: 2, seeds: 2, planter: 2, stringLights: 1, patioSet: 1, birdFeeder: 2 },
-    "Electronics": { tv: 0, speaker: 0, headphones: 0, charger: 1, battery: 1, device: 1 },
+    "Dairy & Cheese": {
+      ...on("Milk & Cream", ["milk", "cream", "creamer"]),
+      ...on("Yogurt & Cheese", ["yogurt", "greekYogurt", "softCheese", "sourCream", "creamCheese", "shreddedCheese", "blockCheese", "slicedCheese", "stringCheese"]),
+      ...on("Butter, Eggs & Cream", ["butter", "spread", "eggs", "eggProduct"]),
+    },
+    "Deli & Cheese": {
+      ...on("Deli Counter", ["deliSalad", "hummus", "dip"]),
+      ...on("Deli Cases", ["bacon", "hotDog", "breakfastSausage", "smokedSausage"]),
+      ...on("Sliced Meats & Cheese", ["deliMeat", "deliCheese"]),
+    },
+    "Adult Beverages": {
+      ...on("Beer", ["lagerBeer", "lightBeer", "ale"]),
+      ...on("Wine", ["redWine", "whiteWine", "sparkling"]),
+      ...on("Spirits", ["vodka", "bourbon", "scotch", "canadian", "irish", "tennessee", "flavoredWhiskey", "tequila", "rum", "gin", "cognac", "brandy"]),
+      ...on("Chilled Wine & Seltzer", ["seltzer", "cocktail", "hardTea", "hardLemonade"]),
+    },
+    "Snacks & Candy": {
+      ...on("Tortilla Chips & Salsa", ["tortilla"]),
+      ...on("Chips & Pretzels", ["chips", "cornChips", "cheesePuffs", "pretzels", "popcornRTE", "popcornMicro", "porkRinds", "veggieStraws", "pitaChips"]),
+      ...on("Candy & Chocolate", ["chocolateBar", "boxedChocolates", "pbCups", "candyBar", "caramels", "gummy", "hardCandy", "chewyCandy", "jellyBeans", "licorice", "lollipop", "gum", "mints"]),
+      ...on("Nuts, Jerky & Trail Mix", ["nuts", "trailMix", "jerky", "meatSticks", "driedFruit"]),
+      ...on("Cookies & Crackers", ["chocolateChipCookies", "sandwichCookies", "cookies", "crackers", "cheeseCrackers", "butterCrackers", "grahamCrackers", "sandwichCrackers"]),
+      ...on("Snack Cakes & Bars", ["snackCakes", "riceCakes", "snackMix", "granolaBars", "proteinBars"]),
+    },
+    "Breakfast & Coffee": {
+      ...on("Coffee", ["groundCoffee", "kcup", "instantCoffee"]),
+      ...on("Tea & Hot Cocoa", ["teaBags", "cocoa"]),
+      ...on("Oatmeal & Breakfast", ["hotCereal", "grits", "granola", "cerealBars", "breakfastBiscuits", "toasterPastries", "donuts", "muffins", "bagels"]),
+      ...on("Cereal", ["coldCereal"]),
+    },
+    "Pantry": {
+      ...on("Tomatoes, Broth & Chili", ["broth", "chili", "pastaSauce"]),
+      ...on("Pasta & Noodles", ["pasta", "macCheese", "pastaMix", "tacoKit"]),
+      ...on("Baking, Flour & Sugar", ["flour", "sugar", "cakeMix", "brownieMix", "bakingChips", "marshmallows", "leavening", "starch", "yeast", "cocoaPowder", "cornSyrup", "foodColoring", "sprinkles", "molasses", "gelatin", "pudding", "cannedMilk"]),
+      ...on("Condiments & Sauces", ["ketchup", "mustard", "mayo", "pickles", "olives", "hotSauce", "bbqSauce", "steakSauce", "soySauce", "dressing", "gravy", "vinegar"]),
+      ...on("Spices & Extracts", ["spices", "salt", "extract", "extractNutty"]),
+      ...on("Oils & Cooking Sprays", ["oliveOil", "oil", "cookingSpray", "shortening"]),
+      ...on("Peanut Butter & Spreads", ["peanutButter", "jam", "syrup", "honey"]),
+      ...on("Canned Vegetables & Fruit", ["cannedVeg", "cannedBeans", "cannedFruit"]),
+      ...on("Canned Soup & Meals", ["soup", "cannedPasta", "tuna", "cannedChicken"]),
+      ...on("Bulk Foods", ["rice", "dryBeans", "tortillas", "stuffing", "instantPotato"]),
+    },
+    "Bakery": {
+      ...on("Bakery Bread & Rolls", ["bread", "buns", "englishMuffins", "flat", "rolls", "bagels"]),
+      ...on("Donuts, Cakes & Pastries", ["pie", "coffeeCake", "croissant", "cookies", "donuts", "muffins"]),
+    },
+    "Meat & Seafood": {
+      ...on("Family Pack Meat", ["pork", "ham", "meatballs"]),
+      ...on("Service Meat & Seafood", ["salmon", "scallops", "crab"]),
+      ...on("Seafood & Shellfish", ["shrimp", "fish"]),
+    },
+    "Frozen": {
+      ...on("Frozen Pizza & Meals", ["frozenPizza"]),
+      ...on("Ice Cream & Novelties", ["iceCream", "frozenTreats", "frozenDessert"]),
+      ...on("Frozen Breakfast & Bread", ["frozenBreakfast"]),
+      ...on("Frozen Vegetables & Fruit", ["frozenVeg", "frozenFruit", "frozenPotato"]),
+      ...on("Frozen Meat & Seafood", ["frozenChicken"]),
+      ...on("Frozen Family Meals", ["frozenMeal", "frozenApps"]),
+    },
+    "Drinks": {
+      ...on("Iced Tea & Lemonade", ["rtdTea", "lemonade"]),
+      ...on("Fresh Juices & Cut Fruit", ["juice", "juiceBox", "vegJuice"]),
+      ...on("Water & Sports Drinks", ["water", "sparklingWater", "sportsDrink", "coconutWater", "kombucha"]),
+      ...on("Soda & Energy Drinks", ["cola", "lemonLime", "citrusSoda", "rootBeer", "gingerAle", "fruitSoda", "energyDrink"]),
+      ...on("Coffee & Smoothie Bar", ["rtdCoffee"]),
+    },
+    "Fresh Produce": {
+      ...on("Melons & Citrus", ["citrus", "melons"]),
+      ...on("Berries & Grapes", ["berries", "grapes"]),
+      ...on("Apples & Pears", ["treeFruit"]),
+      ...on("Avocados & Exotics", ["tropical"]),
+      ...on("Herbs & Aromatics", ["herbs"]),
+    },
+    "Paper & Cleaning": {
+      ...on("Cleaners & Air Care", ["cleaners", "wipes", "sponges", "airFresh"]),
+      ...on("Dish & Dishwasher", ["dishSoap", "dishwasher"]),
+      ...on("Laundry & Fabric Care", ["laundryDetergent", "fabricCare"]),
+      ...on("Paper Plates & Cups", ["paperPlates"]),
+      ...on("Paper Towels & Bath Tissue", ["paperTowels", "bathTissue", "facialTissue"]),
+      ...on("Trash Bags & Food Storage", ["trashBags", "foodStorage"]),
+    },
+    "Personal Care": {
+      ...on("Cosmetics & Beauty", ["cosmetics", "femCare", "cotton"]),
+      ...on("Hair & Skin Care", ["shampoo", "conditioner", "bodyWash", "barSoap", "lotion", "sunscreen", "shave", "hairCare"]),
+      ...on("Oral Care & Deodorant", ["deodorant", "toothpaste", "oralCare"]),
+    },
+    "Baby": {
+      ...on("Diapers & Wipes", ["diapers", "babyWipes"]),
+      ...on("Formula & Baby Food", ["formula", "babyFood"]),
+      ...on("Baby Bath & Care", ["babyCare"]),
+    },
+    "Pet Care": {
+      ...on("Cat Food & Litter", ["catLitter"]),
+      ...on("Pet Supplies", ["petCare"]),
+    },
+    "Home & Bedding": {
+      ...on("Bedding", ["sheetSet", "comforter", "pillow", "mattressPad", "curtain"]),
+      ...on("Bath & Towels", ["towel"]),
+      ...on("Storage & Organization", ["storage", "laundryDetergent", "fabricCare", "officeFurniture", "airFresh"]),
+    },
+    "Kitchen & Dining": {
+      ...on("Small Appliances", ["smallAppliance"]),
+      ...on("Kitchen Tools & Gadgets", ["cutlery", "gadgets"]),
+      ...on("Cookware & Bakeware", ["cookware", "bakeware"]),
+      ...on("Food Storage & Containers", ["kitchenStorage"]),
+      ...on("Dinnerware & Drinkware", ["dinnerware", "drinkware", "flatware"]),
+    },
+    "Electronics": {
+      ...on("TV & Audio", ["tv", "headphones", "speaker"]),
+      ...on("Computers & Mobile", ["device"]),
+      ...on("Batteries & Accessories", ["charger", "battery"]),
+    },
+    "Sports & Outdoors": {
+      ...on("Camping & Outdoors", ["camp", "bike"]),
+      ...on("Sports & Fitness", ["sportGear", "fitness"]),
+    },
+    "Tools & Hardware": {
+      ...on("Tools & Hardware", ["powerTool", "handTool", "tape", "ladder"]),
+      ...on("Hardware & Fasteners", ["fastener", "adhesive", "storage"]),
+    },
+    "Outdoor & Garden": {
+      ...on("Patio & Garden", ["hose", "lawnCare", "mower", "patioSet", "stringLights"]),
+      ...on("Floral", ["planter", "seeds", "birdFeeder"]),
+    },
   },
 };
 

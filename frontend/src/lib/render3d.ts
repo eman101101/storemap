@@ -707,47 +707,58 @@ export function buildSceneFaces(
 }
 
 
-/* ---------------- depth ordering: axis-aligned BSP ---------------- */
+/* ---------------- depth ordering: BSP ---------------- */
 
 export interface FaceBSP {
-  axis: 0 | 1 | 2;
-  split: number;
+  /** the node's plane, n·p = d — the splitter face's own. `n` is a unit
+   *  vector; for the grid's lines, which have no plane, an axis. */
+  n: V3;
+  d: number;
   below: FaceBSP | null;
   above: FaceBSP | null;
-  faces: Face[]; // faces lying exactly on this node's split plane (or a small leaf)
+  faces: Face[]; // faces lying exactly on this node's plane (or a small leaf)
 }
 
-const faceAxisValue = (p: V3, axis: 0 | 1 | 2) => (axis === 0 ? p.x : axis === 1 ? p.y : p.z);
+/** A vertex nearer than this to a plane counts as lying on it (m). The scene
+ *  keeps real gaps far wider: caps 1 mm above walls, painted strips 3 mm off
+ *  a face, stock 45 mm proud of it. */
+const PLANE_EPS = 1e-7;
 
-/** Split a face by the plane `axis = value`; returns [below-piece, above-piece]. */
-function splitFaceByPlane(f: Face, axis: 0 | 1 | 2, value: number): [Face[], Face[]] {
-  const cut = (pts: V3[], keepBelow: boolean): V3[] => {
+const planeDist = (p: V3, n: V3, d: number) => n.x * p.x + n.y * p.y + n.z * p.z - d;
+
+/** Split a face by the plane n·p = d; returns [below-piece, above-piece]. */
+function splitFaceByPlane(f: Face, n: V3, d: number): [Face[], Face[]] {
+  const dist = f.pts.map((p) => planeDist(p, n, d));
+  const cut = (keepBelow: boolean): V3[] => {
     const out: V3[] = [];
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % pts.length];
-      const av = faceAxisValue(a, axis);
-      const bv = faceAxisValue(b, axis);
-      const aIn = keepBelow ? av <= value : av >= value;
-      const bIn = keepBelow ? bv <= value : bv >= value;
-      if (aIn) out.push(a);
-      if (aIn !== bIn && bv !== av) out.push(lerp3(a, b, (value - av) / (bv - av)));
+    for (let i = 0; i < f.pts.length; i++) {
+      const j = (i + 1) % f.pts.length;
+      const aIn = keepBelow ? dist[i] <= PLANE_EPS : dist[i] >= -PLANE_EPS;
+      const bIn = keepBelow ? dist[j] <= PLANE_EPS : dist[j] >= -PLANE_EPS;
+      if (aIn) out.push(f.pts[i]);
+      if (aIn !== bIn && dist[j] !== dist[i]) out.push(lerp3(f.pts[i], f.pts[j], dist[i] / (dist[i] - dist[j])));
     }
     return out;
   };
   const res: [Face[], Face[]] = [[], []];
-  const belowPts = cut(f.pts, true);
-  const abovePts = cut(f.pts, false);
+  const belowPts = cut(true);
+  const abovePts = cut(false);
   if (belowPts.length >= (f.line ? 2 : 3)) res[0].push({ ...f, pts: belowPts });
   if (abovePts.length >= (f.line ? 2 : 3)) res[1].push({ ...f, pts: abovePts });
   return res;
 }
 
 /**
- * Axis-aligned BSP over the scene's faces. Traversed back-to-front from the eye
- * it yields an EXACT draw order for any camera position — the correct-occlusion
- * guarantee a centroid sort can only approximate. Built once per data change and
- * cached with the scene; per-frame cost is a linear traversal.
+ * BSP over the scene's faces. Traversed back-to-front from the eye it yields
+ * an EXACT draw order for any camera position — the correct-occlusion guarantee
+ * a centroid sort can only approximate. Built once per data change and cached
+ * with the scene; per-frame cost is a linear traversal.
+ *
+ * Each node's plane is its splitter face's own, whatever the face's angle.
+ * A rotated shelf used to be split on its thinnest bounding-box axis, which is
+ * no plane of its at all: every face crossing that bogus plane was cut in
+ * two, and a handful of angled fixtures shredded the whole scene (three of
+ * them did not finish building at all).
  *
  * Depth cap: a subtree that can't subdivide further within MAX_BSP_DEPTH
  * becomes a leaf holding several faces; traversal then falls back to a
@@ -761,14 +772,16 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
   if (faces.length === 0) return null;
   if (faces.length <= 1 || depth > MAX_BSP_DEPTH) {
     // a single face (or a rare unresolvably deep leaf): nothing left to order
-    return { axis: 0, split: 0, below: null, above: null, faces };
+    return { n: { x: 1, y: 0, z: 0 }, d: 0, below: null, above: null, faces };
   }
 
   // splitter: the largest-area face — its own plane becomes the split plane.
   // Every other face is partitioned/split against it, so the node always
-  // consumes one face and the recursion terminates.
+  // consumes one face and the recursion terminates. Its Newell vector is kept:
+  // twice its area and, normalised, the normal of its plane.
   let best = 0;
   let bestArea = -1;
+  let nx = 0, ny = 0, nz = 0;
   faces.forEach((f, i) => {
     let cx = 0, cy = 0, cz = 0;
     for (let k = 0; k < f.pts.length; k++) {
@@ -782,23 +795,30 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
     if (area > bestArea) {
       bestArea = area;
       best = i;
+      nx = cx; ny = cy; nz = cz;
     }
   });
   const splitter = faces[best];
-  // dominant axis of the splitter face
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of splitter.pts) {
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-    minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+  let n: V3;
+  let d = 0;
+  const normalLen = Math.hypot(nx, ny, nz);
+  if (splitter.line || normalLen < 1e-12) {
+    // a line has no plane of its own (nor has a face without area): take the
+    // axis it has no extent along — the plane that holds it
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of splitter.pts) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+    }
+    const spans: [number, number, number] = [maxX - minX, maxY - minY, maxZ - minZ];
+    const axis: 0 | 1 | 2 = spans[0] <= spans[1] && spans[0] <= spans[2] ? 0 : spans[1] <= spans[2] ? 1 : 2;
+    n = axis === 0 ? { x: 1, y: 0, z: 0 } : axis === 1 ? { x: 0, y: 1, z: 0 } : { x: 0, y: 0, z: 1 };
+  } else {
+    n = { x: nx / normalLen, y: ny / normalLen, z: nz / normalLen };
   }
-  // the split plane is the splitter face's OWN plane: its thinnest axis
-  // (an axis-aligned face has ~zero extent along its plane's normal)
-  const spans: [number, number, number] = [maxX - minX, maxY - minY, maxZ - minZ];
-  const axis: 0 | 1 | 2 = spans[0] <= spans[1] && spans[0] <= spans[2] ? 0 : spans[1] <= spans[2] ? 1 : 2;
-  let splitSum = 0;
-  for (const p of splitter.pts) splitSum += faceAxisValue(p, axis);
-  const split = splitSum / splitter.pts.length;
+  for (const p of splitter.pts) d += n.x * p.x + n.y * p.y + n.z * p.z;
+  d /= splitter.pts.length;
 
   const below: Face[] = [];
   const above: Face[] = [];
@@ -811,20 +831,20 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
     let flo = Infinity;
     let fhi = -Infinity;
     for (const p of f.pts) {
-      const v = faceAxisValue(p, axis);
+      const v = planeDist(p, n, d);
       flo = Math.min(flo, v);
       fhi = Math.max(fhi, v);
     }
-    if (flo >= split - 1e-9 && fhi <= split + 1e-9) {
-      // coplanar with the splitter (e.g. a shelf's item squares all lying in
-      // the face plane): they can't occlude each other, so they join the node
+    if (flo >= -PLANE_EPS && fhi <= PLANE_EPS) {
+      // coplanar with the splitter (e.g. a shelf's item squares all lying in the
+      // face plane): they can't occlude each other, so they join the node
       // instead of chaining the recursion one face per level — deep chains
       // blew past the depth cap and left camera-dependent misordering
       onPlane.push(f);
-    } else if (fhi <= split + 1e-9) below.push(f);
-    else if (flo >= split - 1e-9) above.push(f);
+    } else if (fhi <= PLANE_EPS) below.push(f);
+    else if (flo >= -PLANE_EPS) above.push(f);
     else {
-      const [loFaces, hiFaces] = splitFaceByPlane(f, axis, split);
+      const [loFaces, hiFaces] = splitFaceByPlane(f, n, d);
       // the plane can graze a vertex: one side may come back empty
       if (loFaces.length) below.push(...loFaces);
       if (hiFaces.length) above.push(...hiFaces);
@@ -833,8 +853,8 @@ export function buildFaceBSP(faces: Face[], depth = 0): FaceBSP | null {
   });
 
   return {
-    axis,
-    split,
+    n,
+    d,
     below: buildFaceBSP(below, depth + 1),
     above: buildFaceBSP(above, depth + 1),
     faces: onPlane,
@@ -856,8 +876,7 @@ function emitLeaf(faces: Face[], eye: V3, out: Face[]): void {
 /** Back-to-front traversal: faces on the far side of each plane draw first. */
 export function traverseFaceBSP(node: FaceBSP | null, eye: V3, out: Face[]): void {
   if (!node) return;
-  const eyeAt = faceAxisValue(eye, node.axis);
-  if (eyeAt > node.split) {
+  if (planeDist(eye, node.n, node.d) > 0) {
     traverseFaceBSP(node.below, eye, out);
     emitLeaf(node.faces, eye, out);
     traverseFaceBSP(node.above, eye, out);
@@ -1147,11 +1166,14 @@ export function stockFaces(items: StockItem[], theme: MapTheme = MODERN_THEME): 
     const grow = it.focused ? 1.3 : it.hovered ? 1.12 : 1;
     const halfW = (grow * (it.w ?? 0.2)) / 2; // the searched item reads a touch longer
     for (const z of zs) {
+      // a rectangle: half its width either way along the face, from the board up.
+      // (Both long edges once took the same side, which collapsed the block to
+      // a line on every east- or west-facing shelf.)
       faces.push({
         pts: [
           { x: ox + tx * halfW, y: oy + ty * halfW, z: z + itemH },
-          { x: ox - tx * halfW, y: oy + ty * halfW, z: z + itemH },
-          { x: ox - tx * halfW, y: oy + ty * halfW, z },
+          { x: ox - tx * halfW, y: oy - ty * halfW, z: z + itemH },
+          { x: ox - tx * halfW, y: oy - ty * halfW, z },
           { x: ox + tx * halfW, y: oy + ty * halfW, z },
         ],
         // focused item: strong glow; hovered: a gentle lift — both so the
@@ -1301,7 +1323,14 @@ export function renderScene(
   }
 
 
-  /* ---- overlay: markers, pins, labels (always on top) ---- */
+  /* ---------------- overlay: markers, pins, labels (always on top) ---------------- */
+
+/** Labels have a nominal size of 260 / depth px (clamped to at least 8.5).
+ *  Under these nominal sizes there is no room for them: a shelf's name
+ *  (written on the floor along it) appears closer than ~36 m, an aisle's
+ *  (above its disc) closer than ~58 m. */
+const SHELF_LABEL_MIN_PX = 7.2;
+const AISLE_LABEL_MIN_PX = 4.5;
   const hits: SceneHits = { pins: [], aisles: [] };
   const pitchSin = Math.sin(cam.pitch);
 
@@ -1402,7 +1431,11 @@ export function renderScene(
     ctx.textBaseline = 'middle';
     ctx.fillText('≡', top.x, top.y + 0.5);
     hits.aisles.push({ elementId: el.id, sx: top.x, sy: top.y });
-    if (el.label && !labelHidden(el)) drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
+    // the name comes in on zooming: from far off a floor of numbered aisles
+    // would write them all over one another (the discs stay — they are the hover targets)
+    if (el.label && !labelHidden(el) && 260 / base.depth >= AISLE_LABEL_MIN_PX) {
+      drawLabel(ctx, top.x, top.y - 17, el.label, 11.5, false, theme.dark);
+    }
   }
 
   // numbered trip stop markers (A1) — drawn above the route discs, each with
@@ -1487,6 +1520,11 @@ export function renderScene(
       // labels whenever the camera rotated to the far side
       if (!pr || pr.depth > 200) continue;
       if (pr.x < -40 || pr.x > w + 40 || pr.y < -20 || pr.y > h + 20) continue;
+      // a shelf's name is written on the floor along it, and needs the shelf
+      // to be wide enough on screen to hold it: from far off a floor of a
+      // hundred shelves would pile its names up in the middle. They come in
+      // on zooming; the department names (not on the floor) show at any distance.
+      if (onFloor && 260 / pr.depth < SHELF_LABEL_MIN_PX) continue;
       // same text projected nearby (e.g. "Aisle 1" on adjacent segments) → draw once
       const key = el.label.trim().toLowerCase();
       const prev = drawnAt.get(key);

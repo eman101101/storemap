@@ -98,49 +98,39 @@ async function ensureStore(
 
 /* ════════════════ Walmart Example ════════════════ */
 
-const BRANDS = ['Fresh Farm', 'GreenVale', 'Sun Grove', 'Meadow', 'Olympus', 'Stone Oven', 'Napoli', 'Glacier', 'Nord Haus', 'Terra'];
-
-const FM_DEPTS = [
-  { name: 'Dairy', color: '#3b6fd4', icon: '🥛', items: ['Organic Whole Milk 1L', 'Semi-Skimmed Milk 2L', 'Oat Drink Barista 1L', 'Greek Yogurt 500g', 'Natural Yogurt 4-pack', 'Strawberry Yogurt 6-pack', 'Kefir 1L', 'Salted Butter 250g', 'Unsalted Butter 250g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Mozzarella Ball 125g', 'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Cottage Cheese 250g', 'Double Cream 500ml', 'Crème Fraîche 250ml', 'Brie Wheel 200g', 'Gouda Slices 200g', 'Lactose-Free Milk 1L'] },
-  { name: 'Produce', color: '#2f9e44', icon: '🥬', items: ['Bananas (bunch)', 'Fuji Apples 4-pack', 'Granny Smith Apples 6-pack', 'Navel Oranges 2kg Bag', 'Clementines 1kg', 'Lemons 4-pack', 'Strawberries 400g', 'Blueberries 150g', 'Raspberries 150g', 'Seedless Grapes 500g', 'Avocados (2-pack)', 'Baby Spinach 120g', 'Rocket Salad 100g', 'Roma Tomatoes 500g', 'Cherry Tomatoes 250g', 'Cucumbers (3-pack)', 'Red Bell Peppers (3-pack)', 'Broccoli Head', 'Carrots 1kg Bag', 'Russet Potatoes 2kg Bag'] },
-  { name: 'Beverages', color: '#e4572e', icon: '🧃', items: ['Orange Juice 1L', 'Apple Juice 1L', 'Sparkling Water 6×500ml', 'Still Water 6×1.5L', 'Cola 2L', 'Lemon-Lime Soda 2L', 'Ginger Beer 4-pack', 'Iced Tea Lemon 1.5L', 'Cold Brew Coffee 1L', 'Ground Coffee 500g', 'Espresso Beans 1kg', 'Green Tea 40 Bags', 'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Energy Drink 4-pack', 'Tonic Water 6-pack', 'Almond Milk 1L', 'Coconut Water 1L', 'Sparkling Lemonade 750ml', 'Green Smoothie 400ml'] },
-  { name: 'Snacks', color: '#d4a017', icon: '🍿', items: ['Sea Salt Crisps 150g', 'Salt & Vinegar Crisps 150g', 'Tortilla Chips 300g', 'Salsa Dip 300g', 'Salted Peanuts 200g', 'Roasted Cashews 200g', 'Mixed Nuts 300g', 'Sweet Popcorn 100g', 'Milk Chocolate Bar 100g', 'Dark Chocolate 70% 100g', 'Choc Chip Cookies 300g', 'Oat Raisin Cookies 250g', 'Digestive Biscuits 400g', 'Jaffa Cakes 12-pack', 'Cereal Bar 6-pack', 'Salted Pretzels 250g', 'Rice Cakes 150g', 'Gummy Bears 200g', 'Pretzel Sticks 100g', 'Trail Mix 150g'] },
-  { name: 'Bakery', color: '#c47f17', icon: '🥖', items: ['Sourdough Loaf', 'Wholemeal Loaf 800g', 'Multiseed Bloomer', 'Baguettes (2-pack)', 'Croissants 4-pack', 'Pain au Chocolat 4-pack', 'Blueberry Muffins 4-pack', 'Cinnamon Rolls 4-pack', 'Bagels 6-pack', 'Tortilla Wraps 8-pack', 'Pita Breads 6-pack', 'Garlic Ciabatta', 'Brioche Buns 6-pack', 'Chelsea Buns 6-pack', 'Doughnuts 5-pack', 'Baguette', 'Multiseed Rolls 6-pack', 'Cinnamon Rolls 2-pack', 'Madeleines 6-pack', 'Apple Turnovers 4-pack'] },
-  { name: 'Frozen', color: '#7c3aed', icon: '🧊', items: ['Frozen Pepperoni Pizza', 'Frozen Margherita Pizza', 'Frozen Berry Mix 500g', 'Garden Peas 1kg', 'Sweetcorn 1kg', 'French Fries 1.5kg', 'Vanilla Ice Cream 1L', 'Chocolate Ice Cream 1L', 'Salted Caramel Ice Cream 500ml', 'Fish Fingers 20-pack', 'King Prawns 400g', 'Frozen Salmon Fillets 2-pack', 'Chicken Nuggets 750g', 'Veg Spring Rolls 8-pack', 'Frozen Waffles 10-pack', 'Ice Lollies 8-pack', 'Frozen Berries 300g', 'Garlic Bread 400g', 'Hash Browns 1kg', 'Onion Rings 750g'] },
-  { name: 'Household', color: '#3a7ca5', icon: '🧻', items: ['Kitchen Roll 4 Rolls', 'Bath Tissue 9 Rolls', 'Bin Bags 30L 20-pack', 'Washing Up Liquid 500ml', 'Laundry Pods 30-pack', 'Fabric Softener 1.5L', 'Antibacterial Spray 750ml', 'Glass Cleaner 500ml', 'Bleach 750ml', 'Sponges 6-pack', 'Scourer Pads 4-pack', 'Dishwasher Tablets 40-pack', 'Trash Bags 60L 15-pack', 'Aluminum Foil 30m', 'Cling Film 30m', 'Baking Paper 25m', 'Air Freshener 300ml', 'Hand Soap 500ml', 'Shower Cleaner 750ml', 'Furniture Polish 300ml'] },
-  { name: 'Meat & Seafood', color: '#b0413e', icon: '🥩', items: ['Chicken Breast Fillets 1kg', 'Chicken Thighs 750g', 'Whole Chicken 1.6kg', 'Beef Mince 500g', 'Pork Mince 500g', 'Ribeye Steak 300g', 'Sirloin Steak 300g', 'Lamb Chops 400g', 'Pork Loin Chops 6-pack', 'Bacon Rashers 300g', 'Streaky Bacon 200g', 'Pork Sausages 8-pack', 'Chorizo Ring 250g', 'Honey-Roast Ham 200g', 'Turkey Slices 150g', 'Salmon Fillets 2-pack', 'Cod Fillets 2-pack', 'Tuna Steaks 2-pack', 'Peeled Prawns 200g', 'Smoked Salmon 180g'] },
-  { name: 'Home & DIY', color: '#8a5fd4', icon: '🔧', items: ['Light Bulbs 4-pack', 'Batteries AA 8-pack', 'Picture Hooks 50-pack', 'Duct Tape 50m', 'Super Glue 3-pack', 'Screwdriver Set 6pc', 'Felt Pads 40-pack', 'Door Stop 2-pack', 'Laundry Rack Foldable', 'Storage Boxes 3-pack', 'Door Mat 60×40', 'Extension Lead 4-way', 'Smoke Alarm', 'Indoor Thermometer', 'Cup Hooks 20-pack', 'Furniture Sliders 8-pack', 'Wall Anchors 100-pack', 'Utility Knife', 'Measuring Tape 5m', 'Spirit Level 60cm'] },
-  { name: 'Health & Beauty', color: '#2f9e6b', icon: '🧼', items: ['Toothpaste 100ml', 'Shampoo 400ml', 'Conditioner 400ml', 'Shower Gel 500ml', 'Soap Bar 4-pack', 'Hand Cream 75ml', 'Roll-on Deodorant', 'Razor Blades 4pc', 'Cotton Pads 60pc', 'Lip Balm 4-pack', 'Mouthwash 500ml', 'Dental Floss 50m', 'Sun Cream SPF30 200ml', 'Hand Sanitiser 250ml', 'Face Wipes 25pc', 'Bath Salts 900g', 'Body Lotion 400ml', 'Hair Gel 250ml', 'Cotton Buds 200pc', 'Plasters 60-pack'] },
-];
-
-const FM_VARIANTS = ['', ' Family Pack', ' Value Pack', ' Twin Pack', ' Jumbo', ' Party Size', ' Mini Pack', ' 2-pack', ' 3-pack', ' Multipack'];
-
-/* ══════════════════════════════════════════════════════════════════════════
-   Walmart Example — the big-box reference floor plan. Every area of the plan
-   is a department (zone), every shelf in it is ONE titled item group: the
-   group's map pin (groupPin, sized to the group's plan length) plus its items
-   as planogram-only facings (groupOnly). The grocery wing reuses the demo
-   photo pool; general-merchandise items planogram as diagram tiles.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const WW = 96;
 const WH = 62;
 
-/** The reference plan's palette: big-box blue general merchandise, the green
- *  grocery wing + garden center, gray service areas, orange front services,
- *  the thin yellow clearance strip. */
-const WM_BLUE = '#2f6fd4';
-const WM_GREEN = '#2f7d32';
-const WM_GRAY = '#9aa0a6';
-const WM_ORANGE = '#e8a33d';
-const WM_YELLOW = '#f2c94c';
+/** The areas that hold no products — the plan's own colours for them. */
+const WM_CHECKOUT = '#8b84b8'; // lavender checkout lanes
+const WM_RESTROOM = '#2d809d'; // teal
+const WM_SERVICE = '#9aa0a6'; // customer service grey
+const WM_BANK = '#b23a5b'; // crimson
+const WM_OFFICE = '#c3c7cc';
 
 /** Pack variants per food base — trimmed from the old demo's ten so the
  *  catalog stays a sane size (~900 SKUs). */
 const WM_VARIANTS = ['', ' Family Pack', ' Value Pack', ' 2-pack'];
 
+const BRANDS = ['Fresh Farm', 'GreenVale', 'Sun Grove', 'Meadow', 'Olympus', 'Stone Oven', 'Napoli', 'Glacier', 'Nord Haus', 'Terra'];
+
+const FM_VARIANTS = ['', ' Family Pack', ' Value Pack', ' Twin Pack', ' Jumbo', ' Party Size', ' Mini Pack', ' 2-pack', ' 3-pack', ' Multipack'];
+
+const FM_DEPTS = [
+  { name: 'Dairy', color: '#efc24a', icon: '🥛', items: ['Organic Whole Milk 1L', 'Semi-Skimmed Milk 2L', 'Oat Drink Barista 1L', 'Greek Yogurt 500g', 'Natural Yogurt 4-pack', 'Strawberry Yogurt 6-pack', 'Kefir 1L', 'Salted Butter 250g', 'Unsalted Butter 250g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Mozzarella Ball 125g', 'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Cottage Cheese 250g', 'Double Cream 500ml', 'Crème Fraîche 250ml', 'Brie Wheel 200g', 'Gouda Slices 200g', 'Lactose-Free Milk 1L'] },
+  { name: 'Produce', color: '#55a64f', icon: '🥬', items: ['Bananas (bunch)', 'Fuji Apples 4-pack', 'Granny Smith Apples 6-pack', 'Navel Oranges 2kg Bag', 'Clementines 1kg', 'Lemons 4-pack', 'Strawberries 400g', 'Blueberries 150g', 'Raspberries 150g', 'Seedless Grapes 500g', 'Avocados (2-pack)', 'Baby Spinach 120g', 'Rocket Salad 100g', 'Roma Tomatoes 500g', 'Cherry Tomatoes 250g', 'Cucumbers (3-pack)', 'Red Bell Peppers (3-pack)', 'Broccoli Head', 'Carrots 1kg Bag', 'Russet Potatoes 2kg Bag'] },
+  { name: 'Beverages', color: '#3d7fc2', icon: '🧃', items: ['Orange Juice 1L', 'Apple Juice 1L', 'Sparkling Water 6×500ml', 'Still Water 6×1.5L', 'Cola 2L', 'Lemon-Lime Soda 2L', 'Ginger Beer 4-pack', 'Iced Tea Lemon 1.5L', 'Cold Brew Coffee 1L', 'Ground Coffee 500g', 'Espresso Beans 1kg', 'Green Tea 40 Bags', 'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Energy Drink 4-pack', 'Tonic Water 6-pack', 'Almond Milk 1L', 'Coconut Water 1L', 'Sparkling Lemonade 750ml', 'Green Smoothie 400ml'] },
+  { name: 'Snacks', color: '#e2663a', icon: '🍿', items: ['Sea Salt Crisps 150g', 'Salt & Vinegar Crisps 150g', 'Tortilla Chips 300g', 'Salsa Dip 300g', 'Salted Peanuts 200g', 'Roasted Cashews 200g', 'Mixed Nuts 300g', 'Sweet Popcorn 100g', 'Milk Chocolate Bar 100g', 'Dark Chocolate 70% 100g', 'Choc Chip Cookies 300g', 'Oat Raisin Cookies 250g', 'Digestive Biscuits 400g', 'Jaffa Cakes 12-pack', 'Cereal Bar 6-pack', 'Salted Pretzels 250g', 'Rice Cakes 150g', 'Gummy Bears 200g', 'Pretzel Sticks 100g', 'Trail Mix 150g'] },
+  { name: 'Bakery', color: '#c9883b', icon: '🥖', items: ['Sourdough Loaf', 'Wholemeal Loaf 800g', 'Multiseed Bloomer', 'Baguettes (2-pack)', 'Croissants 4-pack', 'Pain au Chocolat 4-pack', 'Blueberry Muffins 4-pack', 'Cinnamon Rolls 4-pack', 'Bagels 6-pack', 'Tortilla Wraps 8-pack', 'Pita Breads 6-pack', 'Garlic Ciabatta', 'Brioche Buns 6-pack', 'Chelsea Buns 6-pack', 'Doughnuts 5-pack', 'Baguette', 'Multiseed Rolls 6-pack', 'Cinnamon Rolls 2-pack', 'Madeleines 6-pack', 'Apple Turnovers 4-pack'] },
+  { name: 'Frozen', color: '#5db1ec', icon: '🧊', items: ['Frozen Pepperoni Pizza', 'Frozen Margherita Pizza', 'Frozen Berry Mix 500g', 'Garden Peas 1kg', 'Sweetcorn 1kg', 'French Fries 1.5kg', 'Vanilla Ice Cream 1L', 'Chocolate Ice Cream 1L', 'Salted Caramel Ice Cream 500ml', 'Fish Fingers 20-pack', 'King Prawns 400g', 'Frozen Salmon Fillets 2-pack', 'Chicken Nuggets 750g', 'Veg Spring Rolls 8-pack', 'Frozen Waffles 10-pack', 'Ice Lollies 8-pack', 'Frozen Berries 300g', 'Garlic Bread 400g', 'Hash Browns 1kg', 'Onion Rings 750g'] },
+  { name: 'Household', color: '#9dc3de', icon: '🧻', items: ['Kitchen Roll 4 Rolls', 'Bath Tissue 9 Rolls', 'Bin Bags 30L 20-pack', 'Washing Up Liquid 500ml', 'Laundry Pods 30-pack', 'Fabric Softener 1.5L', 'Antibacterial Spray 750ml', 'Glass Cleaner 500ml', 'Bleach 750ml', 'Sponges 6-pack', 'Scourer Pads 4-pack', 'Dishwasher Tablets 40-pack', 'Trash Bags 60L 15-pack', 'Aluminum Foil 30m', 'Cling Film 30m', 'Baking Paper 25m', 'Air Freshener 300ml', 'Hand Soap 500ml', 'Shower Cleaner 750ml', 'Furniture Polish 300ml'] },
+  { name: 'Meat & Seafood', color: '#d93a42', icon: '🥩', items: ['Chicken Breast Fillets 1kg', 'Chicken Thighs 750g', 'Whole Chicken 1.6kg', 'Beef Mince 500g', 'Pork Mince 500g', 'Ribeye Steak 300g', 'Sirloin Steak 300g', 'Lamb Chops 400g', 'Pork Loin Chops 6-pack', 'Bacon Rashers 300g', 'Streaky Bacon 200g', 'Pork Sausages 8-pack', 'Chorizo Ring 250g', 'Honey-Roast Ham 200g', 'Turkey Slices 150g', 'Salmon Fillets 2-pack', 'Cod Fillets 2-pack', 'Tuna Steaks 2-pack', 'Peeled Prawns 200g', 'Smoked Salmon 180g'] },
+  { name: 'Home & DIY', color: '#8a5fd4', icon: '🔧', items: ['Light Bulbs 4-pack', 'Batteries AA 8-pack', 'Picture Hooks 50-pack', 'Duct Tape 50m', 'Super Glue 3-pack', 'Screwdriver Set 6pc', 'Felt Pads 40-pack', 'Door Stop 2-pack', 'Laundry Rack Foldable', 'Storage Boxes 3-pack', 'Door Mat 60×40', 'Extension Lead 4-way', 'Smoke Alarm', 'Indoor Thermometer', 'Cup Hooks 20-pack', 'Furniture Sliders 8-pack', 'Wall Anchors 100-pack', 'Utility Knife', 'Measuring Tape 5m', 'Spirit Level 60cm'] },
+  { name: 'Health & Beauty', color: '#f0824c', icon: '🧼', items: ['Toothpaste 100ml', 'Shampoo 400ml', 'Conditioner 400ml', 'Shower Gel 500ml', 'Soap Bar 4-pack', 'Hand Cream 75ml', 'Roll-on Deodorant', 'Razor Blades 4pc', 'Cotton Pads 60pc', 'Lip Balm 4-pack', 'Mouthwash 500ml', 'Dental Floss 50m', 'Sun Cream SPF30 200ml', 'Hand Sanitiser 250ml', 'Face Wipes 25pc', 'Bath Salts 900g', 'Body Lotion 400ml', 'Hair Gel 250ml', 'Cotton Buds 200pc', 'Plasters 60-pack'] },
+];
+
 /** Food departments reuse the Freshmart item pools — demo-photos.json covers
- *  them, so grocery-wing planograms carry real photos. */
+ *  them, so their planograms carry real photos. */
 const wmFood = (deptName: string, name?: string): SpecCat => {
   const src = FM_DEPTS.find((d) => d.name === deptName)!;
   return { name: name ?? src.name, color: src.color, icon: src.icon, items: src.items };
@@ -148,11 +138,11 @@ const wmFood = (deptName: string, name?: string): SpecCat => {
 
 const WM_FOOD_CATS: SpecCat[] = [
   wmFood('Dairy', 'Dairy & Cheese'),
-  { name: 'Deli & Cheese', color: '#d9822b', icon: '🧀', items: ['Honey-Roast Ham 200g', 'Pork Sausages 8-pack', 'Chorizo Ring 250g', 'Bacon Rashers 300g', 'Smoked Salmon 180g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Gouda Slices 200g', 'Brie Wheel 200g', 'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Mozzarella Ball 125g'] },
-  { name: 'Adult Beverages', color: '#7a4fd4', icon: '🍷', items: ['Cabernet Sauvignon 750ml', 'Chardonnay 750ml', 'Prosecco 750ml', 'Lager 12-pack', 'IPA 6-pack', 'Stout 4-pack', 'Whisky 700ml', 'Vodka 700ml', 'Gin 700ml', 'Spiced Rum 700ml', 'Aperitivo 700ml', 'Alcohol-Free Beer 6-pack'] },
+  { name: 'Deli & Cheese', color: '#f2a93b', icon: '🧀', items: ['Honey-Roast Ham 200g', 'Pork Sausages 8-pack', 'Chorizo Ring 250g', 'Bacon Rashers 300g', 'Smoked Salmon 180g', 'Mild Cheddar Block 350g', 'Mature Cheddar Block 350g', 'Gouda Slices 200g', 'Brie Wheel 200g', 'Feta Cheese 200g', 'Cream Cheese Tub 300g', 'Mozzarella Ball 125g'] },
+  { name: 'Adult Beverages', color: '#7b5aa6', icon: '🍷', items: ['Cabernet Sauvignon 750ml', 'Chardonnay 750ml', 'Prosecco 750ml', 'Lager 12-pack', 'IPA 6-pack', 'Stout 4-pack', 'Whisky 700ml', 'Vodka 700ml', 'Gin 700ml', 'Spiced Rum 700ml', 'Aperitivo 700ml', 'Alcohol-Free Beer 6-pack'] },
   wmFood('Snacks', 'Snacks & Candy'),
-  { name: 'Breakfast & Coffee', color: '#7a4f2a', icon: '☕', items: ['Ground Coffee 500g', 'Espresso Beans 1kg', 'Cold Brew Coffee 1L', 'Green Tea 40 Bags', 'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Corn Flakes 500g', 'Granola 500g', 'Porridge Oats 1kg', 'Pancake Mix 500g', 'Cereal Bar 6-pack', 'Protein Bars 6-pack'] },
-  { name: 'Pantry', color: '#b98a2f', icon: '🥫', items: ['Spaghetti 500g', 'Penne Rigate 500g', 'Basmati Rice 1kg', 'Long Grain Rice 1kg', 'Tomato Passata 700ml', 'Chopped Tomatoes 400g', 'Baked Beans 400g', 'Chickpeas 400g', 'Olive Oil 500ml', 'Sunflower Oil 1L', 'Tomato Ketchup 550g', 'Mayonnaise 400ml', 'Peanut Butter Smooth 350g', 'Honey Squeeze Bottle 350g', 'Instant Coffee 100g', 'Granulated Sugar 1kg', 'Plain Flour 1.5kg', 'Egg Noodles 250g'] },
+  { name: 'Breakfast & Coffee', color: '#9a6b45', icon: '☕', items: ['Ground Coffee 500g', 'Espresso Beans 1kg', 'Cold Brew Coffee 1L', 'Green Tea 40 Bags', 'English Breakfast Tea 80 Bags', 'Hot Chocolate Mix 400g', 'Corn Flakes 500g', 'Granola 500g', 'Porridge Oats 1kg', 'Pancake Mix 500g', 'Cereal Bar 6-pack', 'Protein Bars 6-pack'] },
+  { name: 'Pantry', color: '#9e9b33', icon: '🥫', items: ['Spaghetti 500g', 'Penne Rigate 500g', 'Basmati Rice 1kg', 'Long Grain Rice 1kg', 'Tomato Passata 700ml', 'Chopped Tomatoes 400g', 'Baked Beans 400g', 'Chickpeas 400g', 'Olive Oil 500ml', 'Sunflower Oil 1L', 'Tomato Ketchup 550g', 'Mayonnaise 400ml', 'Peanut Butter Smooth 350g', 'Honey Squeeze Bottle 350g', 'Instant Coffee 100g', 'Granulated Sugar 1kg', 'Plain Flour 1.5kg', 'Egg Noodles 250g'] },
   wmFood('Beverages', 'Drinks'),
   wmFood('Meat & Seafood'),
   wmFood('Frozen'),
@@ -165,180 +155,357 @@ const WM_FOOD_CATS: SpecCat[] = [
 /** General-merchandise departments — photo-less items that planogram as
  *  colored diagram tiles (the plan's blue areas). */
 const WM_GM_CATS: SpecCat[] = [
-  { name: 'Auto Care', color: '#5b6b5f', icon: '🚗', items: ['Motor Oil 5W-30 5L', 'Car Wash Shampoo 2L', 'Wiper Blades Pair', 'Car Air Freshener', 'Jump Starter 600A', 'Tire Inflator 12V', 'Coolant 50/50 4L', 'Car Wax 500ml'] },
-  { name: 'Sports & Outdoors', color: '#4a7f6e', icon: '🏕️', items: ['Camping Chair', 'Yoga Mat 6mm', 'Basketball Size 7', 'Bike Helmet Adult', 'Tent 4-Person', 'Dumbbell Set 20kg', 'Resistance Bands 5-pack', 'Sleeping Bag'] },
-  { name: 'Toys & Games', color: '#d9556b', icon: '🧸', items: ['Building Bricks 500pc', 'Board Game Classic', 'Action Figure 30cm', 'Puzzle 1000pc', 'RC Car 1:16', 'Plush Bear 40cm', 'Race Track Set', 'Card Game Deck'] },
-  { name: 'Electronics', color: '#3b3b6f', icon: '📺', items: ['Smart TV 50"', 'Wireless Earbuds', 'Laptop 15"', 'Tablet 10"', 'Bluetooth Speaker', 'Power Bank 20000mAh', 'Smart Watch', 'HDMI Cable 2m'] },
-  { name: 'Home Office', color: '#8a5fd4', icon: '🖱️', items: ['Desk Lamp LED', 'Office Chair Mesh', 'Notebook 3-pack', 'Gel Pens 12-pack', 'Stapler Heavy Duty', 'Sticky Notes 12-pack', 'Desk Organizer', 'Paper Ream 500 Sheets'] },
-  { name: 'Pet Care', color: '#8a6d4b', icon: '🐾', items: ['Dog Dry Food 12kg', 'Cat Litter 10L', 'Pet Shampoo 250ml', 'Dog Chew Toy', 'Cat Tree Tower', 'Aquarium Filter', 'Bird Seed 3kg', 'Pet Bowl Set'] },
-  { name: 'Auto Accessories', color: '#7950f2', icon: '🛞', items: ['Phone Car Mount', 'Seat Covers 2pc', 'Floor Mats 4pc', 'Trunk Organizer', 'Car Charger 2-port', 'Roof Cargo Box', 'Tow Rope 4t', 'Ice Scraper'] },
-  { name: 'Outdoor & Garden', color: '#57a86c', icon: '🪴', items: ['Garden Hose 20m', 'Patio Chair Foldable', 'Charcoal 5kg', 'Planter Pot 30cm', 'Watering Can 10L', 'Lawn Seed 2kg', 'Garden Trowel', 'String Lights 10m'] },
-  { name: 'Tools & Hardware', color: '#c2453a', icon: '🔧', items: ['Cordless Drill 18V', 'Claw Hammer 16oz', 'Screwdriver Set 12pc', 'Tape Measure 8m', 'Utility Knife', 'Duct Tape 50m', 'Picture Hooks 50-pack', 'Wall Anchors 100-pack'] },
-  { name: 'Books & Media', color: '#4e8fd9', icon: '📚', items: ['Bestseller Novel', 'Cookbook Hardcover', 'Kids Storybook', 'Travel Guide', 'Journal Notebook', 'Magazine Special', 'Calendar 2027', 'Poster Print 60×90'] },
-  { name: 'Arts & Crafts', color: '#d464a0', icon: '🎨', items: ['Acrylic Paint Set', 'Canvas 40×50 2-pack', 'Yarn 4-pack', 'Scrapbook Kit', 'Glue Gun + Sticks', 'Beads Assortment 2000pc', 'Brush Set 10pc', 'Origami Paper 200pc'] },
-  { name: 'Celebrate', color: '#e4572e', icon: '🎉', items: ['Birthday Balloons 20pc', 'Party Banner', 'Gift Wrap Roll 30m', 'Greeting Cards 8pc', 'Birthday Candles 24pc', 'Confetti 3-pack', 'Party Bags 10pc', 'Number Balloon 90cm'] },
-  { name: 'Seasonal', color: '#7d9e3a', icon: '🎄', items: ['Christmas Wreath 40cm', 'Fairy Lights 20m', 'Easter Basket', 'Halloween Pumpkin Decor', 'Beach Towel 2-pack', 'Sunshade UV 50', 'Advent Calendar', 'Door Wreath Hanger'] },
-  { name: 'Home & Bedding', color: '#7a4fd4', icon: '🛏️', items: ['Duvet Cover Queen', 'Pillows 2-pack', 'Bed Sheet Set Queen', 'Throw Blanket Soft', 'Blackout Curtains 2pc', 'Storage Bins 6-pack', 'Laundry Basket Foldable', 'Mattress Topper Queen'] },
-  { name: 'Kitchen & Dining', color: '#c98a3d', icon: '🍽️', items: ['Frying Pan 28cm', 'Dinner Set 16pc', 'Cutlery Set 24pc', 'Mixing Bowls 5pc', 'Coffee Maker 12-cup', 'Cutting Board Bamboo', 'Food Containers 10pc', 'Kettle 1.7L'] },
-  { name: 'Boys', color: '#2f7ca5', icon: '👕', items: ['Boys Tee 3-pack', 'Boys Jeans', 'Boys Hoodie', 'Boys Shorts 2-pack', 'Boys Pajama Set', 'Boys Sneakers'] },
-  { name: 'Girls', color: '#c25a8a', icon: '👗', items: ['Girls Tee 3-pack', 'Girls Leggings 2-pack', 'Girls Dress', 'Girls Hoodie', 'Girls Pajama Set', 'Girls Sneakers'] },
-  { name: 'Baby', color: '#f2a35c', icon: '🍼', items: ['Baby Onesies 5-pack', 'Diapers Size 4 44pc', 'Baby Wipes 12-pack', 'Baby Lotion 500ml', 'Baby Bottle 2-pack', 'Baby Sleep Sack'] },
-  { name: 'Shoes', color: '#5aa9c9', icon: '👟', items: ['Sneakers Unisex 42', 'Running Shoes', 'Sandals Pair', 'Slippers Fleece', 'Hiking Boots', 'Kids Light-up Sneakers'] },
-  { name: 'Mens', color: '#4a6fa5', icon: '👔', items: ["Men's Tee 3-pack", "Men's Jeans", "Men's Polo", "Men's Hoodie", "Men's Chinos", "Men's Belt Leather"] },
-  { name: 'Ladies', color: '#b05a8a', icon: '👚', items: ["Ladies' Tee 3-pack", "Ladies' Jeans", "Ladies' Blouse", "Ladies' Cardigan", "Ladies' Leggings", "Ladies' Scarf"] },
-  { name: 'Pharmacy', color: '#2f9e6b', icon: '💊', items: ['Pain Reliever 500mg 24pc', 'Vitamin C 1000mg 60pc', 'First Aid Kit 60pc', 'Allergy Tablets 30pc', 'Cough Syrup 100ml', 'Bandages 100pc', 'Antacid Chewables 96pc', 'Electrolyte Powder 10-pack'] },
+  { name: 'Auto Care', color: '#3e4a52', icon: '🚗', items: ['Motor Oil 5W-30 5L', 'Car Wash Shampoo 2L', 'Wiper Blades Pair', 'Car Air Freshener', 'Jump Starter 600A', 'Tire Inflator 12V', 'Coolant 50/50 4L', 'Car Wax 500ml'] },
+  { name: 'Sports & Outdoors', color: '#2e9e6b', icon: '🏕️', items: ['Camping Chair', 'Yoga Mat 6mm', 'Basketball Size 7', 'Bike Helmet Adult', 'Tent 4-Person', 'Dumbbell Set 20kg', 'Resistance Bands 5-pack', 'Sleeping Bag'] },
+  { name: 'Toys & Games', color: '#b876c8', icon: '🧸', items: ['Building Bricks 500pc', 'Board Game Classic', 'Action Figure 30cm', 'Puzzle 1000pc', 'RC Car 1:16', 'Plush Bear 40cm', 'Race Track Set', 'Card Game Deck'] },
+  { name: 'Electronics', color: '#3f5ba8', icon: '📺', items: ['Smart TV 50"', 'Wireless Earbuds', 'Laptop 15"', 'Tablet 10"', 'Bluetooth Speaker', 'Power Bank 20000mAh', 'Smart Watch', 'HDMI Cable 2m'] },
+  { name: 'Home Office', color: '#c9a227', icon: '🖱️', items: ['Desk Lamp LED', 'Office Chair Mesh', 'Notebook 3-pack', 'Gel Pens 12-pack', 'Stapler Heavy Duty', 'Sticky Notes 12-pack', 'Desk Organizer', 'Paper Ream 500 Sheets'] },
+  { name: 'Pet Care', color: '#5f8a8b', icon: '🐾', items: ['Dog Dry Food 12kg', 'Cat Litter 10L', 'Pet Shampoo 250ml', 'Dog Chew Toy', 'Cat Tree Tower', 'Aquarium Filter', 'Bird Seed 3kg', 'Pet Bowl Set'] },
+  { name: 'Auto Accessories', color: '#7a8a99', icon: '🛞', items: ['Phone Car Mount', 'Seat Covers 2pc', 'Floor Mats 4pc', 'Trunk Organizer', 'Car Charger 2-port', 'Roof Cargo Box', 'Tow Rope 4t', 'Ice Scraper'] },
+  { name: 'Outdoor & Garden', color: '#86b83e', icon: '🪴', items: ['Garden Hose 20m', 'Patio Chair Foldable', 'Charcoal 5kg', 'Planter Pot 30cm', 'Watering Can 10L', 'Lawn Seed 2kg', 'Garden Trowel', 'String Lights 10m'] },
+  { name: 'Tools & Hardware', color: '#b5723a', icon: '🔧', items: ['Cordless Drill 18V', 'Claw Hammer 16oz', 'Screwdriver Set 12pc', 'Tape Measure 8m', 'Utility Knife', 'Duct Tape 50m', 'Picture Hooks 50-pack', 'Wall Anchors 100-pack'] },
+  { name: 'Books & Media', color: '#4f7fb0', icon: '📚', items: ['Bestseller Novel', 'Cookbook Hardcover', 'Kids Storybook', 'Travel Guide', 'Journal Notebook', 'Magazine Special', 'Calendar 2027', 'Poster Print 60×90'] },
+  { name: 'Arts & Crafts', color: '#d9924a', icon: '🎨', items: ['Acrylic Paint Set', 'Canvas 40×50 2-pack', 'Yarn 4-pack', 'Scrapbook Kit', 'Glue Gun + Sticks', 'Beads Assortment 2000pc', 'Brush Set 10pc', 'Origami Paper 200pc'] },
+  { name: 'Celebrate', color: '#ee8fb0', icon: '🎉', items: ['Birthday Balloons 20pc', 'Party Banner', 'Gift Wrap Roll 30m', 'Greeting Cards 8pc', 'Birthday Candles 24pc', 'Confetti 3-pack', 'Party Bags 10pc', 'Number Balloon 90cm'] },
+  { name: 'Seasonal', color: '#2e6b5e', icon: '🎄', items: ['Christmas Wreath 40cm', 'Fairy Lights 20m', 'Easter Basket', 'Halloween Pumpkin Decor', 'Beach Towel 2-pack', 'Sunshade UV 50', 'Advent Calendar', 'Door Wreath Hanger'] },
+  { name: 'Home & Bedding', color: '#7c8fcb', icon: '🛏️', items: ['Duvet Cover Queen', 'Pillows 2-pack', 'Bed Sheet Set Queen', 'Throw Blanket Soft', 'Blackout Curtains 2pc', 'Storage Bins 6-pack', 'Laundry Basket Foldable', 'Mattress Topper Queen'] },
+  { name: 'Kitchen & Dining', color: '#c0626e', icon: '🍽️', items: ['Frying Pan 28cm', 'Dinner Set 16pc', 'Cutlery Set 24pc', 'Mixing Bowls 5pc', 'Coffee Maker 12-cup', 'Cutting Board Bamboo', 'Food Containers 10pc', 'Kettle 1.7L'] },
+  { name: 'Boys', color: '#4e9bd6', icon: '👕', items: ['Boys Tee 3-pack', 'Boys Jeans', 'Boys Hoodie', 'Boys Shorts 2-pack', 'Boys Pajama Set', 'Boys Sneakers'] },
+  { name: 'Girls', color: '#d98bb8', icon: '👗', items: ['Girls Tee 3-pack', 'Girls Leggings 2-pack', 'Girls Dress', 'Girls Hoodie', 'Girls Pajama Set', 'Girls Sneakers'] },
+  { name: 'Baby', color: '#f4a98a', icon: '🍼', items: ['Baby Onesies 5-pack', 'Diapers Size 4 44pc', 'Baby Wipes 12-pack', 'Baby Lotion 500ml', 'Baby Bottle 2-pack', 'Baby Sleep Sack'] },
+  { name: 'Shoes', color: '#a5896b', icon: '👟', items: ['Sneakers Unisex 42', 'Running Shoes', 'Sandals Pair', 'Slippers Fleece', 'Hiking Boots', 'Kids Light-up Sneakers'] },
+  { name: 'Mens', color: '#5a6b8c', icon: '👔', items: ["Men's Tee 3-pack", "Men's Jeans", "Men's Polo", "Men's Hoodie", "Men's Chinos", "Men's Belt Leather"] },
+  { name: 'Ladies', color: '#d4788f', icon: '👚', items: ["Ladies' Tee 3-pack", "Ladies' Jeans", "Ladies' Blouse", "Ladies' Cardigan", "Ladies' Leggings", "Ladies' Scarf"] },
+  { name: 'Pharmacy', color: '#2f9c8f', icon: '💊', items: ['Pain Reliever 500mg 24pc', 'Vitamin C 1000mg 60pc', 'First Aid Kit 60pc', 'Allergy Tablets 30pc', 'Cough Syrup 100ml', 'Bandages 100pc', 'Antacid Chewables 96pc', 'Electrolyte Powder 10-pack'] },
 ];
+
+/** One colour per department: it fills the department's shelves, tints its
+ *  area and colours its category chip — the categories are the source. */
+const WM_COLORS: Record<string, string> = Object.fromEntries([...WM_FOOD_CATS, ...WM_GM_CATS].map((c) => [c.name, c.color]));
 
 export function walmartSpec(): Spec {
   const elements: SpecEl[] = [];
 
-  // the store outline, traced from the reference plan's black line: the
-  // Restrooms + grocery section rises above the general-merchandise top, the
-  // two front entrances are OPEN GAPS in the south edge (never walled over),
-  // and the Garden Center entry cuts the bottom-right corner diagonally
-  elements.push({
-    type: 'wall',
-    shape: 'polyline',
-    label: '',
-    geometry: [
-      [0.4, 3.3], [64, 3.3], [64, 0.4], [95.6, 0.4],
-      [95.6, 44], [83, 61.6],
-      [72, 61.6], [68, 61.6],
-      [40, 61.6], [36, 61.6],
-      [0.4, 61.6], [0.4, 3.3],
-    ],
-  });
+  /* ---------- walls: the plan's outline, then its interior partitions ------- */
+  const wall = (pts: [number, number][], height?: number) =>
+    elements.push({
+      type: 'wall', shape: 'polyline', label: '', geometry: pts,
+      ...(height ? { meta: JSON.stringify({ height }) } : {}),
+    });
+  // The Dairy corner rises above the main back wall, the wine & beer wing runs
+  // deeper than the rest of the front, and both entrances are OPEN GAPS in the
+  // south edge (never walled over).
+  wall([[0.4, 0.4], [21.4, 0.4], [21.4, 3.1], [95.6, 3.1], [95.6, 57.6], [87, 57.6]]);
+  wall([[84, 57.6], [70.3, 57.6], [70.3, 61.4], [62.6, 61.4]]);
+  wall([[57.4, 61.4], [50, 61.4], [50, 57.6], [46.4, 57.6], [46.4, 61.6], [0.4, 61.6], [0.4, 0.4]]);
+  wall([[21.4, 3.1], [21.4, 6.4]]);
+  // Interior partitions are low: they read as counters and rooms without
+  // walling the 3D view off.
+  wall([[72.4, 13.1], [81.3, 13.1], [81.3, 29.5], [72.4, 29.5], [72.4, 13.1]], 2.6);
+  wall([[89.6, 3.1], [89.6, 25.6]], 2.6);
+  wall([[0.4, 43.4], [7.3, 43.4], [7.3, 47.2], [0.4, 47.2]], 2.6);
+  wall([[7.3, 47.2], [7.3, 45.6], [11.6, 45.6], [15.4, 48.6], [15.4, 57.4], [13.6, 57.4]], 1.1);
+  wall([[17, 57.6], [17, 52.7], [33.6, 52.7], [33.6, 57.6]], 2.6);
+  wall([[36.5, 57.6], [36.5, 53.3]], 1.2);
+  wall([[50.2, 57.6], [50.2, 53.3]], 1.2);
 
-  const zone = (x: number, y: number, w: number, h: number, label: string, color = WM_BLUE) =>
-    elements.push({ type: 'zone', shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, color, meta: JSON.stringify({ department: label }) });
-  const poi = (x: number, y: number, label: string) =>
-    elements.push({ type: 'poi', shape: 'point', geometry: { x, y }, label });
-  const aisle = (pts: [number, number][], label: string) =>
-    elements.push({ type: 'aisle', shape: 'polyline', geometry: pts, label });
+  /* ---------- department areas: each the colour of the department it holds -- */
+  // A rect's name draws at its centre, so an area whose centre a fixture
+  // covers is two rects: the tint, and a named piece on open floor. An area
+  // records the department it holds (meta.department): where that differs from
+  // its name — "Produce" holding Fresh Produce — the shelves inside it are not
+  // badged with it again.
+  const zone = (x: number, y: number, w: number, h: number, label: string, color: string, department: string = label) =>
+    elements.push({ type: 'zone', shape: 'rect', geometry: { x, y, w, h, rot: 0 }, label, color, meta: JSON.stringify({ department }) });
+  const zonePoly = (pts: [number, number][], label: string, color: string, department: string = label) =>
+    elements.push({ type: 'zone', shape: 'polygon', geometry: pts, label, color, meta: JSON.stringify({ department }) });
+  zone(0.4, 0.4, 21, 9.2, 'Dairy', WM_COLORS['Dairy & Cheese'], 'Dairy & Cheese');
 
-  /* ---------- department areas, matching the reference floor plan --------- */
-  // top row (below the y 3.3 wall line of the GM section)
-  zone(2, 4.5, 14, 12, 'Auto Care Center');
-  zone(17, 4.5, 12, 12, 'Sports & Outdoors');
-  zone(30, 4.5, 12, 12, 'Toys & Games');
-  zone(43, 4.5, 12, 12, 'Electronics');
-  zone(56, 4.5, 3, 12, 'Home Office');
-  zone(60, 4.5, 6, 12, 'Paper & Cleaning');
-  zone(67, 4.5, 5.5, 12, 'Pet Care');
-  zone(64.5, 1, 8.5, 4.2, 'Restrooms', WM_GRAY);
-  // the green grocery wing (right side, inside the raised top section)
-  zone(73, 1.2, 22, 41, 'Grocery', WM_GREEN);
-  // left flank
-  zone(16.6, 17, 2, 12.5, 'Auto Accessories');
-  zone(2, 30, 14, 14, 'Outdoor', WM_GREEN);
-  zone(2, 45, 14, 15, 'Outdoor', WM_GREEN);
-  zone(17, 38, 12, 6, 'Tools & Hardware');
-  zone(17, 45, 1.8, 8, 'Clearance', WM_YELLOW);
-  // center narrow column + big boxes
-  zone(33, 16, 3.4, 3.6, 'Books');
-  zone(33, 20, 3.4, 3.6, 'Arts & Crafts');
-  zone(33, 24, 3.4, 3.6, 'Celebrate');
-  zone(33, 28, 3.4, 3.6, 'Seasonal');
-  zone(37, 16, 14, 15, 'Home & Bedding');
-  zone(37, 32, 14, 7, 'Kitchen & Dining');
-  zone(51, 16, 6.5, 5, 'Boys');
-  zone(58, 16, 6.5, 5, 'Girls');
-  zone(65, 16, 6.5, 5, 'Baby');
-  zone(51, 21.5, 6.5, 5, 'Shoes');
-  zone(51, 27, 6.5, 6.5, 'Mens');
-  zone(58, 26.5, 13.5, 7, "Ladies'");
-  // bottom band
-  zone(17.5, 46, 19, 8, 'Personal Care & Beauty');
-  zone(37.5, 46, 6, 8, 'Pharmacy');
-  zone(44, 52, 24, 4, 'Checkout', WM_GRAY);
-  zone(40, 57, 6, 3.6, 'Vision Center', WM_ORANGE);
-  zone(48, 57, 8, 3.6, 'Customer Center', WM_ORANGE);
-  zone(57, 57, 4, 3.6, 'Tenant', WM_ORANGE);
-  zone(62, 57, 4.5, 3.6, 'Hair Salon', WM_ORANGE);
-  zone(67, 57, 3.5, 3.6, 'Tenant', WM_ORANGE);
-  zone(86, 46, 9, 9.5, 'Garden Center', WM_GREEN);
-  aisle([[74.5, 15.2], [92.5, 15.2]], 'Grocery · 1–2');
-  aisle([[74.5, 29.1], [92.5, 29.1]], 'Grocery · 3–4');
-  aisle([[17, 44.5], [72, 44.5]], 'Action alley');
+  zone(26.4, 3.3, 32.6, 10.3, 'Meat', WM_COLORS['Meat & Seafood'], 'Meat & Seafood');
 
-  // doors + points of interest — created AFTER the zones so the markers (and
+  zone(59, 3.3, 15, 10.3, 'Service Meat & Seafood', WM_COLORS['Meat & Seafood'], 'Meat & Seafood');
+
+  zone(76.6, 4.5, 13, 8.4, 'Deli', WM_COLORS['Deli & Cheese'], 'Deli & Cheese');
+
+  zone(81.4, 12.9, 8.2, 15, 'Bakery', WM_COLORS['Bakery']);
+
+  zone(72.4, 13.1, 8.9, 16.4, 'Bakery Kitchen', WM_COLORS['Bakery'], 'Bakery');
+
+  zone(89.6, 3.3, 6, 22.3, 'Offices', WM_OFFICE);
+  zone(0.4, 10, 9.5, 23, '', WM_COLORS['Personal Care'], 'Personal Care');
+
+  zone(0.4, 33, 9.5, 4.4, 'Health & Beauty', WM_COLORS['Personal Care'], 'Personal Care');
+
+  zone(19.4, 9.4, 9, 32.4, 'Frozen', WM_COLORS['Frozen']);
+  zone(0.4, 37.6, 1, 3.4, '', WM_COLORS['Pharmacy'], 'Pharmacy');
+
+  zone(1.4, 37.6, 8.4, 3.4, 'Pharmacy', WM_COLORS['Pharmacy']);
+  zone(0.4, 41, 9.4, 6.2, '', WM_COLORS['Pharmacy'], 'Pharmacy');
+  zone(6.5, 45.8, 9.1, 15.8, '', WM_COLORS['Adult Beverages'], 'Adult Beverages');
+
+  zone(0.4, 47.4, 6.1, 3, 'Wine & Spirits', WM_COLORS['Adult Beverages'], 'Adult Beverages');
+  zone(0.4, 50.4, 6.1, 11.2, '', WM_COLORS['Adult Beverages'], 'Adult Beverages');
+
+  zone(17, 44.7, 35.3, 7.3, 'Checkouts', WM_CHECKOUT);
+
+  zone(17, 52.7, 16.6, 4.9, 'Restrooms', WM_RESTROOM);
+
+  zone(36, 52, 15.3, 5.6, 'Customer Service', WM_SERVICE);
+
+  zonePoly([[61.6, 43.6], [65.3, 43.3], [65.3, 53.4], [53.4, 53.4], [53.4, 48.4], [58.3, 48.4], [58.3, 48.2]], 'Bank', WM_BANK);
+
+  zonePoly([[50.6, 49], [51.2, 45.9], [53, 43.7], [55.6, 43.1], [58.3, 44.1], [58.3, 48.4], [53.4, 48.4], [53.4, 49]], 'Floral', WM_COLORS['Outdoor & Garden'], 'Outdoor & Garden');
+
+  zone(72.6, 37.8, 23, 2.9, 'Produce', WM_COLORS['Fresh Produce'], 'Fresh Produce');
+  zone(66, 40.7, 29.6, 16.9, '', WM_COLORS['Fresh Produce'], 'Fresh Produce');
+
+  // checkout lanes, and the self-checkout kiosks between the two banks
+  for (const x of [18.6, 21.2, 23.8, 26.3, 28.8, 38.6, 41, 43.8, 46.3, 49]) zone(x, 45.5, 1.35, 5.5, '', WM_CHECKOUT);
+  for (const x of [31.1, 35.8]) {
+    zone(x, 45.6, 1.1, 2.2, '', WM_CHECKOUT);
+    zone(x, 48.9, 1.1, 2.1, '', WM_CHECKOUT);
+  }
+
+  /* ---------- aisles, numbered as the plan numbers them (there is no 12) ---- */
+  const aisle = (n: number, x: number, y0: number, y1: number) =>
+    elements.push({ type: 'aisle', shape: 'polyline', geometry: [[x, y0], [x, y1]], label: `Aisle ${n}` });
+  aisle(1, 68, 16, 30.6);
+  aisle(2, 64.1, 16, 30.6);
+  aisle(3, 60.3, 16, 34.6);
+  aisle(4, 56.4, 16, 34.6);
+  aisle(5, 52.6, 16, 41.5);
+  aisle(6, 48.7, 16, 41.5);
+  aisle(7, 44.9, 16, 41.5);
+  aisle(8, 41, 16, 41.5);
+  aisle(9, 37.2, 16, 41.5);
+  aisle(10, 33.3, 16, 41.5);
+  aisle(11, 29.2, 16, 41.5);
+  aisle(13, 18.5, 10, 41.5);
+  aisle(14, 14.2, 10, 41.5);
+  aisle(15, 10.3, 10, 41.5);
+  aisle(16, 6.4, 11.2, 33.2);
+  aisle(17, 2.7, 11.2, 36.5);
+
+  // doors + points of interest — created AFTER the areas so the markers (and
   // their labels) sit on top and stay selectable
-  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 38, y: 60.8 }, label: 'Entrance' });
-  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 70, y: 60.8 }, label: 'Entrance' });
-  elements.push({ type: 'exit', shape: 'point', geometry: { x: 90, y: 49 }, label: 'Garden Center' });
-  poi(47, 55.8, 'Restrooms');
-  poi(43.5, 56.2, 'Cart corral');
-  poi(66, 56.2, 'Cart corral');
+  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 61.6, y: 60.5 }, label: 'Main Entrance' });
+  elements.push({ type: 'entrance', shape: 'point', geometry: { x: 84.3, y: 56.9 }, label: 'Market Entrance' });
+  elements.push({ type: 'poi', shape: 'point', geometry: { x: 1.2, y: 44.3 }, label: 'Drive-Up Pharmacy' });
 
   /* ---------- shelves: EVERY shelf is one titled group --------------------- */
-  // [label, category, x, y, w, h, planWidth?] — planWidth = the planogram
-  // length in metres (the group pin spans the same length on the map)
-  const groups: { label: string; cat: string; x: number; y: number; w: number; h: number; plan?: number }[] = [];
-  const g = (label: string, cat: string, x: number, y: number, w: number, h: number, plan?: number) =>
-    groups.push({ label, cat, x, y, w, h, plan });
+  // [label, category, centre x, centre y, run length, depth, rotation, face, height]
+  // A run is a long rect — its width runs along the shelf and its rotation
+  // turns it (a vertical run is rot 90, the way the editor's rotate tool makes
+  // one), the frame the app's shelf logic is written in. `face` is the side
+  // shoppers stand on (N/S/E/W, a diagonal like SW, or C for the middle of a
+  // double-sided gondola): the group's pin goes a quarter-depth in from it.
+  const groups: { label: string; cat: string; cx: number; cy: number; len: number; depth: number; rot: number; face: string; height?: number }[] = [];
+  const g = (label: string, cat: string, cx: number, cy: number, len: number, depth: number, rot: number = 0, face: string = 'C', height?: number) =>
+    groups.push({ label, cat, cx, cy, len, depth, rot, face, height });
 
-  // grocery wing — photo-complete planograms, stacked top to bottom like the
-  // plan (the wing fills the raised top section, so the run starts high)
-  g('Dairy & Cheese', 'Dairy & Cheese', 74.5, 2.5, 18.5, 1.4, 6);
-  g('Deli Counter', 'Deli & Cheese', 74.5, 5.3, 18.5, 1.4, 6);
-  g('Adult Beverages', 'Adult Beverages', 74.5, 8.1, 18.5, 1.4, 6);
-  g('Chips & Savoury Snacks', 'Snacks & Candy', 74.5, 10.9, 18.5, 1.4, 6);
-  g('Candy & Chocolate', 'Snacks & Candy', 74.5, 13.7, 18.5, 1.4, 6);
-  g('Coffee, Tea & Cereal', 'Breakfast & Coffee', 74.5, 16.5, 18.5, 1.4, 6);
-  g('Pasta, Rice & Tins', 'Pantry', 74.5, 19.3, 18.5, 1.4, 6);
-  g('Sauces & Spreads', 'Pantry', 74.5, 22.1, 18.5, 1.4, 6);
-  g('Meat & Seafood', 'Meat & Seafood', 74.5, 24.9, 18.5, 1.4, 6);
-  g('Frozen Favourites', 'Frozen', 74.5, 27.7, 18.5, 1.4, 6);
-  g('Bakery', 'Bakery', 74.5, 30.5, 18.5, 1.4, 6);
-  g('Fresh Produce', 'Fresh Produce', 74.5, 33.3, 18.5, 1.4, 6);
-  g('Paper Towels & Cleaners', 'Paper & Cleaning', 74.5, 36.1, 18.5, 1.4, 6);
-  g('Soft Drinks & Juices', 'Drinks', 74.5, 38.9, 18.5, 1.4, 6);
+  // Dairy — the yellow corner: two wall coolers and an island
+  g('Milk & Cream', 'Dairy & Cheese', 9.75, 1.25, 15.5, 1, 0, 'S', 2.2);
+  g('Yogurt & Cheese', 'Dairy & Cheese', 1.25, 8.6, 13.4, 0.9, 90, 'E', 2.2);
+  g('Butter, Eggs & Cream', 'Dairy & Cheese', 10.85, 6.5, 11.1, 1.8, 0);
+  g('Ground Meat & Pork', 'Meat & Seafood', 32.1, 6.15, 10.6, 1.3, 0, 'S', 2.2);
+  g('Steaks & Roasts', 'Meat & Seafood', 42.8, 6.15, 10.6, 1.3, 0, 'S', 2.2);
+  g('Chicken & Turkey', 'Meat & Seafood', 53.4, 6.15, 10.6, 1.3, 0, 'S', 2.2);
+  g('Service Meat & Seafood', 'Meat & Seafood', 66.6, 5.8, 13.6, 1.2, 0, 'S', 2.2);
+  g('Family Pack Meat', 'Meat & Seafood', 36.95, 11.1, 11.3, 2, 0, 'C', 1.3);
+  g('Chicken Cuts & Wings', 'Meat & Seafood', 51.75, 11.1, 11.3, 2, 0, 'C', 1.3);
+  g('Seafood & Shellfish', 'Meat & Seafood', 63.9, 11.1, 6.2, 2, 0, 'C', 1.3);
 
-  // general merchandise — one titled group per department area
-  g('Auto Care', 'Auto Care', 3.5, 8.5, 11, 1.4);
-  g('Sports & Fitness', 'Sports & Outdoors', 18.5, 6.5, 10, 1.4);
-  g('Camping & Outdoors', 'Sports & Outdoors', 18.5, 9.5, 10, 1.4);
-  g('Toys', 'Toys & Games', 31.5, 6.5, 10, 1.4);
-  g('Games & Puzzles', 'Toys & Games', 31.5, 9.5, 10, 1.4);
-  g('TV & Audio', 'Electronics', 44.5, 6.5, 10, 1.4);
-  g('Computers & Mobile', 'Electronics', 44.5, 9.5, 10, 1.4);
-  g('Home Office', 'Home Office', 56.6, 6, 1.4, 8); // vertical strip, like the plan
-  g('Cleaning Supplies', 'Paper & Cleaning', 60.5, 6.5, 5, 1.4);
-  g('Pet Care', 'Pet Care', 67.5, 6.5, 4.8, 1.4);
-  g('Auto Accessories', 'Auto Accessories', 16.8, 18.5, 1.4, 8); // vertical
-  g('Patio & Garden Care', 'Outdoor & Garden', 3.5, 33, 11, 1.4);
-  g('Outdoor Living', 'Outdoor & Garden', 3.5, 50, 11, 1.4);
-  g('Tools & Hardware', 'Tools & Hardware', 18.5, 40, 10, 1.4);
-  g('Clearance Buys', 'Seasonal', 17.5, 46.5, 1.4, 5); // the yellow strip
-  g('Books', 'Books & Media', 33.3, 16.8, 2.8, 1.2);
-  g('Arts & Crafts', 'Arts & Crafts', 33.3, 20.8, 2.8, 1.2);
-  g('Party & Celebrate', 'Celebrate', 33.3, 24.8, 2.8, 1.2);
-  g('Seasonal Decor', 'Seasonal', 33.3, 28.8, 2.8, 1.2);
-  g('Bedding & Bath', 'Home & Bedding', 38, 17.5, 11, 1.4);
-  g('Storage & Laundry', 'Home & Bedding', 38, 21.5, 11, 1.4);
-  g('Furniture & Decor', 'Home & Bedding', 38, 25.5, 11, 1.4);
-  g('Kitchen & Dining', 'Kitchen & Dining', 38, 33.5, 11, 1.4);
-  g('Cookware & Small Appliances', 'Kitchen & Dining', 38, 36.5, 11, 1.4);
-  g('Boys', 'Boys', 51.5, 17.5, 5, 1.4);
-  g('Girls', 'Girls', 58.5, 17.5, 5, 1.4);
-  g('Baby', 'Baby', 65.5, 17.5, 5.5, 1.4);
-  g('Shoes', 'Shoes', 51.5, 22.5, 5, 1.4);
-  g("Ladies' Fashion", 'Ladies', 58.5, 28, 12, 1.4);
-  g("Men's Fashion", 'Mens', 51.5, 28.5, 6, 1.4);
-  g('Skin & Hair Care', 'Personal Care', 19, 48, 11, 1.4);
-  g('Beauty & Cosmetics', 'Personal Care', 19, 51, 11, 1.4);
-  g('Pharmacy', 'Pharmacy', 38, 48, 4.5, 1.4);
-  g('Garden Center', 'Outdoor & Garden', 87.5, 47.5, 1.4, 6); // vertical, in the garden zone
+  // Deli + Bakery — the run down the right: the counter, the diagonal corner, the wall strip
+  g('Deli Counter', 'Deli & Cheese', 80.25, 5.85, 6.3, 1.1, 0, 'S', 1.1);
+  g('Deli Cases', 'Deli & Cheese', 85.9, 7.75, 5.2, 1, 42.6, 'SW', 2.2);
+  g('Sliced Meats & Cheese', 'Deli & Cheese', 88.1, 12.8, 5, 1, 90, 'W', 2.2);
+  g('Bakery Bread & Rolls', 'Bakery', 88.1, 19.3, 7.6, 1, 90, 'W', 2.2);
+  g('Donuts, Cakes & Pastries', 'Bakery', 90.05, 25.05, 4.5, 1, 45, 'SW', 2.2);
+
+  // Salad bar and bulk foods
+  g('Salad Bar', 'Fresh Produce', 83.1, 33.9, 8.6, 2.4, 75, 'W', 1.2);
+  g('Bulk Foods', 'Pantry', 91.75, 33, 9.6, 1.5, 90, 'W', 2.2);
+
+  // Produce — the wall (angled top, straight bottom), two racks, the tables;
+  // the coffee bar and the floral nook
+  g('Lettuce & Spinach', 'Fresh Produce', 92.7, 40.45, 5.5, 1.3, 52, 'SW', 2.2);
+  g('Fresh Juices & Cut Fruit', 'Drinks', 92.8, 47.25, 7.5, 1.3, 90, 'W', 2.2);
+  g('Potatoes & Onions', 'Fresh Produce', 66.2, 36.85, 14.4, 1.3, 315, 'SE');
+  g('Herbs & Aromatics', 'Fresh Produce', 70, 40, 12, 1.3, 322, 'SE');
+  g('Melons & Citrus', 'Fresh Produce', 73.95, 44.7, 2.9, 2.6, 0, 'C', 1.2);
+  g('Berries & Grapes', 'Fresh Produce', 79.2, 41.95, 4.2, 2.1, 0, 'S', 1.2);
+  g('Apples & Pears', 'Fresh Produce', 89.9, 44.55, 2.9, 2.8, 90, 'N', 1.2);
+  g('Tomatoes & Peppers', 'Fresh Produce', 85.5, 46.6, 3.4, 3.4, 45, 'SW', 1.2);
+  g('Broccoli, Cauliflower & Vegetables', 'Fresh Produce', 77.2, 50.7, 4.6, 4.2, 90, 'E', 1.2);
+  g('Root Vegetables', 'Fresh Produce', 83.85, 51.55, 4.5, 4.1, 0, 'S', 1.2);
+  g('Mushrooms & Corn', 'Fresh Produce', 72.3, 51.85, 3, 2.9, 0, 'W', 1.2);
+  g('Avocados & Exotics', 'Fresh Produce', 70.9, 47.5, 2.8, 2.6, 0, 'C', 1.2);
+  g('Coffee & Smoothie Bar', 'Drinks', 88.9, 53.7, 5.6, 1.2, 100, 'W', 1.1);
+  g('Floral', 'Outdoor & Garden', 54.8, 44, 5.2, 1, 0, 'S', 1.1);
+
+  // Health & Beauty — the wall shelf and two gondolas (aisles 16–17)
+  g('Cosmetics & Beauty', 'Personal Care', 1.2, 27.15, 19.5, 0.8, 90, 'E', 2.2);
+  g('Hair & Skin Care', 'Personal Care', 4.5, 22, 21.6, 1.3, 90);
+  g('Oral Care & Deodorant', 'Personal Care', 8.35, 22, 21.6, 1.3, 90);
+
+  /** A vertical run split top→bottom into equal titled groups. */
+  const column = (cx: number, y0: number, y1: number, list: [string, string][], face: string = 'C', depth: number = 1.3, height?: number) => {
+    const len = +((y1 - y0) / list.length).toFixed(3);
+    list.forEach(([label, cat], i) => g(label, cat, cx, +(y0 + (i + 0.5) * len).toFixed(3), len, depth, 90, face, height));
+  };
+
+  // the greeting-cards gondola (aisle 15) and its neighbour (aisle 13–14)
+  column(12.25, 10, 41.5, [
+    ['Greeting Cards', 'Celebrate'],
+    ['Party & Celebrate', 'Celebrate'],
+    ['Books & Magazines', 'Books & Media'],
+    ['Arts & Crafts', 'Arts & Crafts'],
+  ]);
+  column(16.1, 10, 41.5, [
+    ["Men's", 'Mens'],
+    ["Ladies'", 'Ladies'],
+    ['Boys', 'Boys'],
+    ['Girls', 'Girls'],
+    ['Shoes', 'Shoes'],
+  ]);
+
+  // Frozen — two cooler walls with the wide frozen aisle between them; the doors face it
+  column(21.1, 10, 40.9, [
+    ['Frozen Pizza & Meals', 'Frozen'],
+    ['Ice Cream & Novelties', 'Frozen'],
+    ['Frozen Breakfast & Bread', 'Frozen'],
+  ], 'E', 1.9, 2.2);
+
+  // Frozen — two cooler walls with the wide frozen aisle between them; the doors face it
+  column(26.7, 10, 40.9, [
+    ['Frozen Vegetables & Fruit', 'Frozen'],
+    ['Frozen Meat & Seafood', 'Frozen'],
+    ['Frozen Family Meals', 'Frozen'],
+  ], 'W', 1.9, 2.2);
+
+  /** A double-sided gondola: a west run facing the aisle on its left and an
+   *  east run facing the aisle on its right, each side with its own groups. */
+  const gondola = (cx: number, y0: number, y1: number, west: [string, string][], east: [string, string][]) => {
+    const side = (list: [string, string][], x: number, face: string) => {
+      const len = +((y1 - y0) / list.length).toFixed(3);
+      list.forEach(([label, cat], k) => g(label, cat, x, +(y0 + (k + 0.5) * len).toFixed(3), len, 0.65, 90, face));
+    };
+    side(west, +(cx - 0.325).toFixed(3), 'W');
+    side(east, +(cx + 0.325).toFixed(3), 'E');
+  };
+  // Centre aisles 1–11. The right-hand runs step shorter toward Produce,
+  // exactly as the plan draws them. [centre x, from y, to y, west, east]
+  gondola(31.4, 16, 41.5, [
+    ['Hardware & Fasteners', 'Tools & Hardware'],
+    ['Seasonal Décor', 'Seasonal'],
+    ['Patio & Garden', 'Outdoor & Garden'],
+  ], [
+    ['Tools & Hardware', 'Tools & Hardware'],
+    ['Auto Accessories', 'Auto Accessories'],
+    ['Motor Oil & Car Care', 'Auto Care'],
+  ]);
+  gondola(35.25, 16, 41.5, [
+    ['Camping & Outdoors', 'Sports & Outdoors'],
+    ['Sports & Fitness', 'Sports & Outdoors'],
+    ['Home Office & School', 'Home Office'],
+  ], [
+    ['Batteries & Accessories', 'Electronics'],
+    ['Computers & Mobile', 'Electronics'],
+    ['TV & Audio', 'Electronics'],
+  ]);
+  gondola(39.1, 16, 41.5, [
+    ['Ride-Ons & Outdoor Toys', 'Toys & Games'],
+    ['Games & Puzzles', 'Toys & Games'],
+    ['Toys', 'Toys & Games'],
+  ], [
+    ['Food Storage & Containers', 'Kitchen & Dining'],
+    ['Dinnerware & Drinkware', 'Kitchen & Dining'],
+    ['Seasonal & Holiday', 'Seasonal'],
+  ]);
+  gondola(42.95, 16, 41.5, [
+    ['Storage & Organization', 'Home & Bedding'],
+    ['Bath & Towels', 'Home & Bedding'],
+    ['Bedding', 'Home & Bedding'],
+  ], [
+    ['Small Appliances', 'Kitchen & Dining'],
+    ['Kitchen Tools & Gadgets', 'Kitchen & Dining'],
+    ['Cookware & Bakeware', 'Kitchen & Dining'],
+  ]);
+  gondola(46.8, 16, 41.5, [
+    ['Baby Bath & Care', 'Baby'],
+    ['Formula & Baby Food', 'Baby'],
+    ['Diapers & Wipes', 'Baby'],
+  ], [
+    ['Pet Supplies', 'Pet Care'],
+    ['Cat Food & Litter', 'Pet Care'],
+    ['Dog Food & Treats', 'Pet Care'],
+  ]);
+  gondola(50.65, 16, 41.5, [
+    ['Cleaners & Air Care', 'Paper & Cleaning'],
+    ['Dish & Dishwasher', 'Paper & Cleaning'],
+    ['Laundry & Fabric Care', 'Paper & Cleaning'],
+  ], [
+    ['Paper Plates & Cups', 'Paper & Cleaning'],
+    ['Paper Towels & Bath Tissue', 'Paper & Cleaning'],
+    ['Trash Bags & Food Storage', 'Paper & Cleaning'],
+  ]);
+  gondola(54.5, 16, 41.5, [
+    ['Iced Tea & Lemonade', 'Drinks'],
+    ['Water & Sports Drinks', 'Drinks'],
+    ['Soda & Energy Drinks', 'Drinks'],
+  ], [
+    ['Spices & Extracts', 'Pantry'],
+    ['Oils & Cooking Sprays', 'Pantry'],
+    ['Peanut Butter & Spreads', 'Pantry'],
+  ]);
+  gondola(58.35, 16, 34.6, [
+    ['Baking, Flour & Sugar', 'Pantry'],
+    ['Condiments & Sauces', 'Pantry'],
+  ], [
+    ['Tomatoes, Broth & Chili', 'Pantry'],
+    ['Pasta & Noodles', 'Pantry'],
+  ]);
+  gondola(62.2, 16, 34.6, [
+    ['Canned Vegetables & Fruit', 'Pantry'],
+    ['Canned Soup & Meals', 'Pantry'],
+  ], [
+    ['Coffee', 'Breakfast & Coffee'],
+    ['Tea & Hot Cocoa', 'Breakfast & Coffee'],
+  ]);
+  gondola(66.05, 16, 30.6, [
+    ['Oatmeal & Breakfast', 'Breakfast & Coffee'],
+    ['Cereal', 'Breakfast & Coffee'],
+  ], [
+    ['Cookies & Crackers', 'Snacks & Candy'],
+    ['Snack Cakes & Bars', 'Snacks & Candy'],
+  ]);
+  gondola(69.9, 16, 30.6, [
+    ['Tortilla Chips & Salsa', 'Snacks & Candy'],
+    ['Chips & Pretzels', 'Snacks & Candy'],
+  ], [
+    ['Candy & Chocolate', 'Snacks & Candy'],
+    ['Nuts, Jerky & Trail Mix', 'Snacks & Candy'],
+  ]);
+
+  // Pharmacy counter, then wine & beer in the corner
+  g('Pharmacy', 'Pharmacy', 3.55, 40.45, 6.4, 0.8, 50, 'NE', 1.1);
+  g('Beer', 'Adult Beverages', 1.45, 56.5, 9, 1.3, 90, 'E', 2.2);
+  g('Wine', 'Adult Beverages', 7.3, 54.75, 8.1, 1.2, 90);
+  g('Spirits', 'Adult Beverages', 10.5, 54.5, 8.8, 1.2, 90);
+  g('Chilled Wine & Seltzer', 'Adult Beverages', 9.25, 60.75, 7.1, 0.9, 0, 'N', 2.2);
 
   for (const gr of groups) {
-    const long = Math.max(gr.w, gr.h);
     elements.push({
       type: 'shelf',
       shape: 'rect',
-      geometry: { x: gr.x, y: gr.y, w: gr.w, h: gr.h, rot: 0 },
+      geometry: { x: +(gr.cx - gr.len / 2).toFixed(3), y: +(gr.cy - gr.depth / 2).toFixed(3), w: gr.len, h: gr.depth, rot: gr.rot },
       label: gr.label,
-      color: '',
-      meta: JSON.stringify({ department: gr.cat, planWidth: Math.round(Math.min(6, Math.max(1, gr.plan ?? long)) * 10) / 10 }),
+      color: WM_COLORS[gr.cat], // the department's colour: shelves, area and chip agree
+      meta: JSON.stringify({
+        department: gr.cat,
+        planWidth: Math.round(Math.min(6, Math.max(1, gr.len)) * 10) / 10,
+        ...(gr.height ? { height: gr.height } : {}),
+      }),
     });
   }
 
@@ -367,11 +534,33 @@ export function walmartSpec(): Spec {
   const groupsOfCat: Record<string, number> = {};
   for (const gr of groups) groupsOfCat[gr.cat] = (groupsOfCat[gr.cat] ?? 0) + 1;
   const catGroupIdx: Record<string, number> = {};
+  /** A point on a run: `along` (0..1) of its length, `across` (0..1) of its depth, in the rect's own frame. */
+  const onRun = (gr: { cx: number; cy: number; len: number; depth: number; rot: number }, along: number, across: number) => {
+    const a = (gr.rot * Math.PI) / 180;
+    const dx = (along - 0.5) * gr.len;
+    const dy = (across - 0.5) * gr.depth;
+    return {
+      x: +(gr.cx + dx * Math.cos(a) - dy * Math.sin(a)).toFixed(3),
+      y: +(gr.cy + dx * Math.sin(a) + dy * Math.cos(a)).toFixed(3),
+    };
+  };
+  const FACE: Record<string, [number, number]> = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0], NE: [1, -1], SW: [-1, 1], SE: [1, 1] };
+  /** Where a run's group pin sits across its depth. A pin in the middle of a
+   *  run is as near one long edge as the other and would anchor on an
+   *  arbitrary one, so it goes a quarter-depth in from the face shoppers
+   *  stand on. A double-sided gondola keeps the middle: its route then ends on
+   *  the side the shopper arrives from. */
+  const across = (gr: { face: string; rot: number }) => {
+    if (gr.face === 'C') return 0.5;
+    // the run's own top edge, turned by its rotation: which world side it faces
+    const a = (gr.rot * Math.PI) / 180;
+    const [wx, wy] = FACE[gr.face];
+    return Math.sin(a) * wx - Math.cos(a) * wy > 0 ? 0.25 : 0.75;
+  };
   for (const gr of groups) {
     const pool = poolByCat[gr.cat];
-    const vertical = gr.h > gr.w;
-    const pinSpan = Math.round(Math.min(6, Math.max(2, Math.max(gr.w, gr.h))) * 10) / 10;
-    const center = { x: gr.x + gr.w / 2, y: gr.y + gr.h / 2 };
+    const pinSpan = Math.round(Math.min(6, Math.max(2, gr.len)) * 10) / 10;
+    const at = across(gr);
     // this group's even share of the category's catalogue (earlier groups
     // absorb the remainder items)
     const gi = catGroupIdx[gr.cat] ?? 0;
@@ -381,23 +570,17 @@ export function walmartSpec(): Spec {
     const start = gi * share + Math.min(gi, pool.length % total);
     const mine = pool.slice(start, start + share + (gi < pool.length % total ? 1 : 0));
     // the group pin — ONE per group, spanning the group's plan length
-    locations.push({ product: mine[0] ?? pool[gi % pool.length], x: center.x, y: center.y, level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
+    locations.push({ product: mine[0] ?? pool[gi % pool.length], ...onRun(gr, 0.5, at), level: 2, w: 1, pinW: pinSpan, pinH: 0.3, groupPin: 1 });
     const n = Math.max(1, mine.length - 1);
     mine.slice(1).forEach((p, j) => {
-      const at = ((j + 0.5) / n) * (vertical ? gr.h : gr.w);
-      locations.push({
-        product: p,
-        x: vertical ? gr.x + gr.w / 2 : gr.x + at,
-        y: vertical ? gr.y + at : gr.y + gr.h / 2,
-        level: (j % 3) + 1, w: 1, pinW: 0.3, groupOnly: 1,
-      });
+      locations.push({ product: p, ...onRun(gr, (j + 0.5) / n, at), level: (j % 3) + 1, w: 1, pinW: 0.3, groupOnly: 1 });
     });
   }
 
   return {
     slug: 'walmart-example', name: 'Walmart Example', address: '1 Supercenter Way',
     description:
-      'Big-box example built from the reference floor plan: every area is a department and every shelf one titled item group — the map shows ONE pin per group (sized to the group), the items live only inside its planogram. Grocery wing carries real product photos; general merchandise plans as diagram tiles.',
+      'Big-box example traced from the reference floor plan: every area is a department in its own colour and every shelf one titled group — the map shows ONE pin per group, the items live only inside its planogram. The centre gondolas are double-sided, each side with its own groups.',
     hours: '6am–11pm daily', floorName: 'Main floor', w: WW, h: WH,
     elements, categories: allCats, products, locations, skuPrefix: 'WMX', skuPad: 6,
   };
@@ -708,7 +891,7 @@ export function cornerStoreSpec(): Spec {
 
 interface SpecEl {
   type: string;
-  shape: 'rect' | 'point' | 'polyline';
+  shape: 'rect' | 'polygon' | 'point' | 'polyline';
   geometry: unknown;
   label: string;
   color?: string;
@@ -746,7 +929,7 @@ interface Spec {
  * present store laid out under another version is rebuilt — which is also
  * what retires a loaded catalogue, since its rows go with the rebuild.
  */
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 const layoutKey = (slug: string) => `seed:layout:${slug}`;
 /** A store's generated catalogue is recorded as loaded under this key (scripts/load-demo-catalog.mjs writes it). */
 const catalogKey = (slug: string) => `seed:catalog:${slug}`;

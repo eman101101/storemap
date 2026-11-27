@@ -1,13 +1,20 @@
 /**
  * SearchBox — the shopper search used by the store view and the homepage
  * hero: the field, the result-photos toggle, and the results dropdown
- * (highlighted match, where the item sits, keyboard navigation). Pure
- * presentation — the owner of the search owns the text, the open state and
- * what happens when a result is picked.
+ * (highlighted match, where the item sits, keyboard navigation). Where the
+ * owner passes `sections`, the store's own places — its aisles, departments,
+ * areas and shelf groups — answer above the items. Pure presentation — the
+ * owner of the search owns the text, the open state and what happens when a
+ * result is picked.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { HitFacing, ProductLocation, PublicStorePayload } from '../types';
 import type { GroupPins } from '../lib/itemGroups';
+import { SECTION_KIND, type Section } from '../lib/sections';
+
+/** One row of the results dropdown: a place in the store, or an item. */
+type Row = { kind: 'section'; section: Section } | { kind: 'hit'; hit: SearchHit };
+const pickable = (row: Row) => row.kind === 'section' || row.hit.located;
 
 /** One search result. `sub` is the grey line under the name. */
 export interface SearchHit {
@@ -69,11 +76,19 @@ export default function SearchBox({
   value, onChange, hits, onPick, open, setOpen, placeholder, images, onToggleImages, label = 'Search an item',
   /** location id of the result the map is focused on — its row reads selected */
   focusedId,
+  /** the store's sections answering the query, best first — listed above the items */
+  sections = [],
+  onPickSection,
+  /** key of the section the map is on — its row reads selected */
+  activeSectionKey = null,
 }: {
   value: string;
   onChange: (v: string) => void;
   hits: SearchHit[];
   onPick: (hit: SearchHit) => void;
+  sections?: Section[];
+  onPickSection?: (section: Section) => void;
+  activeSectionKey?: string | null;
   /** whether the results dropdown is showing (the owner closes it on pick) */
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -103,6 +118,23 @@ export default function SearchBox({
 
   const photo = (p: SearchHit['product']) => p.image_crop_url || p.image_url;
 
+  // the list the arrow keys step down: the store's places, then the items
+  const rows: Row[] = [...sections.map((section) => ({ kind: 'section' as const, section })), ...hits.map((hit) => ({ kind: 'hit' as const, hit }))];
+  const step = (dir: 1 | -1) =>
+    setActiveIdx((i) => {
+      const from = i < 0 ? (dir > 0 ? -1 : 0) : i;
+      for (let n = 1; n <= rows.length; n++) {
+        const j = (from + dir * n + rows.length) % rows.length;
+        if (pickable(rows[j])) return j;
+      }
+      return i;
+    });
+  const pick = (row: Row | undefined) => {
+    if (!row || !pickable(row)) return;
+    if (row.kind === 'section') onPickSection?.(row.section);
+    else onPick(row.hit);
+  };
+
   return (
     <div className="search-float" ref={rootRef}>
       <span className="icon">🔎</span>
@@ -117,23 +149,15 @@ export default function SearchBox({
             onChange('');
             setOpen(false);
           } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            if (!hits.some((h) => h.located)) return;
+            if (!rows.some(pickable)) return;
             e.preventDefault();
-            const dir = e.key === 'ArrowDown' ? 1 : -1;
             setOpen(true);
-            // step to the next result a shopper can actually go to — an
-            // out-of-stock row is not pickable, so the keys skip over it
-            setActiveIdx((i) => {
-              const from = i < 0 ? (dir > 0 ? -1 : 0) : i;
-              for (let n = 1; n <= hits.length; n++) {
-                const j = (from + dir * n + hits.length) % hits.length;
-                if (hits[j].located) return j;
-              }
-              return i;
-            });
+            // step to the next row a shopper can actually go to — an
+            // out-of-stock item is not pickable, so the keys skip over it
+            step(e.key === 'ArrowDown' ? 1 : -1);
           } else if (e.key === 'Enter') {
-            const pick = hits[activeIdx] ?? hits.find((h) => h.located);
-            if (pick?.located) onPick(pick);
+            // the row the keys are on, else the first a shopper can go to
+            pick(rows[activeIdx] ?? rows.find(pickable));
           }
         }}
         aria-label={label}
@@ -160,20 +184,46 @@ export default function SearchBox({
       )}
       {open && (
         <div className="results-drop" id="search-results" role="listbox">
-          {hits.length === 0 ? (
-            <div className="no-results">{value.trim() ? `Nothing found for “${value.trim()}”.` : 'Start typing to find an item.'}</div>
+          {rows.length === 0 ? (
+            <div className="no-results">{value.trim() ? `Nothing found for “${value.trim()}”.` : 'Start typing to find an item or a place.'}</div>
           ) : (
-            hits.map((h, idx) => {
+            rows.map((row, idx) => {
               const active = idx === activeIdx;
-              const rowClass = `result-item ${active ? 'kbd-active' : ''} ${h.focusId && h.focusId === focusedId ? 'selected' : ''}`;
+              const rowClass = `result-item ${active ? 'kbd-active' : ''}`;
+              const scroll = active ? (el: HTMLButtonElement | null) => el?.scrollIntoView?.({ block: 'nearest' }) : undefined;
+              if (row.kind === 'section') {
+                const s = row.section;
+                // a place in the store: a square swatch in its colour (items have a round dot), what it is on the right
+                return (
+                  <button
+                    key={s.key}
+                    role="option"
+                    aria-selected={active}
+                    className={`${rowClass} section-item ${s.key === activeSectionKey ? 'selected' : ''}`}
+                    ref={scroll}
+                    onPointerEnter={() => setActiveIdx(idx)}
+                    onClick={() => pick(row)}
+                  >
+                    <span className="swatch" style={{ background: s.color }} aria-hidden />
+                    <span className="rname">
+                      <b>{highlight(s.name, value.trim())}</b>
+                      {s.sub.length > 0 && <span>{s.sub.join(' · ')}</span>}
+                    </span>
+                    <span className="rkind">{SECTION_KIND[s.kind]}</span>
+                    <span className="rgo" aria-hidden>🧭</span>
+                  </button>
+                );
+              }
+              const h = row.hit;
+              const selected = h.focusId && h.focusId === focusedId;
               const name = highlight(h.product.name, value.trim());
               return h.located ? (
                 <button
                   key={h.product.id}
                   role="option"
                   aria-selected={active}
-                  className={rowClass}
-                  ref={active ? (el) => el?.scrollIntoView?.({ block: 'nearest' }) : undefined}
+                  className={`${rowClass} ${selected ? 'selected' : ''}`}
+                  ref={scroll}
                   onPointerEnter={() => setActiveIdx(idx)}
                   onClick={() => onPick(h)}
                 >

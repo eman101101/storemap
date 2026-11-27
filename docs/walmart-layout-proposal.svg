@@ -1,0 +1,1312 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2430" height="2170" viewBox="0 0 2430 2170" font-family="-apple-system, 'Helvetica Neue', 'Segoe UI', Arial, sans-serif">
+<rect width="2430" height="2170" fill="#ffffff"/>
+<text x="52" y="28" font-size="19" font-weight="700" fill="#111827" text-anchor="start" dominant-baseline="central" opacity="1">Walmart Example — store layout</text>
+<text x="52" y="51" font-size="12" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">As built in the app, traced from the floor plan · same 96 × 62 m floor as before · aisle pitch 3.85 m · 112 shelf groups in 35 departments</text>
+<rect x="52" y="98" width="1776" height="1147" fill="#fbfaf6"/>
+<line x1="70.5" y1="98" x2="70.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="89" y1="98" x2="89" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="107.5" y1="98" x2="107.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="126" y1="98" x2="126" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="144.5" y1="98" x2="144.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="163" y1="98" x2="163" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="181.5" y1="98" x2="181.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="200" y1="98" x2="200" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="218.5" y1="98" x2="218.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="237" y1="98" x2="237" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="255.5" y1="98" x2="255.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="274" y1="98" x2="274" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="292.5" y1="98" x2="292.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="311" y1="98" x2="311" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="329.5" y1="98" x2="329.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="348" y1="98" x2="348" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="366.5" y1="98" x2="366.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="385" y1="98" x2="385" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="403.5" y1="98" x2="403.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="422" y1="98" x2="422" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="440.5" y1="98" x2="440.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="459" y1="98" x2="459" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="477.5" y1="98" x2="477.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="496" y1="98" x2="496" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="514.5" y1="98" x2="514.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="533" y1="98" x2="533" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="551.5" y1="98" x2="551.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="570" y1="98" x2="570" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="588.5" y1="98" x2="588.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="607" y1="98" x2="607" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="625.5" y1="98" x2="625.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="644" y1="98" x2="644" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="662.5" y1="98" x2="662.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="681" y1="98" x2="681" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="699.5" y1="98" x2="699.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="718" y1="98" x2="718" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="736.5" y1="98" x2="736.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="755" y1="98" x2="755" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="773.5" y1="98" x2="773.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="792" y1="98" x2="792" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="810.5" y1="98" x2="810.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="829" y1="98" x2="829" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="847.5" y1="98" x2="847.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="866" y1="98" x2="866" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="884.5" y1="98" x2="884.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="903" y1="98" x2="903" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="921.5" y1="98" x2="921.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="940" y1="98" x2="940" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="958.5" y1="98" x2="958.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="977" y1="98" x2="977" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="995.5" y1="98" x2="995.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1014" y1="98" x2="1014" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1032.5" y1="98" x2="1032.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1051" y1="98" x2="1051" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1069.5" y1="98" x2="1069.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1088" y1="98" x2="1088" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1106.5" y1="98" x2="1106.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1125" y1="98" x2="1125" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1143.5" y1="98" x2="1143.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1162" y1="98" x2="1162" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1180.5" y1="98" x2="1180.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1199" y1="98" x2="1199" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1217.5" y1="98" x2="1217.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1236" y1="98" x2="1236" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1254.5" y1="98" x2="1254.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1273" y1="98" x2="1273" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1291.5" y1="98" x2="1291.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1310" y1="98" x2="1310" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1328.5" y1="98" x2="1328.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1347" y1="98" x2="1347" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1365.5" y1="98" x2="1365.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1384" y1="98" x2="1384" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1402.5" y1="98" x2="1402.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1421" y1="98" x2="1421" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1439.5" y1="98" x2="1439.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1458" y1="98" x2="1458" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1476.5" y1="98" x2="1476.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1495" y1="98" x2="1495" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1513.5" y1="98" x2="1513.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1532" y1="98" x2="1532" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1550.5" y1="98" x2="1550.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1569" y1="98" x2="1569" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1587.5" y1="98" x2="1587.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1606" y1="98" x2="1606" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1624.5" y1="98" x2="1624.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1643" y1="98" x2="1643" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1661.5" y1="98" x2="1661.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1680" y1="98" x2="1680" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1698.5" y1="98" x2="1698.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1717" y1="98" x2="1717" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1735.5" y1="98" x2="1735.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1754" y1="98" x2="1754" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1772.5" y1="98" x2="1772.5" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1791" y1="98" x2="1791" y2="1245" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1809.5" y1="98" x2="1809.5" y2="1245" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="116.5" x2="1828" y2="116.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="135" x2="1828" y2="135" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="153.5" x2="1828" y2="153.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="172" x2="1828" y2="172" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="190.5" x2="1828" y2="190.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="209" x2="1828" y2="209" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="227.5" x2="1828" y2="227.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="246" x2="1828" y2="246" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="264.5" x2="1828" y2="264.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="283" x2="1828" y2="283" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="301.5" x2="1828" y2="301.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="320" x2="1828" y2="320" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="338.5" x2="1828" y2="338.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="357" x2="1828" y2="357" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="375.5" x2="1828" y2="375.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="394" x2="1828" y2="394" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="412.5" x2="1828" y2="412.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="431" x2="1828" y2="431" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="449.5" x2="1828" y2="449.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="468" x2="1828" y2="468" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="486.5" x2="1828" y2="486.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="505" x2="1828" y2="505" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="523.5" x2="1828" y2="523.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="542" x2="1828" y2="542" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="560.5" x2="1828" y2="560.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="579" x2="1828" y2="579" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="597.5" x2="1828" y2="597.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="616" x2="1828" y2="616" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="634.5" x2="1828" y2="634.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="653" x2="1828" y2="653" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="671.5" x2="1828" y2="671.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="690" x2="1828" y2="690" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="708.5" x2="1828" y2="708.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="727" x2="1828" y2="727" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="745.5" x2="1828" y2="745.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="764" x2="1828" y2="764" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="782.5" x2="1828" y2="782.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="801" x2="1828" y2="801" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="819.5" x2="1828" y2="819.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="838" x2="1828" y2="838" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="856.5" x2="1828" y2="856.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="875" x2="1828" y2="875" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="893.5" x2="1828" y2="893.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="912" x2="1828" y2="912" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="930.5" x2="1828" y2="930.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="949" x2="1828" y2="949" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="967.5" x2="1828" y2="967.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="986" x2="1828" y2="986" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1004.5" x2="1828" y2="1004.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1023" x2="1828" y2="1023" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="1041.5" x2="1828" y2="1041.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1060" x2="1828" y2="1060" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1078.5" x2="1828" y2="1078.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1097" x2="1828" y2="1097" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1115.5" x2="1828" y2="1115.5" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="1134" x2="1828" y2="1134" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1152.5" x2="1828" y2="1152.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1171" x2="1828" y2="1171" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1189.5" x2="1828" y2="1189.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="52" y1="1208" x2="1828" y2="1208" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="52" y1="1226.5" x2="1828" y2="1226.5" stroke="#e6e9e2" stroke-width="0.7"/>
+<text x="237" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">10</text>
+<text x="422" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">20</text>
+<text x="607" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">30</text>
+<text x="792" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">40</text>
+<text x="977" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">50</text>
+<text x="1162" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">60</text>
+<text x="1347" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">70</text>
+<text x="1532" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">80</text>
+<text x="1717" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">90</text>
+<text x="42" y="283" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">10</text>
+<text x="42" y="468" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">20</text>
+<text x="42" y="653" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">30</text>
+<text x="42" y="838" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">40</text>
+<text x="42" y="1023" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">50</text>
+<text x="42" y="1208" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">60</text>
+<text x="42" y="88" font-size="9.5" font-weight="400" fill="#8a9286" text-anchor="middle" dominant-baseline="central" opacity="1">m</text>
+<rect x="59.4" y="105.4" width="388.5" height="170.2" fill="#efc24a" fill-opacity="0.24"/>
+<rect x="540.4" y="159.05" width="603.1" height="190.55" fill="#d93a42" fill-opacity="0.24"/>
+<rect x="1143.5" y="159.05" width="277.5" height="190.55" fill="#d93a42" fill-opacity="0.24"/>
+<rect x="1469.1" y="181.25" width="240.5" height="155.4" fill="#f2a93b" fill-opacity="0.24"/>
+<rect x="1557.9" y="336.65" width="151.7" height="277.5" fill="#c9883b" fill-opacity="0.24"/>
+<rect x="1391.4" y="340.35" width="164.65" height="303.4" fill="#c9883b" fill-opacity="0.24"/>
+<rect x="1709.6" y="159.05" width="111" height="412.55" fill="#c3c7cc" fill-opacity="0.24"/>
+<rect x="59.4" y="283" width="175.75" height="425.5" fill="#f0824c" fill-opacity="0.24"/>
+<rect x="59.4" y="708.5" width="175.75" height="81.4" fill="#f0824c" fill-opacity="0.24"/>
+<rect x="410.9" y="271.9" width="166.5" height="599.4" fill="#5db1ec" fill-opacity="0.24"/>
+<rect x="59.4" y="793.6" width="18.5" height="62.9" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="77.9" y="793.6" width="155.4" height="62.9" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="59.4" y="856.5" width="173.9" height="114.7" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="172.25" y="945.3" width="168.35" height="292.3" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="59.4" y="974.9" width="112.85" height="55.5" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="59.4" y="1030.4" width="112.85" height="207.2" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="366.5" y="924.95" width="653.05" height="135.05" fill="#8b84b8" fill-opacity="0.24"/>
+<rect x="366.5" y="1072.95" width="307.1" height="90.65" fill="#2d809d" fill-opacity="0.24"/>
+<rect x="718" y="1060" width="283.05" height="103.6" fill="#9aa0a6" fill-opacity="0.24"/>
+<polygon points="1191.6,904.6 1260.05,899.05 1260.05,1085.9 1039.9,1085.9 1039.9,993.4 1130.55,993.4 1130.55,989.7" fill="#b23a5b" fill-opacity="0.24"/>
+<polygon points="988.1,1004.5 999.2,947.15 1032.5,906.45 1080.6,895.35 1130.55,913.85 1130.55,993.4 1039.9,993.4 1039.9,1004.5" fill="#86b83e" fill-opacity="0.24"/>
+<rect x="1395.1" y="797.3" width="425.5" height="53.65" fill="#55a64f" fill-opacity="0.24"/>
+<rect x="1273" y="850.95" width="547.6" height="312.65" fill="#55a64f" fill-opacity="0.24"/>
+<rect x="1062.1" y="1174.7" width="85.1" height="29.6" fill="#dfe2dc" stroke="#b9c1b0" stroke-width="1"/>
+<rect x="1176.8" y="1174.7" width="85.1" height="29.6" fill="#dfe2dc" stroke="#b9c1b0" stroke-width="1"/>
+<rect x="1473.73" y="269.13" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1483.9 279.3)"/>
+<rect x="1569.92" y="267.27" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1580.1 277.45)"/>
+<rect x="1606.92" y="369.02" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1617.1 379.2)"/>
+<rect x="1618.03" y="450.43" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1628.2 460.6)"/>
+<rect x="1608.78" y="539.22" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1618.95 549.4)"/>
+<rect x="1640.23" y="611.38" width="20.35" height="20.35" fill="#eceee9" stroke="#a3aaa0" stroke-width="1" transform="rotate(45 1650.4 621.55)"/>
+<text x="253.65" y="190.5" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Dairy</text>
+<text x="841.95" y="254.32" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Meat</text>
+<text x="1282.25" y="254.32" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Service Meat &amp; Seafood</text>
+<text x="1589.35" y="258.95" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Deli</text>
+<text x="1633.75" y="475.4" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Bakery</text>
+<text x="1473.73" y="492.05" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Bakery Kitchen</text>
+<text x="1765.1" y="365.32" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Offices</text>
+<text x="147.28" y="495.75" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<text x="147.28" y="749.2" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Health &amp; Beauty</text>
+<text x="494.15" y="571.6" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Frozen</text>
+<text x="68.65" y="825.05" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<text x="155.6" y="825.05" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Pharmacy</text>
+<text x="146.35" y="913.85" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<text x="256.43" y="1091.45" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<text x="115.82" y="1002.65" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Wine &amp; Spirits</text>
+<text x="115.82" y="1134" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<text x="693.02" y="992.48" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Checkouts</text>
+<text x="520.05" y="1118.28" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Restrooms</text>
+<text x="859.52" y="1111.8" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Customer Service</text>
+<text x="1168.15" y="1012.79" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Bank</text>
+<text x="1064.39" y="952.98" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Floral</text>
+<text x="1607.85" y="824.13" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1">Produce</text>
+<text x="1546.8" y="1007.28" font-size="13" font-weight="600" fill="#333a33" text-anchor="middle" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3.2" paint-order="stroke" stroke-linejoin="round" opacity="1"></text>
+<line x1="1310" y1="394" x2="1310" y2="664.1" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="1237.85" y1="394" x2="1237.85" y2="664.1" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="1167.55" y1="394" x2="1167.55" y2="738.1" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="1095.4" y1="394" x2="1095.4" y2="738.1" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="1025.1" y1="394" x2="1025.1" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="952.95" y1="394" x2="952.95" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="882.65" y1="394" x2="882.65" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="810.5" y1="394" x2="810.5" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="740.2" y1="394" x2="740.2" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="668.05" y1="394" x2="668.05" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="592.2" y1="394" x2="592.2" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="394.25" y1="283" x2="394.25" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="314.7" y1="283" x2="314.7" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="242.55" y1="283" x2="242.55" y2="865.75" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="170.4" y1="305.2" x2="170.4" y2="712.2" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<line x1="101.95" y1="305.2" x2="101.95" y2="773.25" stroke="#8d99a6" stroke-width="1.2" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.7"/>
+<circle cx="1310" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1310" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">1</text>
+<circle cx="1237.85" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1237.85" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">2</text>
+<circle cx="1167.55" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1167.55" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">3</text>
+<circle cx="1095.4" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1095.4" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">4</text>
+<circle cx="1025.1" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1025.1" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">5</text>
+<circle cx="952.95" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="952.95" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">6</text>
+<circle cx="882.65" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="882.65" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">7</text>
+<circle cx="810.5" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="810.5" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">8</text>
+<circle cx="740.2" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="740.2" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">9</text>
+<circle cx="668.05" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="668.05" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">10</text>
+<circle cx="592.2" cy="369.03" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="592.2" y="369.53" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">11</text>
+<circle cx="394.25" cy="258.02" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="394.25" y="258.52" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">13</text>
+<circle cx="314.7" cy="258.02" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="314.7" y="258.52" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">14</text>
+<circle cx="242.55" cy="258.02" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="242.55" y="258.52" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">15</text>
+<circle cx="170.4" cy="280.23" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="170.4" y="280.73" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">16</text>
+<circle cx="101.95" cy="280.23" r="11.47" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="101.95" y="280.73" font-size="10.5" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">17</text>
+<polygon points="89,111.88 375.75,111.88 375.75,130.38 89,130.38" fill="#efc24a" stroke="#a78834" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="83.45,133.15 83.45,381.05 66.8,381.05 66.8,133.15" fill="#efc24a" stroke="#a78834" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="150.05,201.6 355.4,201.6 355.4,234.9 150.05,234.9" fill="#efc24a" stroke="#a78834" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="547.8,199.75 743.9,199.75 743.9,223.8 547.8,223.8" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="745.75,199.75 941.85,199.75 941.85,223.8 745.75,223.8" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="941.85,199.75 1137.95,199.75 1137.95,223.8 941.85,223.8" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1158.3,194.2 1409.9,194.2 1409.9,216.4 1158.3,216.4" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="631.05,284.85 840.1,284.85 840.1,321.85 631.05,321.85" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="904.85,284.85 1113.9,284.85 1113.9,321.85 904.85,321.85" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1176.8,284.85 1291.5,284.85 1291.5,321.85 1176.8,321.85" fill="#d93a42" stroke="#98292e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1478.35,196.05 1594.9,196.05 1594.9,216.4 1478.35,216.4" fill="#f2a93b" stroke="#a97629" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1612,202.01 1682.82,267.12 1670.3,280.74 1599.48,215.63" fill="#f2a93b" stroke="#a97629" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1691.1,288.55 1691.1,381.05 1672.6,381.05 1672.6,288.55" fill="#f2a93b" stroke="#a97629" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1691.1,384.75 1691.1,525.35 1672.6,525.35 1672.6,384.75" fill="#c9883b" stroke="#8d5f29" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1695.03,525.45 1753.9,584.32 1740.82,597.4 1681.95,538.53" fill="#c9883b" stroke="#8d5f29" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1590.2,642.56 1631.38,796.24 1588.5,807.74 1547.32,654.06" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1763.25,619.7 1763.25,797.3 1735.5,797.3 1735.5,619.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1745.1,798.83 1807.75,879.01 1788.8,893.82 1726.15,813.64" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1780.83,902.75 1780.83,1041.5 1756.77,1041.5 1756.77,902.75" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1174.01,865.41 1362.38,677.04 1379.39,694.04 1191.02,882.41" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1252.13,896.86 1427.07,760.19 1441.87,779.14 1266.93,915.81" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1393.25,900.9 1446.9,900.9 1446.9,949 1393.25,949" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1478.35,854.65 1556.05,854.65 1556.05,893.5 1478.35,893.5" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1741.05,895.35 1741.05,949 1689.25,949 1689.25,895.35" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1633.75,915.62 1678.23,960.1 1633.75,1004.58 1589.27,960.1" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1519.05,993.4 1519.05,1078.5 1441.35,1078.5 1441.35,993.4" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1561.6,1013.75 1644.85,1013.75 1644.85,1089.6 1561.6,1089.6" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1361.8,1030.4 1417.3,1030.4 1417.3,1084.05 1361.8,1084.05" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1337.75,952.7 1389.55,952.7 1389.55,1000.8 1337.75,1000.8" fill="#55a64f" stroke="#3c7437" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1716.58,1042.36 1698.59,1144.39 1676.72,1140.54 1694.71,1038.51" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1017.7,902.75 1113.9,902.75 1113.9,921.25 1017.7,921.25" fill="#86b83e" stroke="#5e812b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="81.6,419.9 81.6,780.65 66.8,780.65 66.8,419.9" fill="#f0824c" stroke="#a85b35" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="147.27,305.2 147.28,704.8 123.23,704.8 123.22,305.2" fill="#f0824c" stroke="#a85b35" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="218.5,305.2 218.5,704.8 194.45,704.8 194.45,305.2" fill="#f0824c" stroke="#a85b35" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="290.65,283.01 290.65,428.7 266.6,428.7 266.6,283.01" fill="#ee8fb0" stroke="#a7647b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="290.65,428.7 290.65,574.38 266.6,574.38 266.6,428.7" fill="#ee8fb0" stroke="#a7647b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="290.65,574.38 290.65,720.07 266.6,720.07 266.6,574.38" fill="#4f7fb0" stroke="#37597b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="290.65,720.07 290.65,865.76 266.6,865.76 266.6,720.07" fill="#d9924a" stroke="#986634" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="361.88,283 361.88,399.55 337.83,399.55 337.83,283" fill="#5a6b8c" stroke="#3f4b62" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="361.88,399.55 361.88,516.1 337.83,516.1 337.83,399.55" fill="#d4788f" stroke="#945464" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="361.88,516.1 361.88,632.65 337.83,632.65 337.83,516.1" fill="#4e9bd6" stroke="#376d96" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="361.88,632.65 361.88,749.2 337.83,749.2 337.83,632.65" fill="#d98bb8" stroke="#986181" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="361.88,749.2 361.88,865.75 337.83,865.75 337.83,749.2" fill="#a5896b" stroke="#74604b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="459.93,283 459.93,473.55 424.78,473.55 424.78,283" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="459.93,473.55 459.93,664.1 424.78,664.1 424.78,473.55" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="459.93,664.1 459.93,854.65 424.78,854.65 424.78,664.1" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="563.52,283 563.52,473.55 528.38,473.55 528.38,283" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="563.52,473.55 563.52,664.1 528.38,664.1 528.38,473.55" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="563.52,664.1 563.52,854.65 528.38,854.65 528.38,664.1" fill="#5db1ec" stroke="#417ca5" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="632.9,394 632.9,551.25 620.88,551.25 620.88,394" fill="#b5723a" stroke="#7f5029" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="632.9,551.25 632.9,708.5 620.88,708.5 620.88,551.25" fill="#2e6b5e" stroke="#204b42" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="632.9,708.5 632.9,865.75 620.88,865.75 620.88,708.5" fill="#86b83e" stroke="#5e812b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="644.93,394 644.93,551.25 632.9,551.25 632.9,394" fill="#b5723a" stroke="#7f5029" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="644.93,551.25 644.93,708.5 632.9,708.5 632.9,551.25" fill="#7a8a99" stroke="#55616b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="644.93,708.5 644.93,865.75 632.9,865.75 632.9,708.5" fill="#3e4a52" stroke="#2b3439" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="704.13,394 704.13,551.25 692.1,551.25 692.1,394" fill="#2e9e6b" stroke="#206f4b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="704.13,551.25 704.13,708.5 692.1,708.5 692.1,551.25" fill="#2e9e6b" stroke="#206f4b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="704.13,708.5 704.13,865.75 692.1,865.75 692.1,708.5" fill="#c9a227" stroke="#8d711b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="716.15,394 716.15,551.25 704.13,551.25 704.13,394" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="716.15,551.25 716.15,708.5 704.13,708.5 704.13,551.25" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="716.15,708.5 716.15,865.75 704.13,865.75 704.13,708.5" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="775.35,394 775.35,551.25 763.32,551.25 763.32,394" fill="#b876c8" stroke="#81538c" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="775.35,551.25 775.35,708.5 763.32,708.5 763.32,551.25" fill="#b876c8" stroke="#81538c" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="775.35,708.5 775.35,865.75 763.32,865.75 763.32,708.5" fill="#b876c8" stroke="#81538c" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="787.38,394 787.38,551.25 775.35,551.25 775.35,394" fill="#c0626e" stroke="#86454d" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="787.38,551.25 787.38,708.5 775.35,708.5 775.35,551.25" fill="#c0626e" stroke="#86454d" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="787.38,708.5 787.38,865.75 775.35,865.75 775.35,708.5" fill="#2e6b5e" stroke="#204b42" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="846.58,394 846.58,551.25 834.55,551.25 834.55,394" fill="#7c8fcb" stroke="#57648e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="846.58,551.25 846.58,708.5 834.55,708.5 834.55,551.25" fill="#7c8fcb" stroke="#57648e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="846.58,708.5 846.58,865.75 834.55,865.75 834.55,708.5" fill="#7c8fcb" stroke="#57648e" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="858.6,394 858.6,551.25 846.57,551.25 846.57,394" fill="#c0626e" stroke="#86454d" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="858.6,551.25 858.6,708.5 846.57,708.5 846.57,551.25" fill="#c0626e" stroke="#86454d" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="858.6,708.5 858.6,865.75 846.57,865.75 846.57,708.5" fill="#c0626e" stroke="#86454d" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="917.8,394 917.8,551.25 905.77,551.25 905.77,394" fill="#f4a98a" stroke="#ab7661" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="917.8,551.25 917.8,708.5 905.77,708.5 905.77,551.25" fill="#f4a98a" stroke="#ab7661" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="917.8,708.5 917.8,865.75 905.77,865.75 905.77,708.5" fill="#f4a98a" stroke="#ab7661" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="929.83,394 929.83,551.25 917.8,551.25 917.8,394" fill="#5f8a8b" stroke="#436161" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="929.83,551.25 929.83,708.5 917.8,708.5 917.8,551.25" fill="#5f8a8b" stroke="#436161" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="929.83,708.5 929.83,865.75 917.8,865.75 917.8,708.5" fill="#5f8a8b" stroke="#436161" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="989.03,394 989.03,551.25 977,551.25 977,394" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="989.03,551.25 989.03,708.5 977,708.5 977,551.25" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="989.03,708.5 989.03,865.75 977,865.75 977,708.5" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1001.05,394 1001.05,551.25 989.02,551.25 989.02,394" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1001.05,551.25 1001.05,708.5 989.02,708.5 989.02,551.25" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1001.05,708.5 1001.05,865.75 989.02,865.75 989.02,708.5" fill="#9dc3de" stroke="#6e899b" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1060.25,394 1060.25,551.25 1048.22,551.25 1048.22,394" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1060.25,551.25 1060.25,708.5 1048.22,708.5 1048.22,551.25" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1060.25,708.5 1060.25,865.75 1048.22,865.75 1048.22,708.5" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1072.28,394 1072.28,551.25 1060.25,551.25 1060.25,394" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1072.28,551.25 1072.28,708.5 1060.25,708.5 1060.25,551.25" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1072.28,708.5 1072.28,865.75 1060.25,865.75 1060.25,708.5" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1131.48,394 1131.48,566.05 1119.45,566.05 1119.45,394" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1131.48,566.05 1131.48,738.1 1119.45,738.1 1119.45,566.05" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1143.5,394 1143.5,566.05 1131.47,566.05 1131.47,394" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1143.5,566.05 1143.5,738.1 1131.47,738.1 1131.47,566.05" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1202.7,394 1202.7,566.05 1190.67,566.05 1190.67,394" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1202.7,566.05 1202.7,738.1 1190.67,738.1 1190.67,566.05" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1214.73,394 1214.73,566.05 1202.7,566.05 1202.7,394" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1214.73,566.05 1214.73,738.1 1202.7,738.1 1202.7,566.05" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1273.92,394 1273.92,529.05 1261.9,529.05 1261.9,394" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1273.92,529.05 1273.92,664.1 1261.9,664.1 1261.9,529.05" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1285.95,394 1285.95,529.05 1273.92,529.05 1273.92,394" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1285.95,529.05 1285.95,664.1 1273.92,664.1 1273.92,529.05" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1345.15,394 1345.15,529.05 1333.13,529.05 1333.13,394" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1345.15,529.05 1345.15,664.1 1333.13,664.1 1333.13,529.05" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1357.17,394 1357.17,529.05 1345.15,529.05 1345.15,394" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="1357.17,529.05 1357.17,664.1 1345.15,664.1 1345.15,529.05" fill="#e2663a" stroke="#9e4729" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="85.29,796.22 161.4,886.92 150.06,896.43 73.95,805.73" fill="#2f9c8f" stroke="#216d64" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="90.85,1060 90.85,1226.5 66.8,1226.5 66.8,1060" fill="#7b5aa6" stroke="#563f74" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="198.15,1035.95 198.15,1185.8 175.95,1185.8 175.95,1035.95" fill="#7b5aa6" stroke="#563f74" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="257.35,1024.85 257.35,1187.65 235.15,1187.65 235.15,1024.85" fill="#7b5aa6" stroke="#563f74" stroke-width="1.2" stroke-linejoin="round"/>
+<polygon points="157.45,1213.55 288.8,1213.55 288.8,1230.2 157.45,1230.2" fill="#7b5aa6" stroke="#563f74" stroke-width="1.2" stroke-linejoin="round"/>
+<text x="232.38" y="121.13" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Milk &amp; Cream</text>
+<text x="75.13" y="257.1" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 75.13 257.1)" opacity="1">Yogurt &amp; Cheese</text>
+<text x="252.72" y="218.25" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Butter, Eggs &amp; Cream</text>
+<text x="645.85" y="211.78" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Ground Meat &amp; Pork</text>
+<text x="843.8" y="211.78" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Steaks &amp; Roasts</text>
+<text x="1039.9" y="211.78" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chicken &amp; Turkey</text>
+<text x="735.58" y="303.35" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Family Pack Meat</text>
+<text x="1009.38" y="303.35" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chicken Cuts &amp; Wings</text>
+<text x="1234.15" y="303.35" font-size="10.12" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Seafood &amp; Shellfish</text>
+<text x="1536.63" y="206.22" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Deli Counter</text>
+<text x="1641.15" y="241.38" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(42.60 1641.15 241.38)" opacity="1">Deli Cases</text>
+<text x="1681.85" y="455.05" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1681.85 455.05)" opacity="1">Bakery Bread &amp; Rolls</text>
+<text x="1589.35" y="725.15" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-105.00 1589.35 725.15)" opacity="1">Salad Bar</text>
+<text x="1749.38" y="708.5" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1749.38 708.5)" opacity="1">Bulk Foods</text>
+<text x="1766.95" y="846.33" font-size="9.95" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(52.00 1766.95 846.33)" opacity="1">Lettuce &amp; Spinach</text>
+<text x="1768.8" y="972.13" font-size="9.8" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1768.8 972.13)" opacity="1">Fresh Juices &amp; Cut Fruit</text>
+<text x="1276.7" y="779.73" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-45.00 1276.7 779.73)" opacity="1">Potatoes &amp; Onions</text>
+<text x="1347" y="838" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-38.00 1347 838)" opacity="1">Herbs &amp; Aromatics</text>
+<text x="1603.22" y="1051.67" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Root Vegetables</text>
+<text x="1696.65" y="1091.45" font-size="8.21" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-80.00 1696.65 1091.45)" opacity="1">Coffee &amp; Smoothie Bar</text>
+<text x="74.2" y="600.27" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 74.2 600.27)" opacity="1">Cosmetics &amp; Beauty</text>
+<text x="135.25" y="505" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 135.25 505)" opacity="1">Hair &amp; Skin Care</text>
+<text x="206.47" y="505" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 206.47 505)" opacity="1">Oral Care &amp; Deodorant</text>
+<text x="278.63" y="355.85" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 278.63 355.85)" opacity="1">Greeting Cards</text>
+<text x="278.63" y="501.54" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 278.63 501.54)" opacity="1">Party &amp; Celebrate</text>
+<text x="278.63" y="647.23" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 278.63 647.23)" opacity="1">Books &amp; Magazines</text>
+<text x="278.63" y="792.92" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 278.63 792.92)" opacity="1">Arts &amp; Crafts</text>
+<text x="349.85" y="341.27" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 349.85 341.27)" opacity="1">Men's</text>
+<text x="349.85" y="457.82" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 349.85 457.82)" opacity="1">Ladies'</text>
+<text x="349.85" y="574.38" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 349.85 574.38)" opacity="1">Boys</text>
+<text x="349.85" y="690.92" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 349.85 690.92)" opacity="1">Girls</text>
+<text x="349.85" y="807.48" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 349.85 807.48)" opacity="1">Shoes</text>
+<text x="442.35" y="378.28" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 442.35 378.28)" opacity="1">Frozen Pizza &amp; Meals</text>
+<text x="442.35" y="568.83" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 442.35 568.83)" opacity="1">Ice Cream &amp; Novelties</text>
+<text x="442.35" y="759.38" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 442.35 759.38)" opacity="1">Frozen Breakfast &amp; Bread</text>
+<text x="545.95" y="378.28" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 545.95 378.28)" opacity="1">Frozen Vegetables &amp; Fruit</text>
+<text x="545.95" y="568.83" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 545.95 568.83)" opacity="1">Frozen Meat &amp; Seafood</text>
+<text x="545.95" y="759.38" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 545.95 759.38)" opacity="1">Frozen Family Meals</text>
+<text x="626.89" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 626.89 472.63)" opacity="1">Hardware &amp; Fasteners</text>
+<text x="626.89" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 626.89 629.88)" opacity="1">Seasonal Décor</text>
+<text x="626.89" y="787.13" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 626.89 787.13)" opacity="1">Patio &amp; Garden</text>
+<text x="638.91" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 638.91 472.63)" opacity="1">Tools &amp; Hardware</text>
+<text x="638.91" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 638.91 629.88)" opacity="1">Auto Accessories</text>
+<text x="638.91" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 638.91 787.13)" opacity="1">Motor Oil &amp; Car Care</text>
+<text x="698.11" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 698.11 472.63)" opacity="1">Camping &amp; Outdoors</text>
+<text x="698.11" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 698.11 629.88)" opacity="1">Sports &amp; Fitness</text>
+<text x="698.11" y="787.13" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 698.11 787.13)" opacity="1">Home Office &amp; School</text>
+<text x="710.14" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 710.14 472.63)" opacity="1">Batteries &amp; Accessories</text>
+<text x="710.14" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 710.14 629.88)" opacity="1">Computers &amp; Mobile</text>
+<text x="710.14" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 710.14 787.13)" opacity="1">TV &amp; Audio</text>
+<text x="769.34" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 769.34 472.63)" opacity="1">Ride-Ons &amp; Outdoor Toys</text>
+<text x="769.34" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 769.34 629.88)" opacity="1">Games &amp; Puzzles</text>
+<text x="769.34" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 769.34 787.13)" opacity="1">Toys</text>
+<text x="781.36" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 781.36 472.63)" opacity="1">Food Storage &amp; Containers</text>
+<text x="781.36" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 781.36 629.88)" opacity="1">Dinnerware &amp; Drinkware</text>
+<text x="781.36" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 781.36 787.13)" opacity="1">Seasonal &amp; Holiday</text>
+<text x="840.56" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 840.56 472.63)" opacity="1">Storage &amp; Organization</text>
+<text x="840.56" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 840.56 629.88)" opacity="1">Bath &amp; Towels</text>
+<text x="840.56" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 840.56 787.13)" opacity="1">Bedding</text>
+<text x="852.59" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 852.59 472.63)" opacity="1">Small Appliances</text>
+<text x="852.59" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 852.59 629.88)" opacity="1">Kitchen Tools &amp; Gadgets</text>
+<text x="852.59" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 852.59 787.13)" opacity="1">Cookware &amp; Bakeware</text>
+<text x="911.79" y="472.63" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 911.79 472.63)" opacity="1">Baby Bath &amp; Care</text>
+<text x="911.79" y="629.88" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 911.79 629.88)" opacity="1">Formula &amp; Baby Food</text>
+<text x="911.79" y="787.13" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 911.79 787.13)" opacity="1">Diapers &amp; Wipes</text>
+<text x="923.81" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 923.81 472.63)" opacity="1">Pet Supplies</text>
+<text x="923.81" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 923.81 629.88)" opacity="1">Cat Food &amp; Litter</text>
+<text x="923.81" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 923.81 787.13)" opacity="1">Dog Food &amp; Treats</text>
+<text x="983.01" y="472.63" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 983.01 472.63)" opacity="1">Cleaners &amp; Air Care</text>
+<text x="983.01" y="629.88" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 983.01 629.88)" opacity="1">Dish &amp; Dishwasher</text>
+<text x="983.01" y="787.13" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 983.01 787.13)" opacity="1">Laundry &amp; Fabric Care</text>
+<text x="995.04" y="472.63" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 995.04 472.63)" opacity="1">Paper Plates &amp; Cups</text>
+<text x="995.04" y="629.88" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 995.04 629.88)" opacity="1">Paper Towels &amp; Bath Tissue</text>
+<text x="995.04" y="787.13" font-size="8.66" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 995.04 787.13)" opacity="1">Trash Bags &amp; Food Storage</text>
+<text x="1054.24" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1054.24 472.63)" opacity="1">Iced Tea &amp; Lemonade</text>
+<text x="1054.24" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1054.24 629.88)" opacity="1">Water &amp; Sports Drinks</text>
+<text x="1054.24" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1054.24 787.13)" opacity="1">Soda &amp; Energy Drinks</text>
+<text x="1066.26" y="472.63" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1066.26 472.63)" opacity="1">Spices &amp; Extracts</text>
+<text x="1066.26" y="629.88" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1066.26 629.88)" opacity="1">Oils &amp; Cooking Sprays</text>
+<text x="1066.26" y="787.13" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1066.26 787.13)" opacity="1">Peanut Butter &amp; Spreads</text>
+<text x="1125.46" y="480.02" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1125.46 480.02)" opacity="1">Baking, Flour &amp; Sugar</text>
+<text x="1125.46" y="652.07" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1125.46 652.07)" opacity="1">Condiments &amp; Sauces</text>
+<text x="1137.49" y="480.02" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1137.49 480.02)" opacity="1">Tomatoes, Broth &amp; Chili</text>
+<text x="1137.49" y="652.07" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1137.49 652.07)" opacity="1">Pasta &amp; Noodles</text>
+<text x="1196.69" y="480.02" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1196.69 480.02)" opacity="1">Canned Vegetables &amp; Fruit</text>
+<text x="1196.69" y="652.07" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1196.69 652.07)" opacity="1">Canned Soup &amp; Meals</text>
+<text x="1208.71" y="480.02" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1208.71 480.02)" opacity="1">Coffee</text>
+<text x="1208.71" y="652.07" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1208.71 652.07)" opacity="1">Tea &amp; Hot Cocoa</text>
+<text x="1267.91" y="461.52" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1267.91 461.52)" opacity="1">Oatmeal &amp; Breakfast</text>
+<text x="1267.91" y="596.58" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1267.91 596.58)" opacity="1">Cereal</text>
+<text x="1279.94" y="461.52" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1279.94 461.52)" opacity="1">Cookies &amp; Crackers</text>
+<text x="1279.94" y="596.58" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1279.94 596.58)" opacity="1">Snack Cakes &amp; Bars</text>
+<text x="1339.14" y="461.52" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1339.14 461.52)" opacity="1">Tortilla Chips &amp; Salsa</text>
+<text x="1339.14" y="596.58" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1339.14 596.58)" opacity="1">Chips &amp; Pretzels</text>
+<text x="1351.16" y="461.52" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1351.16 461.52)" opacity="1">Candy &amp; Chocolate</text>
+<text x="1351.16" y="596.58" font-size="8.66" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1351.16 596.58)" opacity="1">Nuts, Jerky &amp; Trail Mix</text>
+<text x="78.83" y="1143.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 78.83 1143.25)" opacity="1">Beer</text>
+<text x="187.05" y="1110.88" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 187.05 1110.88)" opacity="1">Wine</text>
+<text x="246.25" y="1106.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 246.25 1106.25)" opacity="1">Spirits</text>
+<text x="223.13" y="1221.88" font-size="10.09" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chilled Wine &amp; Seltzer</text>
+<rect x="396.1" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="444.2" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="492.3" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="538.55" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="584.8" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="766.1" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="810.5" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="862.3" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="908.55" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="958.5" y="939.75" width="24.98" height="101.75" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="627.35" y="941.6" width="20.35" height="40.7" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="627.35" y="1002.65" width="20.35" height="38.85" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="714.3" y="941.6" width="20.35" height="40.7" fill="#8b84b8" fill-opacity="0.55"/>
+<rect x="714.3" y="1002.65" width="20.35" height="38.85" fill="#8b84b8" fill-opacity="0.55"/>
+<path d="M59.4 105.4 L447.9 105.4 L447.9 155.35 L1820.6 155.35 L1820.6 1163.6 L1661.5 1163.6" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1606 1163.6 L1352.55 1163.6 L1352.55 1233.9 L1210.1 1233.9" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1113.9 1233.9 L977 1233.9 L977 1163.6 L910.4 1163.6 L910.4 1237.6 L59.4 1237.6 L59.4 105.4" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M447.9 155.35 L447.9 216.4" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1391.4 340.35 L1556.05 340.35 L1556.05 643.75 L1391.4 643.75 L1391.4 340.35" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1709.6 155.35 L1709.6 571.6" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M59.4 900.9 L187.05 900.9 L187.05 971.2 L59.4 971.2" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M187.05 971.2 L187.05 941.6 L266.6 941.6 L336.9 997.1 L336.9 1159.9 L303.6 1159.9" fill="none" stroke="#7c837b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M366.5 1163.6 L366.5 1072.95 L673.6 1072.95 L673.6 1163.6" fill="none" stroke="#4b5147" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M727.25 1163.6 L727.25 1084.05" fill="none" stroke="#7c837b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M980.7 1163.6 L980.7 1084.05" fill="none" stroke="#7c837b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="52" y="98" width="1776" height="1147" fill="none" stroke="#b9c1b0" stroke-width="1"/>
+<circle cx="1191.6" cy="1217.25" r="13.88" fill="#2f6f3e" stroke="#ffffff" stroke-width="2"/>
+<path d="M1191.6 1209.616 L1197.9848 1217.8052 L1193.9596 1217.8052 L1193.9596 1224.4676 L1189.2404 1224.4676 L1189.2404 1217.8052 L1185.2151999999999 1217.8052 Z" fill="#ffffff"/>
+<text x="1210.48" y="1216.25" font-size="10.5" font-weight="700" fill="#1f4d2b" text-anchor="start" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3" paint-order="stroke" stroke-linejoin="round" opacity="1">Main Entrance</text>
+<circle cx="1611.55" cy="1150.65" r="13.88" fill="#2f6f3e" stroke="#ffffff" stroke-width="2"/>
+<path d="M1611.55 1143.016 L1617.9348 1151.2052 L1613.9096 1151.2052 L1613.9096 1157.8676 L1609.1904 1157.8676 L1609.1904 1151.2052 L1605.1652 1151.2052 Z" fill="#ffffff"/>
+<text x="1630.43" y="1149.65" font-size="10.5" font-weight="700" fill="#1f4d2b" text-anchor="start" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3" paint-order="stroke" stroke-linejoin="round" opacity="1">Market Entrance</text>
+<circle cx="74.2" cy="917.55" r="8.33" fill="#3b6fd4" stroke="#ffffff" stroke-width="1.8"/>
+<text x="75.2" y="933.88" font-size="10.5" font-weight="600" fill="#2d55a8" text-anchor="start" dominant-baseline="central" stroke="#fbfaf6" stroke-width="3" paint-order="stroke" stroke-linejoin="round" transform="rotate(-90.00 75.2 933.88)" opacity="1">Drive-Up Pharmacy</text>
+<rect x="577.4" y="355.15" width="825.1" height="390.35" fill="none" stroke="#e4572e" stroke-width="1.8" stroke-dasharray="6 4"/>
+<text x="1864" y="119" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Fresh</text>
+<rect x="1864" y="135.5" width="14" height="14" rx="3" fill="#efc24a"/>
+<text x="1885" y="142.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Dairy &amp; Cheese</text>
+<text x="2118" y="143.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Top-left corner</text>
+<rect x="1864" y="153.5" width="14" height="14" rx="3" fill="#f2a93b"/>
+<text x="1885" y="160.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Deli &amp; Cheese</text>
+<text x="2118" y="161.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Deli, top right</text>
+<rect x="1864" y="171.5" width="14" height="14" rx="3" fill="#c9883b"/>
+<text x="1885" y="178.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Bakery</text>
+<text x="2118" y="179.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Right wall</text>
+<rect x="1864" y="189.5" width="14" height="14" rx="3" fill="#d93a42"/>
+<text x="1885" y="196.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Meat &amp; Seafood</text>
+<text x="2118" y="197.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Back wall</text>
+<rect x="1864" y="207.5" width="14" height="14" rx="3" fill="#55a64f"/>
+<text x="1885" y="214.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Fresh Produce</text>
+<text x="2118" y="215.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Bottom-right</text>
+<rect x="1864" y="225.5" width="14" height="14" rx="3" fill="#5db1ec"/>
+<text x="1885" y="232.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Frozen</text>
+<text x="2118" y="233.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Two blue coolers</text>
+<text x="1864" y="256" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Centre-store grocery</text>
+<rect x="1864" y="272.5" width="14" height="14" rx="3" fill="#e2663a"/>
+<text x="1885" y="279.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Snacks &amp; Candy</text>
+<text x="2118" y="280.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 1 · produce side</text>
+<rect x="1864" y="290.5" width="14" height="14" rx="3" fill="#9a6b45"/>
+<text x="1885" y="297.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Breakfast &amp; Coffee</text>
+<text x="2118" y="298.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 2</text>
+<rect x="1864" y="308.5" width="14" height="14" rx="3" fill="#9e9b33"/>
+<text x="1885" y="315.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Pantry</text>
+<text x="2118" y="316.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 3–4, Bulk Foods</text>
+<rect x="1864" y="326.5" width="14" height="14" rx="3" fill="#3d7fc2"/>
+<text x="1885" y="333.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Drinks</text>
+<text x="2118" y="334.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 5, coffee bar, juices at Produce</text>
+<text x="1864" y="357" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Household</text>
+<rect x="1864" y="373.5" width="14" height="14" rx="3" fill="#9dc3de"/>
+<text x="1885" y="380.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Paper &amp; Cleaning</text>
+<text x="2118" y="381.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 5–6</text>
+<rect x="1864" y="391.5" width="14" height="14" rx="3" fill="#5f8a8b"/>
+<text x="1885" y="398.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Pet Care</text>
+<text x="2118" y="399.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 6</text>
+<rect x="1864" y="409.5" width="14" height="14" rx="3" fill="#f4a98a"/>
+<text x="1885" y="416.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Baby</text>
+<text x="2118" y="417.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 7</text>
+<rect x="1864" y="427.5" width="14" height="14" rx="3" fill="#c0626e"/>
+<text x="1885" y="434.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Kitchen &amp; Dining</text>
+<text x="2118" y="435.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 7–8</text>
+<rect x="1864" y="445.5" width="14" height="14" rx="3" fill="#7c8fcb"/>
+<text x="1885" y="452.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Home &amp; Bedding</text>
+<text x="2118" y="453.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 8</text>
+<rect x="1864" y="463.5" width="14" height="14" rx="3" fill="#2e6b5e"/>
+<text x="1885" y="470.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Seasonal</text>
+<text x="2118" y="471.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 8 &amp; 11</text>
+<text x="1864" y="494" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Electronics, toys &amp; office</text>
+<rect x="1864" y="510.5" width="14" height="14" rx="3" fill="#b876c8"/>
+<text x="1885" y="517.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Toys &amp; Games</text>
+<text x="2118" y="518.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 9</text>
+<rect x="1864" y="528.5" width="14" height="14" rx="3" fill="#3f5ba8"/>
+<text x="1885" y="535.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Electronics</text>
+<text x="2118" y="536.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 9</text>
+<rect x="1864" y="546.5" width="14" height="14" rx="3" fill="#c9a227"/>
+<text x="1885" y="553.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Home Office</text>
+<text x="2118" y="554.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 10</text>
+<text x="2134" y="119" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Outdoor &amp; automotive</text>
+<rect x="2134" y="135.5" width="14" height="14" rx="3" fill="#2e9e6b"/>
+<text x="2155" y="142.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Sports &amp; Outdoors</text>
+<text x="2388" y="143.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 10</text>
+<rect x="2134" y="153.5" width="14" height="14" rx="3" fill="#3e4a52"/>
+<text x="2155" y="160.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Auto Care</text>
+<text x="2388" y="161.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 10</text>
+<rect x="2134" y="171.5" width="14" height="14" rx="3" fill="#7a8a99"/>
+<text x="2155" y="178.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Auto Accessories</text>
+<text x="2388" y="179.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 10</text>
+<rect x="2134" y="189.5" width="14" height="14" rx="3" fill="#b5723a"/>
+<text x="2155" y="196.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Tools &amp; Hardware</text>
+<text x="2388" y="197.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 10–11</text>
+<rect x="2134" y="207.5" width="14" height="14" rx="3" fill="#86b83e"/>
+<text x="2155" y="214.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Outdoor &amp; Garden</text>
+<text x="2388" y="215.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 11, Floral</text>
+<text x="2134" y="238" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Apparel</text>
+<rect x="2134" y="254.5" width="14" height="14" rx="3" fill="#5a6b8c"/>
+<text x="2155" y="261.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Mens</text>
+<text x="2388" y="262.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 13</text>
+<rect x="2134" y="272.5" width="14" height="14" rx="3" fill="#d4788f"/>
+<text x="2155" y="279.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Ladies</text>
+<text x="2388" y="280.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 13</text>
+<rect x="2134" y="290.5" width="14" height="14" rx="3" fill="#4e9bd6"/>
+<text x="2155" y="297.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Boys</text>
+<text x="2388" y="298.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 13</text>
+<rect x="2134" y="308.5" width="14" height="14" rx="3" fill="#d98bb8"/>
+<text x="2155" y="315.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Girls</text>
+<text x="2388" y="316.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 13</text>
+<rect x="2134" y="326.5" width="14" height="14" rx="3" fill="#a5896b"/>
+<text x="2155" y="333.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Shoes</text>
+<text x="2388" y="334.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 13</text>
+<text x="2134" y="357" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Cards, books &amp; crafts</text>
+<rect x="2134" y="373.5" width="14" height="14" rx="3" fill="#ee8fb0"/>
+<text x="2155" y="380.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Celebrate</text>
+<text x="2388" y="381.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisles 14–15</text>
+<rect x="2134" y="391.5" width="14" height="14" rx="3" fill="#4f7fb0"/>
+<text x="2155" y="398.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Books &amp; Media</text>
+<text x="2388" y="399.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 14</text>
+<rect x="2134" y="409.5" width="14" height="14" rx="3" fill="#d9924a"/>
+<text x="2155" y="416.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Arts &amp; Crafts</text>
+<text x="2388" y="417.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Aisle 14</text>
+<text x="2134" y="440" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Health</text>
+<rect x="2134" y="456.5" width="14" height="14" rx="3" fill="#f0824c"/>
+<text x="2155" y="463.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Personal Care</text>
+<text x="2388" y="464.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Orange runs, aisles 15–17</text>
+<rect x="2134" y="474.5" width="14" height="14" rx="3" fill="#2f9c8f"/>
+<text x="2155" y="481.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Pharmacy</text>
+<text x="2388" y="482.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">Bottom-left</text>
+<text x="2134" y="505" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">Wine &amp; beer</text>
+<rect x="2134" y="521.5" width="14" height="14" rx="3" fill="#7b5aa6"/>
+<text x="2155" y="528.5" font-size="12" font-weight="500" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Adult Beverages</text>
+<text x="2388" y="529.5" font-size="10" font-weight="400" fill="#6b7280" text-anchor="end" dominant-baseline="central" opacity="1">SW corner</text>
+<text x="1864" y="576" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">AREAS WITHOUT PRODUCTS</text>
+<rect x="1864" y="587" width="81" height="21" rx="10.5" fill="#8b84b8" fill-opacity="0.2" stroke="#8b84b8" stroke-opacity="0.55"/>
+<circle cx="1875" cy="597.5" r="4" fill="#8b84b8"/>
+<text x="1883" y="597.5" font-size="10.5" font-weight="600" fill="#374151" text-anchor="start" dominant-baseline="central" opacity="1">Checkouts</text>
+<rect x="1953.1" y="587" width="81" height="21" rx="10.5" fill="#2d809d" fill-opacity="0.2" stroke="#2d809d" stroke-opacity="0.55"/>
+<circle cx="1964.1" cy="597.5" r="4" fill="#2d809d"/>
+<text x="1972.1" y="597.5" font-size="10.5" font-weight="600" fill="#374151" text-anchor="start" dominant-baseline="central" opacity="1">Restrooms</text>
+<rect x="2042.1999999999998" y="587" width="122" height="21" rx="10.5" fill="#9aa0a6" fill-opacity="0.2" stroke="#9aa0a6" stroke-opacity="0.55"/>
+<circle cx="2053.2" cy="597.5" r="4" fill="#9aa0a6"/>
+<text x="2061.2" y="597.5" font-size="10.5" font-weight="600" fill="#374151" text-anchor="start" dominant-baseline="central" opacity="1">Customer Service</text>
+<rect x="2172.6" y="587" width="52" height="21" rx="10.5" fill="#b23a5b" fill-opacity="0.2" stroke="#b23a5b" stroke-opacity="0.55"/>
+<circle cx="2183.6" cy="597.5" r="4" fill="#b23a5b"/>
+<text x="2191.6" y="597.5" font-size="10.5" font-weight="600" fill="#374151" text-anchor="start" dominant-baseline="central" opacity="1">Bank</text>
+<rect x="2232.2" y="587" width="164" height="21" rx="10.5" fill="#c3c7cc" fill-opacity="0.2" stroke="#c3c7cc" stroke-opacity="0.55"/>
+<circle cx="2243.2" cy="597.5" r="4" fill="#c3c7cc"/>
+<text x="2251.2" y="597.5" font-size="10.5" font-weight="600" fill="#374151" text-anchor="start" dominant-baseline="central" opacity="1">Offices &amp; back of house</text>
+<text x="1864" y="653" font-size="10.5" font-weight="700" fill="#6b7280" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">HOW TO READ</text>
+<text x="1864" y="678" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• One colour per department. The same hex fills its shelves, tints its area</text>
+<text x="1874" y="693" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">and colours its group pin and search chip.</text>
+<text x="1864" y="710" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• Every bar is one shelf = one titled group: one pin on the map, the items</text>
+<text x="1874" y="725" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">inside its planogram.</text>
+<text x="1864" y="742" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• Centre gondolas along aisles 1–10 are double-sided: each side of the spine</text>
+<text x="1874" y="757" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">is that face’s groups, with its own items, facing the aisle beside it.</text>
+<text x="1864" y="774" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• Aisle numbers follow the plan (there is no 12 there either). The right-hand</text>
+<text x="1874" y="789" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">centre runs step shorter toward Produce, as drawn.</text>
+<text x="1864" y="806" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• The plan leaves aisles 1–17 unlabelled, so their departments here are a</text>
+<text x="1874" y="821" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">sensible default — one table to change.</text>
+<text x="1864" y="838" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">• Zoomed out, the map writes each department along the shelves that hold it,</text>
+<text x="1874" y="853" font-size="11" font-weight="400" fill="#4b5563" text-anchor="start" dominant-baseline="central" opacity="1">beside each side of an aisle; zoomed in, each shelf carries its own title.</text>
+<text x="52" y="1333" font-size="12.5" font-weight="700" fill="#c2410c" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">CENTRE AISLES AT TWICE MAP SCALE</text>
+<text x="352" y="1333" font-size="11" font-weight="400" fill="#6b7280" text-anchor="start" dominant-baseline="central" opacity="1">58 groups on the two sides of the 11 centre gondolas · left and right as seen walking from the entrance</text>
+<clipPath id="detail"><rect x="52" y="1349" width="1650.2" height="780.7"/></clipPath>
+<g clip-path="url(#detail)">
+<rect x="52" y="1349" width="1650.2" height="780.7" fill="#fbfaf6"/>
+<line x1="-961.8" y1="834.7" x2="-961.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-924.8" y1="834.7" x2="-924.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-887.8" y1="834.7" x2="-887.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-850.8" y1="834.7" x2="-850.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-813.8" y1="834.7" x2="-813.8" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-776.8" y1="834.7" x2="-776.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-739.8" y1="834.7" x2="-739.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-702.8" y1="834.7" x2="-702.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-665.8" y1="834.7" x2="-665.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-628.8" y1="834.7" x2="-628.8" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-591.8" y1="834.7" x2="-591.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-554.8" y1="834.7" x2="-554.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-517.8" y1="834.7" x2="-517.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-480.8" y1="834.7" x2="-480.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-443.8" y1="834.7" x2="-443.8" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-406.8" y1="834.7" x2="-406.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-369.8" y1="834.7" x2="-369.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-332.8" y1="834.7" x2="-332.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-295.8" y1="834.7" x2="-295.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-258.8" y1="834.7" x2="-258.8" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-221.8" y1="834.7" x2="-221.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-184.8" y1="834.7" x2="-184.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-147.8" y1="834.7" x2="-147.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-110.8" y1="834.7" x2="-110.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-73.8" y1="834.7" x2="-73.8" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-36.8" y1="834.7" x2="-36.8" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="0.2" y1="834.7" x2="0.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="37.2" y1="834.7" x2="37.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="74.2" y1="834.7" x2="74.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="111.2" y1="834.7" x2="111.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="148.2" y1="834.7" x2="148.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="185.2" y1="834.7" x2="185.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="222.2" y1="834.7" x2="222.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="259.2" y1="834.7" x2="259.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="296.2" y1="834.7" x2="296.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="333.2" y1="834.7" x2="333.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="370.2" y1="834.7" x2="370.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="407.2" y1="834.7" x2="407.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="444.2" y1="834.7" x2="444.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="481.2" y1="834.7" x2="481.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="518.2" y1="834.7" x2="518.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="555.2" y1="834.7" x2="555.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="592.2" y1="834.7" x2="592.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="629.2" y1="834.7" x2="629.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="666.2" y1="834.7" x2="666.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="703.2" y1="834.7" x2="703.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="740.2" y1="834.7" x2="740.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="777.2" y1="834.7" x2="777.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="814.2" y1="834.7" x2="814.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="851.2" y1="834.7" x2="851.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="888.2" y1="834.7" x2="888.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="925.2" y1="834.7" x2="925.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="962.2" y1="834.7" x2="962.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="999.2" y1="834.7" x2="999.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1036.2" y1="834.7" x2="1036.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1073.2" y1="834.7" x2="1073.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1110.2" y1="834.7" x2="1110.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1147.2" y1="834.7" x2="1147.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1184.2" y1="834.7" x2="1184.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1221.2" y1="834.7" x2="1221.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1258.2" y1="834.7" x2="1258.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1295.2" y1="834.7" x2="1295.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1332.2" y1="834.7" x2="1332.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1369.2" y1="834.7" x2="1369.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1406.2" y1="834.7" x2="1406.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1443.2" y1="834.7" x2="1443.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1480.2" y1="834.7" x2="1480.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1517.2" y1="834.7" x2="1517.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1554.2" y1="834.7" x2="1554.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1591.2" y1="834.7" x2="1591.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1628.2" y1="834.7" x2="1628.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1665.2" y1="834.7" x2="1665.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1702.2" y1="834.7" x2="1702.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1739.2" y1="834.7" x2="1739.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1776.2" y1="834.7" x2="1776.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1813.2" y1="834.7" x2="1813.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1850.2" y1="834.7" x2="1850.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1887.2" y1="834.7" x2="1887.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1924.2" y1="834.7" x2="1924.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="1961.2" y1="834.7" x2="1961.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="1998.2" y1="834.7" x2="1998.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2035.2" y1="834.7" x2="2035.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2072.2" y1="834.7" x2="2072.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2109.2" y1="834.7" x2="2109.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2146.2" y1="834.7" x2="2146.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="2183.2" y1="834.7" x2="2183.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2220.2" y1="834.7" x2="2220.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2257.2" y1="834.7" x2="2257.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2294.2" y1="834.7" x2="2294.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2331.2" y1="834.7" x2="2331.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="2368.2" y1="834.7" x2="2368.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2405.2" y1="834.7" x2="2405.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2442.2" y1="834.7" x2="2442.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2479.2" y1="834.7" x2="2479.2" y2="3128.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="2516.2" y1="834.7" x2="2516.2" y2="3128.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="871.7" x2="2553.2" y2="871.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="908.7" x2="2553.2" y2="908.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="945.7" x2="2553.2" y2="945.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="982.7" x2="2553.2" y2="982.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1019.7" x2="2553.2" y2="1019.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1056.7" x2="2553.2" y2="1056.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1093.7" x2="2553.2" y2="1093.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1130.7" x2="2553.2" y2="1130.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1167.7" x2="2553.2" y2="1167.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1204.7" x2="2553.2" y2="1204.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1241.7" x2="2553.2" y2="1241.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1278.7" x2="2553.2" y2="1278.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1315.7" x2="2553.2" y2="1315.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1352.7" x2="2553.2" y2="1352.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1389.7" x2="2553.2" y2="1389.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1426.7" x2="2553.2" y2="1426.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1463.7" x2="2553.2" y2="1463.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1500.7" x2="2553.2" y2="1500.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1537.7" x2="2553.2" y2="1537.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1574.7" x2="2553.2" y2="1574.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1611.7" x2="2553.2" y2="1611.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1648.7" x2="2553.2" y2="1648.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1685.7" x2="2553.2" y2="1685.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1722.7" x2="2553.2" y2="1722.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1759.7" x2="2553.2" y2="1759.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1796.7" x2="2553.2" y2="1796.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1833.7" x2="2553.2" y2="1833.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1870.7" x2="2553.2" y2="1870.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1907.7" x2="2553.2" y2="1907.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="1944.7" x2="2553.2" y2="1944.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="1981.7" x2="2553.2" y2="1981.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2018.7" x2="2553.2" y2="2018.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2055.7" x2="2553.2" y2="2055.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2092.7" x2="2553.2" y2="2092.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2129.7" x2="2553.2" y2="2129.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="2166.7" x2="2553.2" y2="2166.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2203.7" x2="2553.2" y2="2203.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2240.7" x2="2553.2" y2="2240.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2277.7" x2="2553.2" y2="2277.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2314.7" x2="2553.2" y2="2314.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="2351.7" x2="2553.2" y2="2351.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2388.7" x2="2553.2" y2="2388.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2425.7" x2="2553.2" y2="2425.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2462.7" x2="2553.2" y2="2462.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2499.7" x2="2553.2" y2="2499.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="2536.7" x2="2553.2" y2="2536.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2573.7" x2="2553.2" y2="2573.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2610.7" x2="2553.2" y2="2610.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2647.7" x2="2553.2" y2="2647.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2684.7" x2="2553.2" y2="2684.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="2721.7" x2="2553.2" y2="2721.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2758.7" x2="2553.2" y2="2758.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2795.7" x2="2553.2" y2="2795.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2832.7" x2="2553.2" y2="2832.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2869.7" x2="2553.2" y2="2869.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="2906.7" x2="2553.2" y2="2906.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2943.7" x2="2553.2" y2="2943.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="2980.7" x2="2553.2" y2="2980.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="3017.7" x2="2553.2" y2="3017.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<line x1="-998.8" y1="3054.7" x2="2553.2" y2="3054.7" stroke="#cdd4c5" stroke-width="1"/>
+<line x1="-998.8" y1="3091.7" x2="2553.2" y2="3091.7" stroke="#e6e9e2" stroke-width="0.7"/>
+<rect x="-984" y="849.5" width="777" height="340.4" fill="#efc24a" fill-opacity="0.24"/>
+<rect x="-22" y="956.8" width="1206.2" height="381.1" fill="#d93a42" fill-opacity="0.24"/>
+<rect x="1184.2" y="956.8" width="555" height="381.1" fill="#d93a42" fill-opacity="0.24"/>
+<rect x="1835.4" y="1001.2" width="481" height="310.8" fill="#f2a93b" fill-opacity="0.24"/>
+<rect x="2013" y="1312" width="303.4" height="555" fill="#c9883b" fill-opacity="0.24"/>
+<rect x="1680" y="1319.4" width="329.3" height="606.8" fill="#c9883b" fill-opacity="0.24"/>
+<rect x="2316.4" y="956.8" width="222" height="825.1" fill="#c3c7cc" fill-opacity="0.24"/>
+<rect x="-984" y="1204.7" width="351.5" height="851" fill="#f0824c" fill-opacity="0.24"/>
+<rect x="-984" y="2055.7" width="351.5" height="162.8" fill="#f0824c" fill-opacity="0.24"/>
+<rect x="-281" y="1182.5" width="333" height="1198.8" fill="#5db1ec" fill-opacity="0.24"/>
+<rect x="-984" y="2225.9" width="37" height="125.8" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="-947" y="2225.9" width="310.8" height="125.8" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="-984" y="2351.7" width="347.8" height="229.4" fill="#2f9c8f" fill-opacity="0.24"/>
+<rect x="-758.3" y="2529.3" width="336.7" height="584.6" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="-984" y="2588.5" width="225.7" height="111" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="-984" y="2699.5" width="225.7" height="414.4" fill="#7b5aa6" fill-opacity="0.24"/>
+<rect x="-369.8" y="2488.6" width="1306.1" height="270.1" fill="#8b84b8" fill-opacity="0.24"/>
+<rect x="-369.8" y="2784.6" width="614.2" height="181.3" fill="#2d809d" fill-opacity="0.24"/>
+<rect x="333.2" y="2758.7" width="566.1" height="207.2" fill="#9aa0a6" fill-opacity="0.24"/>
+<polygon points="1280.4,2447.9 1417.3,2436.8 1417.3,2810.5 977,2810.5 977,2625.5 1158.3,2625.5 1158.3,2618.1" fill="#b23a5b" fill-opacity="0.24"/>
+<polygon points="873.4,2647.7 895.6,2533 962.2,2451.6 1058.4,2429.4 1158.3,2466.4 1158.3,2625.5 977,2625.5 977,2647.7" fill="#86b83e" fill-opacity="0.24"/>
+<rect x="1687.4" y="2233.3" width="851" height="107.3" fill="#55a64f" fill-opacity="0.24"/>
+<rect x="1443.2" y="2340.6" width="1095.2" height="625.3" fill="#55a64f" fill-opacity="0.24"/>
+<line x1="1517.2" y1="1426.7" x2="1517.2" y2="1966.9" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="1372.9" y1="1426.7" x2="1372.9" y2="1966.9" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="1232.3" y1="1426.7" x2="1232.3" y2="2114.9" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="1088" y1="1426.7" x2="1088" y2="2114.9" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="947.4" y1="1426.7" x2="947.4" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="803.1" y1="1426.7" x2="803.1" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="662.5" y1="1426.7" x2="662.5" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="518.2" y1="1426.7" x2="518.2" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="377.6" y1="1426.7" x2="377.6" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="233.3" y1="1426.7" x2="233.3" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="81.6" y1="1426.7" x2="81.6" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="-314.3" y1="1204.7" x2="-314.3" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="-473.4" y1="1204.7" x2="-473.4" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="-617.7" y1="1204.7" x2="-617.7" y2="2370.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="-762" y1="1249.1" x2="-762" y2="2063.1" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<line x1="-898.9" y1="1249.1" x2="-898.9" y2="2185.2" stroke="#8d99a6" stroke-width="1.7999999999999998" stroke-dasharray="10 12" stroke-linecap="round" opacity="0.7"/>
+<circle cx="1517.2" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="1517.2" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">1</text>
+<circle cx="1372.9" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="1372.9" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">2</text>
+<circle cx="1232.3" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="1232.3" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">3</text>
+<circle cx="1088" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="1088" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">4</text>
+<circle cx="947.4" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="947.4" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">5</text>
+<circle cx="803.1" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="803.1" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">6</text>
+<circle cx="662.5" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="662.5" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">7</text>
+<circle cx="518.2" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="518.2" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">8</text>
+<circle cx="377.6" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="377.6" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">9</text>
+<circle cx="233.3" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="233.3" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">10</text>
+<circle cx="81.6" cy="1376.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="81.6" y="1377.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">11</text>
+<circle cx="-314.3" cy="1154.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="-314.3" y="1155.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">13</text>
+<circle cx="-473.4" cy="1154.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="-473.4" y="1155.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">14</text>
+<circle cx="-617.7" cy="1154.75" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="-617.7" y="1155.25" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">15</text>
+<circle cx="-762" cy="1199.15" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="-762" y="1199.65" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">16</text>
+<circle cx="-898.9" cy="1199.15" r="22.94" fill="#ffffff" stroke="#4b5563" stroke-width="2.08"/>
+<text x="-898.9" y="1199.65" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">17</text>
+<polygon points="-924.8,862.45 -351.3,862.45 -351.3,899.45 -924.8,899.45" fill="#efc24a" stroke="#a78834" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-935.9,905 -935.9,1400.8 -969.2,1400.8 -969.2,905" fill="#efc24a" stroke="#a78834" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-802.7,1041.9 -392,1041.9 -392,1108.5 -802.7,1108.5" fill="#efc24a" stroke="#a78834" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-7.2,1038.2 385,1038.2 385,1086.3 -7.2,1086.3" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="388.7,1038.2 780.9,1038.2 780.9,1086.3 388.7,1086.3" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="780.9,1038.2 1173.1,1038.2 1173.1,1086.3 780.9,1086.3" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1213.8,1027.1 1717,1027.1 1717,1071.5 1213.8,1071.5" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="159.3,1208.4 577.4,1208.4 577.4,1282.4 159.3,1282.4" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="706.9,1208.4 1125,1208.4 1125,1282.4 706.9,1282.4" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1250.8,1208.4 1480.2,1208.4 1480.2,1282.4 1250.8,1282.4" fill="#d93a42" stroke="#98292e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1853.9,1030.8 2087,1030.8 2087,1071.5 1853.9,1071.5" fill="#f2a93b" stroke="#a97629" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2121.21,1042.72 2262.83,1172.95 2237.79,1200.18 2096.17,1069.95" fill="#f2a93b" stroke="#a97629" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2279.4,1215.8 2279.4,1400.8 2242.4,1400.8 2242.4,1215.8" fill="#f2a93b" stroke="#a97629" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2279.4,1408.2 2279.4,1689.4 2242.4,1689.4 2242.4,1408.2" fill="#c9883b" stroke="#8d5f29" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2287.26,1689.6 2405,1807.34 2378.84,1833.5 2261.1,1715.76" fill="#c9883b" stroke="#8d5f29" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2077.61,1923.83 2159.97,2231.19 2074.19,2254.17 1991.83,1946.81" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2423.7,1878.1 2423.7,2233.3 2368.2,2233.3 2368.2,1878.1" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2387.41,2236.36 2512.7,2396.72 2474.79,2426.34 2349.5,2265.98" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2458.85,2444.2 2458.85,2721.7 2410.75,2721.7 2410.75,2444.2" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1245.22,2369.52 1621.97,1992.77 1655.98,2026.78 1279.23,2403.53" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1401.45,2432.43 1751.33,2159.07 1780.95,2196.97 1431.07,2470.33" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1683.7,2440.5 1791,2440.5 1791,2536.7 1683.7,2536.7" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1853.9,2348 2009.3,2348 2009.3,2425.7 1853.9,2425.7" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2379.3,2429.4 2379.3,2536.7 2275.7,2536.7 2275.7,2429.4" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2164.7,2469.95 2253.65,2558.9 2164.7,2647.85 2075.75,2558.9" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1935.3,2625.5 1935.3,2795.7 1779.9,2795.7 1779.9,2625.5" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2020.4,2666.2 2186.9,2666.2 2186.9,2817.9 2020.4,2817.9" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1620.8,2699.5 1731.8,2699.5 1731.8,2806.8 1620.8,2806.8" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1572.7,2544.1 1676.3,2544.1 1676.3,2640.3 1572.7,2640.3" fill="#55a64f" stroke="#3c7437" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="2330.35,2723.43 2294.37,2927.48 2250.65,2919.77 2286.63,2715.72" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="932.6,2444.2 1125,2444.2 1125,2481.2 932.6,2481.2" fill="#86b83e" stroke="#5e812b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-939.6,1478.5 -939.6,2200 -969.2,2200 -969.2,1478.5" fill="#f0824c" stroke="#a85b35" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-808.25,1249.1 -808.25,2048.3 -856.35,2048.3 -856.35,1249.1" fill="#f0824c" stroke="#a85b35" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-665.8,1249.1 -665.8,2048.3 -713.9,2048.3 -713.9,1249.1" fill="#f0824c" stroke="#a85b35" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-521.5,1204.72 -521.5,1496.09 -569.6,1496.09 -569.6,1204.72" fill="#ee8fb0" stroke="#a7647b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-521.5,1496.09 -521.5,1787.47 -569.6,1787.47 -569.6,1496.09" fill="#ee8fb0" stroke="#a7647b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-521.5,1787.47 -521.5,2078.84 -569.6,2078.84 -569.6,1787.47" fill="#4f7fb0" stroke="#37597b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-521.5,2078.84 -521.5,2370.22 -569.6,2370.22 -569.6,2078.84" fill="#d9924a" stroke="#986634" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-379.05,1204.7 -379.05,1437.8 -427.15,1437.8 -427.15,1204.7" fill="#5a6b8c" stroke="#3f4b62" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-379.05,1437.8 -379.05,1670.9 -427.15,1670.9 -427.15,1437.8" fill="#d4788f" stroke="#945464" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-379.05,1670.9 -379.05,1904 -427.15,1904 -427.15,1670.9" fill="#4e9bd6" stroke="#376d96" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-379.05,1904 -379.05,2137.1 -427.15,2137.1 -427.15,1904" fill="#d98bb8" stroke="#986181" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-379.05,2137.1 -379.05,2370.2 -427.15,2370.2 -427.15,2137.1" fill="#a5896b" stroke="#74604b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-182.95,1204.7 -182.95,1585.8 -253.25,1585.8 -253.25,1204.7" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-182.95,1585.8 -182.95,1966.9 -253.25,1966.9 -253.25,1585.8" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-182.95,1966.9 -182.95,2348 -253.25,2348 -253.25,1966.9" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="24.25,1204.7 24.25,1585.8 -46.05,1585.8 -46.05,1204.7" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="24.25,1585.8 24.25,1966.9 -46.05,1966.9 -46.05,1585.8" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="24.25,1966.9 24.25,2348 -46.05,2348 -46.05,1966.9" fill="#5db1ec" stroke="#417ca5" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="163,1426.7 163,1741.2 138.95,1741.2 138.95,1426.7" fill="#b5723a" stroke="#7f5029" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="163,1741.2 163,2055.7 138.95,2055.7 138.95,1741.2" fill="#2e6b5e" stroke="#204b42" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="163,2055.7 163,2370.2 138.95,2370.2 138.95,2055.7" fill="#86b83e" stroke="#5e812b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="187.05,1426.7 187.05,1741.2 163,1741.2 163,1426.7" fill="#b5723a" stroke="#7f5029" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="187.05,1741.2 187.05,2055.7 163,2055.7 163,1741.2" fill="#7a8a99" stroke="#55616b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="187.05,2055.7 187.05,2370.2 163,2370.2 163,2055.7" fill="#3e4a52" stroke="#2b3439" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="305.45,1426.7 305.45,1741.2 281.4,1741.2 281.4,1426.7" fill="#2e9e6b" stroke="#206f4b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="305.45,1741.2 305.45,2055.7 281.4,2055.7 281.4,1741.2" fill="#2e9e6b" stroke="#206f4b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="305.45,2055.7 305.45,2370.2 281.4,2370.2 281.4,2055.7" fill="#c9a227" stroke="#8d711b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="329.5,1426.7 329.5,1741.2 305.45,1741.2 305.45,1426.7" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="329.5,1741.2 329.5,2055.7 305.45,2055.7 305.45,1741.2" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="329.5,2055.7 329.5,2370.2 305.45,2370.2 305.45,2055.7" fill="#3f5ba8" stroke="#2c4076" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="447.9,1426.7 447.9,1741.2 423.85,1741.2 423.85,1426.7" fill="#b876c8" stroke="#81538c" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="447.9,1741.2 447.9,2055.7 423.85,2055.7 423.85,1741.2" fill="#b876c8" stroke="#81538c" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="447.9,2055.7 447.9,2370.2 423.85,2370.2 423.85,2055.7" fill="#b876c8" stroke="#81538c" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="471.95,1426.7 471.95,1741.2 447.9,1741.2 447.9,1426.7" fill="#c0626e" stroke="#86454d" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="471.95,1741.2 471.95,2055.7 447.9,2055.7 447.9,1741.2" fill="#c0626e" stroke="#86454d" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="471.95,2055.7 471.95,2370.2 447.9,2370.2 447.9,2055.7" fill="#2e6b5e" stroke="#204b42" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="590.35,1426.7 590.35,1741.2 566.3,1741.2 566.3,1426.7" fill="#7c8fcb" stroke="#57648e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="590.35,1741.2 590.35,2055.7 566.3,2055.7 566.3,1741.2" fill="#7c8fcb" stroke="#57648e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="590.35,2055.7 590.35,2370.2 566.3,2370.2 566.3,2055.7" fill="#7c8fcb" stroke="#57648e" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="614.4,1426.7 614.4,1741.2 590.35,1741.2 590.35,1426.7" fill="#c0626e" stroke="#86454d" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="614.4,1741.2 614.4,2055.7 590.35,2055.7 590.35,1741.2" fill="#c0626e" stroke="#86454d" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="614.4,2055.7 614.4,2370.2 590.35,2370.2 590.35,2055.7" fill="#c0626e" stroke="#86454d" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="732.8,1426.7 732.8,1741.2 708.75,1741.2 708.75,1426.7" fill="#f4a98a" stroke="#ab7661" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="732.8,1741.2 732.8,2055.7 708.75,2055.7 708.75,1741.2" fill="#f4a98a" stroke="#ab7661" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="732.8,2055.7 732.8,2370.2 708.75,2370.2 708.75,2055.7" fill="#f4a98a" stroke="#ab7661" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="756.85,1426.7 756.85,1741.2 732.8,1741.2 732.8,1426.7" fill="#5f8a8b" stroke="#436161" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="756.85,1741.2 756.85,2055.7 732.8,2055.7 732.8,1741.2" fill="#5f8a8b" stroke="#436161" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="756.85,2055.7 756.85,2370.2 732.8,2370.2 732.8,2055.7" fill="#5f8a8b" stroke="#436161" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="875.25,1426.7 875.25,1741.2 851.2,1741.2 851.2,1426.7" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="875.25,1741.2 875.25,2055.7 851.2,2055.7 851.2,1741.2" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="875.25,2055.7 875.25,2370.2 851.2,2370.2 851.2,2055.7" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="899.3,1426.7 899.3,1741.2 875.25,1741.2 875.25,1426.7" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="899.3,1741.2 899.3,2055.7 875.25,2055.7 875.25,1741.2" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="899.3,2055.7 899.3,2370.2 875.25,2370.2 875.25,2055.7" fill="#9dc3de" stroke="#6e899b" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1017.7,1426.7 1017.7,1741.2 993.65,1741.2 993.65,1426.7" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1017.7,1741.2 1017.7,2055.7 993.65,2055.7 993.65,1741.2" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1017.7,2055.7 1017.7,2370.2 993.65,2370.2 993.65,2055.7" fill="#3d7fc2" stroke="#2b5988" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1041.75,1426.7 1041.75,1741.2 1017.7,1741.2 1017.7,1426.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1041.75,1741.2 1041.75,2055.7 1017.7,2055.7 1017.7,1741.2" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1041.75,2055.7 1041.75,2370.2 1017.7,2370.2 1017.7,2055.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1160.15,1426.7 1160.15,1770.8 1136.1,1770.8 1136.1,1426.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1160.15,1770.8 1160.15,2114.9 1136.1,2114.9 1136.1,1770.8" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1184.2,1426.7 1184.2,1770.8 1160.15,1770.8 1160.15,1426.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1184.2,1770.8 1184.2,2114.9 1160.15,2114.9 1160.15,1770.8" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1302.6,1426.7 1302.6,1770.8 1278.55,1770.8 1278.55,1426.7" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1302.6,1770.8 1302.6,2114.9 1278.55,2114.9 1278.55,1770.8" fill="#9e9b33" stroke="#6f6d24" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1326.65,1426.7 1326.65,1770.8 1302.6,1770.8 1302.6,1426.7" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1326.65,1770.8 1326.65,2114.9 1302.6,2114.9 1302.6,1770.8" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1445.05,1426.7 1445.05,1696.8 1421,1696.8 1421,1426.7" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1445.05,1696.8 1445.05,1966.9 1421,1966.9 1421,1696.8" fill="#9a6b45" stroke="#6c4b30" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1469.1,1426.7 1469.1,1696.8 1445.05,1696.8 1445.05,1426.7" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1469.1,1696.8 1469.1,1966.9 1445.05,1966.9 1445.05,1696.8" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1587.5,1426.7 1587.5,1696.8 1563.45,1696.8 1563.45,1426.7" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1587.5,1696.8 1587.5,1966.9 1563.45,1966.9 1563.45,1696.8" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1611.55,1426.7 1611.55,1696.8 1587.5,1696.8 1587.5,1426.7" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="1611.55,1696.8 1611.55,1966.9 1587.5,1966.9 1587.5,1696.8" fill="#e2663a" stroke="#9e4729" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-932.22,2231.14 -780.01,2412.54 -802.68,2431.56 -954.89,2250.16" fill="#2f9c8f" stroke="#216d64" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-921.1,2758.7 -921.1,3091.7 -969.2,3091.7 -969.2,2758.7" fill="#7b5aa6" stroke="#563f74" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-706.5,2710.6 -706.5,3010.3 -750.9,3010.3 -750.9,2710.6" fill="#7b5aa6" stroke="#563f74" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-588.1,2688.4 -588.1,3014 -632.5,3014 -632.5,2688.4" fill="#7b5aa6" stroke="#563f74" stroke-width="1.92" stroke-linejoin="round"/>
+<polygon points="-787.9,3065.8 -525.2,3065.8 -525.2,3099.1 -787.9,3099.1" fill="#7b5aa6" stroke="#563f74" stroke-width="1.92" stroke-linejoin="round"/>
+<text x="-638.05" y="880.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Milk &amp; Cream</text>
+<text x="-952.55" y="1152.9" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -952.55 1152.9)" opacity="1">Yogurt &amp; Cheese</text>
+<text x="-597.35" y="1075.2" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Butter, Eggs &amp; Cream</text>
+<text x="188.9" y="1062.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Ground Meat &amp; Pork</text>
+<text x="584.8" y="1062.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Steaks &amp; Roasts</text>
+<text x="977" y="1062.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chicken &amp; Turkey</text>
+<text x="368.35" y="1245.4" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Family Pack Meat</text>
+<text x="915.95" y="1245.4" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chicken Cuts &amp; Wings</text>
+<text x="1365.5" y="1245.4" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Seafood &amp; Shellfish</text>
+<text x="1970.45" y="1051.15" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" opacity="1">Deli Counter</text>
+<text x="2179.5" y="1121.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(42.60 2179.5 1121.45)" opacity="1">Deli Cases</text>
+<text x="2260.9" y="1308.3" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 2260.9 1308.3)" opacity="1">Sliced Meats &amp; Cheese</text>
+<text x="2260.9" y="1548.8" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 2260.9 1548.8)" opacity="1">Bakery Bread &amp; Rolls</text>
+<text x="2333.05" y="1761.55" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(45.00 2333.05 1761.55)" opacity="1">Donuts, Cakes &amp; Pastries</text>
+<text x="2075.9" y="2089" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-105.00 2075.9 2089)" opacity="1">Salad Bar</text>
+<text x="2395.95" y="2055.7" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 2395.95 2055.7)" opacity="1">Bulk Foods</text>
+<text x="2431.1" y="2331.35" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(52.00 2431.1 2331.35)" opacity="1">Lettuce &amp; Spinach</text>
+<text x="2434.8" y="2582.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 2434.8 2582.95)" opacity="1">Fresh Juices &amp; Cut Fruit</text>
+<text x="1450.6" y="2198.15" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-45.00 1450.6 2198.15)" opacity="1">Potatoes &amp; Onions</text>
+<text x="1591.2" y="2314.7" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-38.00 1591.2 2314.7)" opacity="1">Herbs &amp; Aromatics</text>
+<text x="1737.35" y="2488.6" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Melons &amp; Citrus</text>
+<text x="1931.6" y="2386.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Berries &amp; Grapes</text>
+<text x="2327.5" y="2483.05" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Apples &amp; Pears</text>
+<text x="2164.7" y="2558.9" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Tomatoes &amp; Peppers</text>
+<text x="2103.65" y="2742.05" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Root Vegetables</text>
+<text x="1676.3" y="2753.15" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Mushrooms &amp; Corn</text>
+<text x="1624.5" y="2592.2" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Avocados &amp; Exotics</text>
+<text x="2290.5" y="2821.6" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-80.00 2290.5 2821.6)" opacity="1">Coffee &amp; Smoothie Bar</text>
+<text x="-954.4" y="1839.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -954.4 1839.25)" opacity="1">Cosmetics &amp; Beauty</text>
+<text x="-832.3" y="1648.7" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -832.3 1648.7)" opacity="1">Hair &amp; Skin Care</text>
+<text x="-689.85" y="1648.7" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -689.85 1648.7)" opacity="1">Oral Care &amp; Deodorant</text>
+<text x="-545.55" y="1350.41" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -545.55 1350.41)" opacity="1">Greeting Cards</text>
+<text x="-545.55" y="1641.78" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -545.55 1641.78)" opacity="1">Party &amp; Celebrate</text>
+<text x="-545.55" y="1933.16" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -545.55 1933.16)" opacity="1">Books &amp; Magazines</text>
+<text x="-545.55" y="2224.53" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -545.55 2224.53)" opacity="1">Arts &amp; Crafts</text>
+<text x="-403.1" y="1321.25" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -403.1 1321.25)" opacity="1">Men's</text>
+<text x="-403.1" y="1554.35" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -403.1 1554.35)" opacity="1">Ladies'</text>
+<text x="-403.1" y="1787.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -403.1 1787.45)" opacity="1">Boys</text>
+<text x="-403.1" y="2020.55" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -403.1 2020.55)" opacity="1">Girls</text>
+<text x="-403.1" y="2253.65" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -403.1 2253.65)" opacity="1">Shoes</text>
+<text x="-218.1" y="1395.25" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -218.1 1395.25)" opacity="1">Frozen Pizza &amp; Meals</text>
+<text x="-218.1" y="1776.35" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -218.1 1776.35)" opacity="1">Ice Cream &amp; Novelties</text>
+<text x="-218.1" y="2157.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -218.1 2157.45)" opacity="1">Frozen Breakfast &amp; Bread</text>
+<text x="-10.9" y="1395.25" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -10.9 1395.25)" opacity="1">Frozen Vegetables &amp; Fruit</text>
+<text x="-10.9" y="1776.35" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -10.9 1776.35)" opacity="1">Frozen Meat &amp; Seafood</text>
+<text x="-10.9" y="2157.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -10.9 2157.45)" opacity="1">Frozen Family Meals</text>
+<text x="150.97" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 150.97 1583.95)" opacity="1">Hardware &amp; Fasteners</text>
+<text x="150.97" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 150.97 1898.45)" opacity="1">Seasonal Décor</text>
+<text x="150.97" y="2212.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 150.97 2212.95)" opacity="1">Patio &amp; Garden</text>
+<text x="175.03" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 175.03 1583.95)" opacity="1">Tools &amp; Hardware</text>
+<text x="175.03" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 175.03 1898.45)" opacity="1">Auto Accessories</text>
+<text x="175.03" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 175.03 2212.95)" opacity="1">Motor Oil &amp; Car Care</text>
+<text x="293.42" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 293.42 1583.95)" opacity="1">Camping &amp; Outdoors</text>
+<text x="293.42" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 293.42 1898.45)" opacity="1">Sports &amp; Fitness</text>
+<text x="293.42" y="2212.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 293.42 2212.95)" opacity="1">Home Office &amp; School</text>
+<text x="317.48" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 317.48 1583.95)" opacity="1">Batteries &amp; Accessories</text>
+<text x="317.48" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 317.48 1898.45)" opacity="1">Computers &amp; Mobile</text>
+<text x="317.48" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 317.48 2212.95)" opacity="1">TV &amp; Audio</text>
+<text x="435.88" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 435.88 1583.95)" opacity="1">Ride-Ons &amp; Outdoor Toys</text>
+<text x="435.88" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 435.88 1898.45)" opacity="1">Games &amp; Puzzles</text>
+<text x="435.88" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 435.88 2212.95)" opacity="1">Toys</text>
+<text x="459.92" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 459.92 1583.95)" opacity="1">Food Storage &amp; Containers</text>
+<text x="459.92" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 459.92 1898.45)" opacity="1">Dinnerware &amp; Drinkware</text>
+<text x="459.92" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 459.92 2212.95)" opacity="1">Seasonal &amp; Holiday</text>
+<text x="578.33" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 578.33 1583.95)" opacity="1">Storage &amp; Organization</text>
+<text x="578.33" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 578.33 1898.45)" opacity="1">Bath &amp; Towels</text>
+<text x="578.33" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 578.33 2212.95)" opacity="1">Bedding</text>
+<text x="602.38" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 602.38 1583.95)" opacity="1">Small Appliances</text>
+<text x="602.38" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 602.38 1898.45)" opacity="1">Kitchen Tools &amp; Gadgets</text>
+<text x="602.38" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 602.38 2212.95)" opacity="1">Cookware &amp; Bakeware</text>
+<text x="720.78" y="1583.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 720.78 1583.95)" opacity="1">Baby Bath &amp; Care</text>
+<text x="720.78" y="1898.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 720.78 1898.45)" opacity="1">Formula &amp; Baby Food</text>
+<text x="720.78" y="2212.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 720.78 2212.95)" opacity="1">Diapers &amp; Wipes</text>
+<text x="744.83" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 744.83 1583.95)" opacity="1">Pet Supplies</text>
+<text x="744.83" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 744.83 1898.45)" opacity="1">Cat Food &amp; Litter</text>
+<text x="744.83" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 744.83 2212.95)" opacity="1">Dog Food &amp; Treats</text>
+<text x="863.23" y="1583.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 863.23 1583.95)" opacity="1">Cleaners &amp; Air Care</text>
+<text x="863.23" y="1898.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 863.23 1898.45)" opacity="1">Dish &amp; Dishwasher</text>
+<text x="863.23" y="2212.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 863.23 2212.95)" opacity="1">Laundry &amp; Fabric Care</text>
+<text x="887.28" y="1583.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 887.28 1583.95)" opacity="1">Paper Plates &amp; Cups</text>
+<text x="887.28" y="1898.45" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 887.28 1898.45)" opacity="1">Paper Towels &amp; Bath Tissue</text>
+<text x="887.28" y="2212.95" font-size="10.4" font-weight="700" fill="#1b1f27" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 887.28 2212.95)" opacity="1">Trash Bags &amp; Food Storage</text>
+<text x="1005.67" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1005.67 1583.95)" opacity="1">Iced Tea &amp; Lemonade</text>
+<text x="1005.67" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1005.67 1898.45)" opacity="1">Water &amp; Sports Drinks</text>
+<text x="1005.67" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1005.67 2212.95)" opacity="1">Soda &amp; Energy Drinks</text>
+<text x="1029.73" y="1583.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1029.73 1583.95)" opacity="1">Spices &amp; Extracts</text>
+<text x="1029.73" y="1898.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1029.73 1898.45)" opacity="1">Oils &amp; Cooking Sprays</text>
+<text x="1029.73" y="2212.95" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1029.73 2212.95)" opacity="1">Peanut Butter &amp; Spreads</text>
+<text x="1148.12" y="1598.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1148.12 1598.75)" opacity="1">Baking, Flour &amp; Sugar</text>
+<text x="1148.12" y="1942.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1148.12 1942.85)" opacity="1">Condiments &amp; Sauces</text>
+<text x="1172.17" y="1598.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1172.17 1598.75)" opacity="1">Tomatoes, Broth &amp; Chili</text>
+<text x="1172.17" y="1942.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1172.17 1942.85)" opacity="1">Pasta &amp; Noodles</text>
+<text x="1290.58" y="1598.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1290.58 1598.75)" opacity="1">Canned Vegetables &amp; Fruit</text>
+<text x="1290.58" y="1942.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1290.58 1942.85)" opacity="1">Canned Soup &amp; Meals</text>
+<text x="1314.62" y="1598.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1314.62 1598.75)" opacity="1">Coffee</text>
+<text x="1314.62" y="1942.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1314.62 1942.85)" opacity="1">Tea &amp; Hot Cocoa</text>
+<text x="1433.02" y="1561.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1433.02 1561.75)" opacity="1">Oatmeal &amp; Breakfast</text>
+<text x="1433.02" y="1831.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1433.02 1831.85)" opacity="1">Cereal</text>
+<text x="1457.08" y="1561.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1457.08 1561.75)" opacity="1">Cookies &amp; Crackers</text>
+<text x="1457.08" y="1831.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1457.08 1831.85)" opacity="1">Snack Cakes &amp; Bars</text>
+<text x="1575.48" y="1561.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1575.48 1561.75)" opacity="1">Tortilla Chips &amp; Salsa</text>
+<text x="1575.48" y="1831.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1575.48 1831.85)" opacity="1">Chips &amp; Pretzels</text>
+<text x="1599.52" y="1561.75" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1599.52 1561.75)" opacity="1">Candy &amp; Chocolate</text>
+<text x="1599.52" y="1831.85" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 1599.52 1831.85)" opacity="1">Nuts, Jerky &amp; Trail Mix</text>
+<text x="-945.15" y="2925.2" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -945.15 2925.2)" opacity="1">Beer</text>
+<text x="-728.7" y="2860.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -728.7 2860.45)" opacity="1">Wine</text>
+<text x="-610.3" y="2851.2" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(-90.00 -610.3 2851.2)" opacity="1">Spirits</text>
+<text x="-656.55" y="3082.45" font-size="10.4" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="central" opacity="1">Chilled Wine &amp; Seltzer</text>
+<path d="M-984 849.5 L-207 849.5 L-207 949.4 L2538.4 949.4 L2538.4 2965.9 L2220.2 2965.9" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2109.2 2965.9 L1602.3 2965.9 L1602.3 3106.5 L1317.4 3106.5" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1125 3106.5 L851.2 3106.5 L851.2 2965.9 L718 2965.9 L718 3113.9 L-984 3113.9 L-984 849.5" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-207 949.4 L-207 1071.5" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1680 1319.4 L2009.3 1319.4 L2009.3 1926.2 L1680 1926.2 L1680 1319.4" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2316.4 949.4 L2316.4 1781.9" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-984 2440.5 L-728.7 2440.5 L-728.7 2581.1 L-984 2581.1" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-728.7 2581.1 L-728.7 2521.9 L-569.6 2521.9 L-429 2632.9 L-429 2958.5 L-495.6 2958.5" fill="none" stroke="#7c837b" stroke-width="2.4000000000000004" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-369.8 2965.9 L-369.8 2784.6 L244.4 2784.6 L244.4 2965.9" fill="none" stroke="#4b5147" stroke-width="4.4799999999999995" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M351.7 2965.9 L351.7 2806.8" fill="none" stroke="#7c837b" stroke-width="2.4000000000000004" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M858.6 2965.9 L858.6 2806.8" fill="none" stroke="#7c837b" stroke-width="2.4000000000000004" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="-998.8" y="834.7" width="3552" height="2294" fill="none" stroke="#b9c1b0" stroke-width="1"/>
+</g>
+<rect x="52" y="1349" width="1650.2" height="780.7" fill="none" stroke="#e4572e" stroke-width="1.8"/>
+<text x="1742.2" y="1355" font-size="12.5" font-weight="700" fill="#c2410c" text-anchor="start" dominant-baseline="central" letter-spacing="0.3" opacity="1">AISLE DIRECTORY</text>
+<text x="1892.2" y="1355" font-size="11" font-weight="400" fill="#6b7280" text-anchor="start" dominant-baseline="central" opacity="1">walking from the entrance toward the back wall</text>
+<circle cx="1753.2" cy="1383" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1383.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">1</text>
+<text x="1772.2" y="1383" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 1  ·  runs up from Produce</text>
+<path d="M1780.2 1397.5 L1773.7 1402 L1780.2 1406.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1402" r="4" fill="#e2663a"/>
+<text x="1814.2" y="1402" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Cookies &amp; Crackers</text>
+<circle cx="1938" cy="1402" r="4" fill="#e2663a"/>
+<text x="1946" y="1402" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Snack Cakes &amp; Bars</text>
+<path d="M1773.7 1413.5 L1780.2 1418 L1773.7 1422.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1418" r="4" fill="#e2663a"/>
+<text x="1814.2" y="1418" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Tortilla Chips &amp; Salsa</text>
+<circle cx="1962.4" cy="1418" r="4" fill="#e2663a"/>
+<text x="1970.4" y="1418" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Chips &amp; Pretzels</text>
+<path d="M1773.7 1429.5 L1780.2 1434 L1773.7 1438.5 Z" fill="#9ca3af"/>
+<text x="1787.2" y="1434" font-size="11" font-weight="400" fill="#6b7280" text-anchor="start" dominant-baseline="central" opacity="1">Produce side:</text>
+<circle cx="1875.2" cy="1434" r="4" fill="#e2663a"/>
+<text x="1883.2" y="1434" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Candy &amp; Chocolate</text>
+<circle cx="2000.9" cy="1434" r="4" fill="#e2663a"/>
+<text x="2008.9" y="1434" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Nuts, Jerky &amp; Trail Mix</text>
+<circle cx="1753.2" cy="1460" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1460.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">2</text>
+<text x="1772.2" y="1460" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 2</text>
+<path d="M1780.2 1474.5 L1773.7 1479 L1780.2 1483.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1479" r="4" fill="#9a6b45"/>
+<text x="1814.2" y="1479" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Coffee</text>
+<circle cx="1864.8" cy="1479" r="4" fill="#9a6b45"/>
+<text x="1872.8" y="1479" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Tea &amp; Hot Cocoa</text>
+<path d="M1773.7 1490.5 L1780.2 1495 L1773.7 1499.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1495" r="4" fill="#9a6b45"/>
+<text x="1814.2" y="1495" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Oatmeal &amp; Breakfast</text>
+<circle cx="1944.1" cy="1495" r="4" fill="#9a6b45"/>
+<text x="1952.1" y="1495" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Cereal</text>
+<circle cx="1753.2" cy="1521" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1521.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">3</text>
+<text x="1772.2" y="1521" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 3</text>
+<path d="M1780.2 1535.5 L1773.7 1540 L1780.2 1544.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1540" r="4" fill="#9e9b33"/>
+<text x="1814.2" y="1540" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Tomatoes, Broth &amp; Chili</text>
+<circle cx="1968.5" cy="1540" r="4" fill="#9e9b33"/>
+<text x="1976.5" y="1540" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Pasta &amp; Noodles</text>
+<path d="M1773.7 1551.5 L1780.2 1556 L1773.7 1560.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1556" r="4" fill="#9e9b33"/>
+<text x="1814.2" y="1556" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Canned Vegetables &amp; Fruit</text>
+<circle cx="1980.7" cy="1556" r="4" fill="#9e9b33"/>
+<text x="1988.7" y="1556" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Canned Soup &amp; Meals</text>
+<circle cx="1753.2" cy="1582" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1582.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">4</text>
+<text x="1772.2" y="1582" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 4</text>
+<path d="M1780.2 1596.5 L1773.7 1601 L1780.2 1605.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1601" r="4" fill="#9e9b33"/>
+<text x="1814.2" y="1601" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Spices &amp; Extracts</text>
+<circle cx="1931.9" cy="1601" r="4" fill="#9e9b33"/>
+<text x="1939.9" y="1601" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Oils &amp; Cooking Sprays</text>
+<circle cx="2082" cy="1601" r="4" fill="#9e9b33"/>
+<text x="2090" y="1601" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Peanut Butter &amp; Spreads</text>
+<path d="M1773.7 1612.5 L1780.2 1617 L1773.7 1621.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1617" r="4" fill="#9e9b33"/>
+<text x="1814.2" y="1617" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Baking, Flour &amp; Sugar</text>
+<circle cx="1956.3" cy="1617" r="4" fill="#9e9b33"/>
+<text x="1964.3" y="1617" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Condiments &amp; Sauces</text>
+<circle cx="1753.2" cy="1643" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1643.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">5</text>
+<text x="1772.2" y="1643" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 5</text>
+<path d="M1780.2 1657.5 L1773.7 1662 L1780.2 1666.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1662" r="4" fill="#9dc3de"/>
+<text x="1814.2" y="1662" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Paper Plates &amp; Cups</text>
+<circle cx="1944.1" cy="1662" r="4" fill="#9dc3de"/>
+<text x="1952.1" y="1662" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Paper Towels &amp; Bath Tissue</text>
+<circle cx="2124.7" cy="1662" r="4" fill="#9dc3de"/>
+<text x="2132.7" y="1662" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Trash Bags &amp; Food Storage</text>
+<path d="M1773.7 1673.5 L1780.2 1678 L1773.7 1682.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1678" r="4" fill="#3d7fc2"/>
+<text x="1814.2" y="1678" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Iced Tea &amp; Lemonade</text>
+<circle cx="1944.1" cy="1678" r="4" fill="#3d7fc2"/>
+<text x="1952.1" y="1678" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Water &amp; Sports Drinks</text>
+<circle cx="2094.2" cy="1678" r="4" fill="#3d7fc2"/>
+<text x="2102.2" y="1678" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Soda &amp; Energy Drinks</text>
+<circle cx="1753.2" cy="1704" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1704.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">6</text>
+<text x="1772.2" y="1704" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 6</text>
+<path d="M1780.2 1718.5 L1773.7 1723 L1780.2 1727.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1723" r="4" fill="#5f8a8b"/>
+<text x="1814.2" y="1723" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Pet Supplies</text>
+<circle cx="1901.4" cy="1723" r="4" fill="#5f8a8b"/>
+<text x="1909.4" y="1723" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Cat Food &amp; Litter</text>
+<circle cx="2027.1000000000001" cy="1723" r="4" fill="#5f8a8b"/>
+<text x="2035.1000000000001" y="1723" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Dog Food &amp; Treats</text>
+<path d="M1773.7 1734.5 L1780.2 1739 L1773.7 1743.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1739" r="4" fill="#9dc3de"/>
+<text x="1814.2" y="1739" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Cleaners &amp; Air Care</text>
+<circle cx="1944.1" cy="1739" r="4" fill="#9dc3de"/>
+<text x="1952.1" y="1739" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Dish &amp; Dishwasher</text>
+<circle cx="2069.7999999999997" cy="1739" r="4" fill="#9dc3de"/>
+<text x="2077.7999999999997" y="1739" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Laundry &amp; Fabric Care</text>
+<circle cx="1753.2" cy="1765" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1765.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">7</text>
+<text x="1772.2" y="1765" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 7</text>
+<path d="M1780.2 1779.5 L1773.7 1784 L1780.2 1788.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1784" r="4" fill="#c0626e"/>
+<text x="1814.2" y="1784" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Small Appliances</text>
+<circle cx="1925.8" cy="1784" r="4" fill="#c0626e"/>
+<text x="1933.8" y="1784" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Kitchen Tools &amp; Gadgets</text>
+<circle cx="2088.1" cy="1784" r="4" fill="#c0626e"/>
+<text x="2096.1" y="1784" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Cookware &amp; Bakeware</text>
+<path d="M1773.7 1795.5 L1780.2 1800 L1773.7 1804.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1800" r="4" fill="#f4a98a"/>
+<text x="1814.2" y="1800" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Baby Bath &amp; Care</text>
+<circle cx="1925.8" cy="1800" r="4" fill="#f4a98a"/>
+<text x="1933.8" y="1800" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Formula &amp; Baby Food</text>
+<circle cx="2063.7" cy="1800" r="4" fill="#f4a98a"/>
+<text x="2071.7" y="1800" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Diapers &amp; Wipes</text>
+<circle cx="1753.2" cy="1826" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1826.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">8</text>
+<text x="1772.2" y="1826" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 8</text>
+<path d="M1780.2 1840.5 L1773.7 1845 L1780.2 1849.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1845" r="4" fill="#c0626e"/>
+<text x="1814.2" y="1845" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Food Storage &amp; Containers</text>
+<circle cx="1980.7" cy="1845" r="4" fill="#c0626e"/>
+<text x="1988.7" y="1845" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Dinnerware &amp; Drinkware</text>
+<circle cx="2136.9" cy="1845" r="4" fill="#2e6b5e"/>
+<text x="2144.9" y="1845" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Seasonal &amp; Holiday</text>
+<path d="M1773.7 1856.5 L1780.2 1861 L1773.7 1865.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1861" r="4" fill="#7c8fcb"/>
+<text x="1814.2" y="1861" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Storage &amp; Organization</text>
+<circle cx="1962.4" cy="1861" r="4" fill="#7c8fcb"/>
+<text x="1970.4" y="1861" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Bath &amp; Towels</text>
+<circle cx="2063.7000000000003" cy="1861" r="4" fill="#7c8fcb"/>
+<text x="2071.7000000000003" y="1861" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Bedding</text>
+<circle cx="1753.2" cy="1887" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1887.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">9</text>
+<text x="1772.2" y="1887" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 9</text>
+<path d="M1780.2 1901.5 L1773.7 1906 L1780.2 1910.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1906" r="4" fill="#3f5ba8"/>
+<text x="1814.2" y="1906" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Batteries &amp; Accessories</text>
+<circle cx="1968.5" cy="1906" r="4" fill="#3f5ba8"/>
+<text x="1976.5" y="1906" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Computers &amp; Mobile</text>
+<circle cx="2100.3" cy="1906" r="4" fill="#3f5ba8"/>
+<text x="2108.3" y="1906" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">TV &amp; Audio</text>
+<path d="M1773.7 1917.5 L1780.2 1922 L1773.7 1926.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1922" r="4" fill="#b876c8"/>
+<text x="1814.2" y="1922" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Ride-Ons &amp; Outdoor Toys</text>
+<circle cx="1968.5" cy="1922" r="4" fill="#b876c8"/>
+<text x="1976.5" y="1922" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Games &amp; Puzzles</text>
+<circle cx="2082" cy="1922" r="4" fill="#b876c8"/>
+<text x="2090" y="1922" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Toys</text>
+<circle cx="1753.2" cy="1948" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="1948.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">10</text>
+<text x="1772.2" y="1948" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 10</text>
+<path d="M1780.2 1962.5 L1773.7 1967 L1780.2 1971.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1967" r="4" fill="#b5723a"/>
+<text x="1814.2" y="1967" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Tools &amp; Hardware</text>
+<circle cx="1925.8" cy="1967" r="4" fill="#7a8a99"/>
+<text x="1933.8" y="1967" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Auto Accessories</text>
+<circle cx="2045.3999999999999" cy="1967" r="4" fill="#3e4a52"/>
+<text x="2053.3999999999996" y="1967" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Motor Oil &amp; Car Care</text>
+<path d="M1773.7 1978.5 L1780.2 1983 L1773.7 1987.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="1983" r="4" fill="#2e9e6b"/>
+<text x="1814.2" y="1983" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Camping &amp; Outdoors</text>
+<circle cx="1938" cy="1983" r="4" fill="#2e9e6b"/>
+<text x="1946" y="1983" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Sports &amp; Fitness</text>
+<circle cx="2057.6" cy="1983" r="4" fill="#c9a227"/>
+<text x="2065.6" y="1983" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Home Office &amp; School</text>
+<circle cx="1753.2" cy="2009" r="11" fill="#ffffff" stroke="#4b5563" stroke-width="1.3"/>
+<text x="1753.2" y="2009.5" font-size="11" font-weight="700" fill="#1f2937" text-anchor="middle" dominant-baseline="central" opacity="1">11</text>
+<text x="1772.2" y="2009" font-size="10.5" font-weight="700" fill="#374151" text-anchor="start" dominant-baseline="central" letter-spacing="0.4" opacity="1">AISLE 11  ·  beside the frozen coolers</text>
+<path d="M1780.2 2023.5 L1773.7 2028 L1780.2 2032.5 Z" fill="#9ca3af"/>
+<text x="1787.2" y="2028" font-size="11" font-weight="400" fill="#6b7280" text-anchor="start" dominant-baseline="central" opacity="1">Frozen coolers (doors, one side)</text>
+<path d="M1773.7 2039.5 L1780.2 2044 L1773.7 2048.5 Z" fill="#9ca3af"/>
+<circle cx="1806.2" cy="2044" r="4" fill="#b5723a"/>
+<text x="1814.2" y="2044" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Hardware &amp; Fasteners</text>
+<circle cx="1950.2" cy="2044" r="4" fill="#2e6b5e"/>
+<text x="1958.2" y="2044" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Seasonal Décor</text>
+<circle cx="2057.6" cy="2044" r="4" fill="#86b83e"/>
+<text x="2065.6" y="2044" font-size="11" font-weight="400" fill="#1f2937" text-anchor="start" dominant-baseline="central" opacity="1">Patio &amp; Garden</text>
+</svg>

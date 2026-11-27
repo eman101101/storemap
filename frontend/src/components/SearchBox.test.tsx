@@ -5,6 +5,7 @@ import SearchBox, { searchHits } from './SearchBox';
 import { buildGroupPins } from '../lib/itemGroups';
 import { parseElement } from '../types';
 import type { PublicStorePayload, ProductLocation } from '../types';
+import type { Section } from '../lib/sections';
 
 /* one shelf group: a titled map pin + two planogram-only items, plus an item
    that is not on the map at all */
@@ -153,6 +154,44 @@ describe('SearchBox', () => {
     expect(onChange).toHaveBeenLastCalledWith('');
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(onChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('lists the store’s sections above the items: a swatch, what it is, and the keys treat them as rows', () => {
+    const dairy: Section = {
+      key: 'dept:Dairy', kind: 'department', name: 'Dairy & Cheese', also: [], color: '#efc24a',
+      sub: ['Aisle 1', '1 shelf'], shelfIds: ['dairy'], box: { x0: 0, y0: 0, x1: 10, y1: 1 },
+    };
+    const onPickSection = vi.fn();
+    const { onPick } = setup({ sections: [dairy], onPickSection, activeSectionKey: 'dept:Dairy' });
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(3); // the section, then the two items that are on the map
+    expect(options[0]).toHaveTextContent('Dairy & Cheese');
+    expect(options[0]).toHaveTextContent('Aisle 1 · 1 shelf');
+    expect(options[0]!.querySelector('.rkind')!.textContent).toBe('Department');
+    expect(options[0]).toHaveClass('selected'); // the section the map is on reads selected
+    expect(options[0]!.querySelector('.swatch')).toBeTruthy(); // a square swatch where an item has its dot
+    expect(options[1]).toHaveTextContent('Greek Yogurt 500g');
+
+    fireEvent.click(options[0]!);
+    expect(onPickSection).toHaveBeenCalledWith(dairy);
+    expect(onPick).not.toHaveBeenCalled();
+    // the arrow keys step from the section into the items, and Enter picks the row they are on
+    const input = screen.getByRole('combobox');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ product: expect.objectContaining({ id: 'yogurt' }) }));
+  });
+
+  it('Enter with no arrow keys picks the first row — the section, when one answers', () => {
+    const aisle: Section = { key: 'aisle:a1', kind: 'aisle', name: 'Aisle 1', also: [], color: '#4b5563', sub: [], shelfIds: [], box: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+    const onPickSection = vi.fn();
+    const { onPick } = setup({ sections: [aisle], onPickSection });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    expect(onPickSection).toHaveBeenCalledWith(aisle);
+    expect(onPick).not.toHaveBeenCalled();
   });
 
   it('says so when nothing matches', () => {

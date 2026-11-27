@@ -434,15 +434,19 @@ before the next:
 | 2 (default) | extruded solids (walls, shelves, stocking) | the actual store |
 | overlay | billboards, pin dots, labels | always readable |
 
-**Within a layer, order comes from an axis-aligned BSP tree** (`buildFaceBSP`,
+**Within a layer, order comes from a BSP tree** (`buildFaceBSP`,
 `traverseFaceBSP`): the tree is built once per data change — each node splits space
-with a *face's own plane* (its thinnest axis), partitioning the remaining faces into
-below/above and splitting any face that straddles the plane. Traversing from the eye
-(draw far side first, then the node's coplanar faces, then the near side) yields an
-**exact back-to-front order for any camera position** — shelves never paint over
-walls that occlude them, walls never cover shelves in front of them, and nothing
-disappears, at any angle. This replaced an earlier centroid-depth heuristic whose
-quantization showed up as dashes along walls at grazing angles.
+with the *plane its largest face lies in*, at whatever angle that face is (only a
+line, which has no plane of its own, falls back to the axis it has no extent along),
+partitioning the remaining faces into below/above and splitting any face that
+straddles the plane. Traversing from the eye (draw far side first, then the node's
+coplanar faces, then the near side) yields an **exact back-to-front order for any
+camera position** — shelves never paint over walls that occlude them, walls never
+cover shelves in front of them, and nothing disappears, at any angle. This replaced
+an earlier centroid-depth heuristic whose quantization showed up as dashes along
+walls at grazing angles. The split plane must be the face's true one: snapping it to
+the nearest axis is fine while every fixture is axis-aligned, but a floor of angled
+shelves (the Walmart plan's 45° runs) was cut along planes that were not its own.
 
 The stocking blocks no longer backface-cull: with exact ordering, a block on a far
 face is simply covered by the shelf's own near faces.

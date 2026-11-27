@@ -364,9 +364,9 @@ The Canvas2D 3D engine (ARCHITECTURE §8 covers the concepts):
   facing blocks on shelf-wall anchors — never camera-culled),
   `routeFaces` (0.45 m ribbon at z 0.07 + corner joint patches, layer 1).
 - **Ordering**: `buildFaceBSP`/`traverseFaceBSP`/`buildSceneBSP` — per-layer
-  axis-aligned BSP; the splitter is each node's largest face's own plane
-  (thinnest axis); straddling faces are split; traversal from the eye is an
-  exact back-to-front order at any angle.
+  BSP; the splitter is each node's largest face's own plane, at any angle (a
+  line falls back to its thinnest axis); straddling faces are split; traversal
+  from the eye is an exact back-to-front order at any angle.
 - **`renderScene`**: project+clip all faces (or walk the cached BSP), backdrop
   gradient, stroke/fill in order, then the overlay pass — marker billboards,
   product pin dots (on-wall or pole fallback), labels (depth-scaled, identical
@@ -392,7 +392,12 @@ to `fitCamera`), the route (`computeRoute` on selection; badge with m + minutes)
 `flySeq` (flight only via the ✈ button), pin visibility (none until searched;
 only the selected item after), document title, and 2D/3D persistence in
 localStorage. Dropdown: keyboard nav (↑/↓/Enter/Esc), `<mark>` match
-highlighting, click-outside close.
+highlighting, click-outside close. **Sections in the search** (`lib/sections.ts`):
+beside its items, the dropdown lists the store's own places — aisles,
+departments, areas and shelf groups (`buildSections`, queried by
+`searchSections`) — and picking one (`focusSection`) lights up and outlines its
+shelves, frames it in 2D, draws the walk to its nearest shelf and lists its
+shelf groups in a card.
 
 **`MapCanvas.tsx`** — the 2D SVG engine + all editor interactions
 (ARCHITECTURE §6): viewport transforms, pinch/wheel zoom, the interaction state
@@ -402,6 +407,18 @@ draft previews for poly tools, the **pick filter** (`products` mode: clicks
 grab the nearest pin — never fixtures; click selects + flashes the Products
 row, drag moves and upserts on release), `ProductPin` rendering anchored to
 `shelfAnchor` (dot on the shelf line), route overlay polylines.
+**Names by zoom** (`shelfTitle`, the `deptBadges` memo, `groupPinTitle`): a
+shelf's title runs along it, in the ink its fill reads with (`inkOn`),
+shrinking with the shelf's depth on screen and not written below 8 px; a
+display table's goes across its middle. Every turned line on the map — a
+title, an aisle's name, a badge — reads by one rule (`readingAngle`): left to
+right or bottom to top, never upside down, and never top to bottom once it is
+steeper than 60°. While a shelf's title is hidden, a department badge stands
+in: on an upright run (a gondola face) it is written along the face, set just
+beside it when another stands back to back with it — so each side of an aisle
+reads its own department, at any zoom; any other shelf has it under its run,
+clear of titled shelves, area names and the other badges. A group pin's title
+follows the same size rule.
 `setPointerCapture` is guarded (synthetic-pointer safety).
 
 **`Map3D.tsx`** — Canvas host (ARCHITECTURE §8.11): owns size/DPR, cached

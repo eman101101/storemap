@@ -6,7 +6,7 @@ import {
   resizeRect, rotateRectTo, shelfAnchor, snap, snapPt, translateElement,
   type FitInsets, type HandleType, type Viewport, type WorldPt,
 } from '../lib/geometry';
-import { TYPE_COLOR, TYPE_STROKE, shade } from '../lib/mapColors';
+import { TYPE_COLOR, TYPE_STROKE, shade, inkOn } from '../lib/mapColors';
 import { placeGlyph } from '../lib/placeSymbols';
 import { aisleContents, shelfContents } from '../lib/aisleInfo';
 import { shelfDepartments } from '../lib/departments';
@@ -96,7 +96,10 @@ interface Props {
    *  `insets` the screen edges kept clear for controls laid over the map. */
   fit?: { pad?: number; insets?: FitInsets };
   zoomCommand?: { k: number; seq: number };
-  focus?: { x: number; y: number; seq: number };
+  /** centre + zoom on a world point; with `box`, frame that part of the floor instead (a section).
+   *  `keepTop` is how much of the canvas under the top edge that framing keeps clear, for the card
+   *  naming the section (default 220 px: a card with a list of shelves in it). */
+  focus?: { x: number; y: number; seq: number; box?: { x0: number; y0: number; x1: number; y1: number; keepTop?: number } };
   /** Walking route polyline (world meters) drawn under the pins. */
   route?: WorldPt[] | null;
   /** Multi-stop trip: numbered markers at each ordered stop (A1). */
@@ -286,6 +289,23 @@ export default function MapCanvas(props: Props) {
   // Center + zoom on a world point (e.g. a tapped search result).
   useEffect(() => {
     if (!focus) return;
+    if (focus.box) {
+      // a section of the floor: frame it whole, in the room the controls and
+      // the cards laid over the map leave (never closer in than 14 × 10 m)
+      const b = focus.box;
+      const base = fitProps?.insets ?? { top: 0, bottom: 60, left: 16, right: 84 };
+      // the section's own card sits under the top bar (or across the width, on a phone, where the
+      // badges also stack at the foot)
+      const insets = fitProps
+        ? { ...base, top: (base.top ?? 0) + (b.keepTop ?? 220) + 4, bottom: (base.bottom ?? 0) + 56 }
+        : { ...base, top: b.keepTop ?? 220 };
+      const fit = fitViewport(Math.max(b.x1 - b.x0, 14), Math.max(b.y1 - b.y0, 10), size.w, size.h, fitProps?.pad ?? 24, insets);
+      const s = Math.min(30, fit.scale);
+      const cx = (insets.left ?? 0) + (size.w - (insets.left ?? 0) - (insets.right ?? 0)) / 2;
+      const cy = (insets.top ?? 0) + (size.h - (insets.top ?? 0) - (insets.bottom ?? 0)) / 2;
+      onViewport({ scale: s, tx: cx - ((b.x0 + b.x1) / 2) * s, ty: cy - ((b.y0 + b.y1) / 2) * s });
+      return;
+    }
     const s = Math.min(30, Math.max(8, size.w / 22));
     onViewport({ scale: s, tx: size.w / 2 - focus.x * s, ty: size.h / 2 - focus.y * s });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -919,56 +939,230 @@ export default function MapCanvas(props: Props) {
   // (or label). meta.groupLabelHidden on the shelf hides JUST this pin title:
   // it is independent of the shelf's own labelHidden (the element panel's
   // "Hide label"), so hiding one never hides the other.
-  const groupPinTitle = (loc: ProductLocation): string | undefined => {
+  // is the shelf's own title on the map at this zoom?
+  const titleOnShelf = (el: MapElement): boolean => {
+    if (el.shape !== 'rect' || !el.label || !showLabels) return false;
+    const o = labelOptions(el);
+    if (o.hidden) return false;
+    return shelfTitle(el.geom as RectGeom, el.label, o.px / scale, scale) !== 'hidden';
+  };
+  const groupPinName = (loc: ProductLocation): string | undefined => {
     const el = groupOwnerShelf(loc);
     if (!el) return undefined;
     try {
       if (JSON.parse(el.meta || '{}').groupLabelHidden === true) return undefined;
     } catch { /* visible */ }
-    return groupDisplayName(el) || undefined;
+    const title = groupDisplayName(el) || undefined;
+    // the shelf's own title is written along it and says the same: no second copy
+    if (title && title === el.label && titleOnShelf(el)) return undefined;
+    return title;
   };
+  // two group titles closer than a text height — the two faces of a gondola,
+  // zoomed out — would lie over each other: the one further right or down
+  // gives way, as a shelf's own title does when the shelf is too thin for it
+  // …set as the shelf's own title is: along a long shelf it shrinks with the
+  // shelf's depth on screen and is not written once too small to read — so a
+  // floor zoomed out shows departments, in the editor as in the viewer, and
+  // zooming in brings the groups' names
+  const groupPinSpec = (loc: ProductLocation): { title: string; px: number } | undefined => {
+    const title = groupPinName(loc);
+    if (!title) return undefined;
+    const r = groupOwnerShelf(loc)?.geom as RectGeom | undefined;
+    if (!r || groupOwnerShelf(loc)?.shape !== 'rect') return { title, px: 13 };
+    const across = Math.min(r.w, r.h);
+    const run = Math.max(r.w, r.h);
+    if (run < across * 1.3) return { title, px: 13 }; // a display table: its name above it, as any pin's
+    const px = Math.min(13, across * scale * 0.72, (run * scale - 6) / (title.length * 0.56));
+    return px < TITLE_MIN_PX ? undefined : { title, px };
+  };
+  const crowded = useMemo(() => {
+    const kept: TitleBox[] = [];
+    const out = new Set<string>();
+    const shown = (strips ? groupsPins : renderedPins)
+      .filter((p) => groupPinIds.has(p.location.id))
+      .map((p) => {
+        const loc = p.location;
+        const spec = groupPinSpec(loc);
+        return spec && pinTitleBox(loc.id, pinAnchors.get(loc.id) ?? shelfAnchor({ x: loc.x, y: loc.y }, elements), spec, scale);
+      })
+      .filter((b): b is TitleBox => !!b)
+      .sort((a, b) => a.cx - b.cx || a.cy - b.cy);
+    for (const b of shown) {
+      if (kept.some((k) => b.x0 < k.x1 && b.x1 > k.x0 && b.y0 < k.y1 && b.y1 > k.y0)) out.add(b.id);
+      else kept.push(b);
+    }
+    return out;
+  }, [strips, groupsPins, renderedPins, groupPinIds, pinAnchors, elements, floorEls, showLabels, scale]);
+  const groupPinTitle = (loc: ProductLocation) => (crowded.has(loc.id) ? undefined : groupPinSpec(loc));
   // …and its colour follows the owning shelf's colour when the owner set one
   const groupPinColor = (loc: ProductLocation): string | undefined => groupOwnerShelf(loc)?.color || undefined;
   // hovering a group pin outlines its shelf — the click target preview
   const [hoverGroupShelfId, setHoverGroupShelfId] = useState<string | null>(null);
-  const deptBadgeIds = useMemo(() => {
+  // department badges name the area each shelf belongs to — what a floor shows
+  // in place of group titles while it is zoomed out. A shelf gets none when
+  // its own title is on the map (that says more than its department), when a
+  // zone that names its department covers it, or when it stands directly
+  // beside or behind another of its department: a gondola's two faces of one
+  // department are named once.
+  // Where it is written depends on the shelf. An upright run (a gondola face)
+  // carries it ALONG the face — where that face's own title will be once the
+  // floor is zoomed in enough for it, turned the same way — set just beside
+  // the face when another stands back to back with it, so each side of an
+  // aisle reads its own department. (Under the run's end instead, a floor of
+  // gondolas gets lines of text wider than its aisles: legible at the full
+  // view, piled over each other and over the aisles' names a step further
+  // out.) Any other shelf — a wall run, a table — has it under its run.
+  const deptBadges = useMemo(() => {
     if (!departments) return null;
-    const skip = new Set<string>();
-    const rects = new Map<string, RectGeom>();
-    for (const [id] of departments) {
+    // every area: one that names a department — by its label or by the department
+    // it records — speaks for the shelves inside it. (An area is often two
+    // rects, a tint and a named piece on open floor; the tint covers the shelves.)
+    const zones = floorEls.filter((e) => e.type === 'zone' && e.shape === 'rect');
+    type Box = { x0: number; x1: number; y0: number; y1: number };
+    interface Run extends Box { id: string; dept: string; gone: boolean; shiftX: number; upright: boolean }
+    const runs: Run[] = [];
+    for (const [id, dept] of departments) {
       const el = shelfById.get(id);
-      if (el?.shape === 'rect') rects.set(id, el.geom as RectGeom);
-    }
-    for (const [id, r] of rects) {
-      const d = departments.get(id)!;
-      for (const [oid, or] of rects) {
-        if (oid === id || departments.get(oid) !== d) continue;
-        // o sits directly behind (above) s with the same department → s skips
-        if (Math.abs(or.x - r.x) < (r.w + or.w) / 2 && r.y - or.y > 0 && r.y - or.y < 4.5) {
-          skip.add(id);
-          break;
-        }
-      }
-    }
-    // no duplicate labels: the badge is suppressed when the shelf's own title
-    // already says it, or when a labelled zone carrying the same department
-    // name covers the shelf — that rendered as double/triple text piles
-    const labelledZones = floorEls.filter((e) => e.type === 'zone' && e.shape === 'rect' && e.label);
-    for (const [id] of departments) {
-      const el = shelfById.get(id);
-      if (!el) continue;
-      const dept = departments.get(id)!;
-      if (dept === el.label) { skip.add(id); continue; }
-      if (el.shape !== 'rect') continue;
+      if (!el || el.shape !== 'rect') continue;
       const r = el.geom as RectGeom;
       const center = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
-      for (const z of labelledZones) {
-        if (z.label !== dept) continue;
-        if (elementContains(z, center, 0)) { skip.add(id); break; }
+      if (dept === el.label || titleOnShelf(el)) continue;
+      if (zones.some((z) => (z.label === dept || zoneDepartment(z) === dept) && elementContains(z, center, 0))) continue;
+      const xs = rectCorners(r).map((p) => p.x);
+      const ys = rectCorners(r).map((p) => p.y);
+      // a long shelf runs along its width (a tall one, upward): upright when that is within 30° of vertical
+      const along = ((r.h > r.w ? r.rot + 90 : r.rot) * Math.PI) / 180;
+      runs.push({ id, dept, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), gone: false, shiftX: 0, upright: Math.abs(Math.sin(along)) > 0.87 });
+    }
+    // two runs of one department side by side (a gondola's two faces): the left
+    // one drops its badge and the right one centres over the pair
+    for (const a of runs) {
+      for (const b of runs) {
+        if (a === b || a.gone || b.gone || a.dept !== b.dept) continue;
+        if (b.x0 - a.x1 < -0.05 || b.x0 - a.x1 > 0.6) continue;
+        const sideBySide = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        if (sideBySide < 0.5 * Math.min(a.y1 - a.y0, b.y1 - b.y0)) continue;
+        a.gone = true;
+        b.shiftX = (a.x0 + a.x1 - b.x0 - b.x1) / 4;
       }
     }
-    return { map: departments, skip };
-  }, [departments, shelfById, floorEls]);
+    // one department in rows set one behind another (within 4.5 m): the lower
+    // row drops its badge, so the upper one's sits in the gap between the pair
+    for (const a of runs) {
+      if (a.upright) continue; // an upright run's badge is on the run, not in the gap
+      for (const b of runs) {
+        if (a === b || a.gone || b.gone || a.dept !== b.dept) continue;
+        const shared = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+        if (shared < 0.5 * Math.min(a.x1 - a.x0, b.x1 - b.x0)) continue;
+        if (a.y0 + a.y1 - (b.y0 + b.y1) > 0 && Math.hypot(a.x0 + a.x1 - b.x0 - b.x1, a.y0 + a.y1 - b.y0 - b.y1) < 9) { a.gone = true; break; }
+      }
+    }
+    const kept = runs.filter((x) => !x.gone);
+    const out: { id: string; dept: string; x: number; y: number; rotate: number; size: number }[] = [];
+
+    // ── upright runs: along the face ──
+    if (kept.some((k) => k.upright)) {
+      const boxOf = (el: MapElement): Box => {
+        const xs = rectCorners(el.geom as RectGeom).map((p) => p.x);
+        const ys = rectCorners(el.geom as RectGeom).map((p) => p.y);
+        return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+      };
+      const uprightShelves = floorEls.filter((el) => el.type === 'shelf' && el.shape === 'rect').map(boxOf);
+      // the aisles' own names, standing upright in the aisles between the runs
+      const aisleNames = floorEls.flatMap((el) => {
+        if (el.type !== 'aisle' || el.shape !== 'polyline' || !el.label || !showLabels) return [];
+        const pts = polyPoints(el);
+        const mid = pts.length >= 2 ? polyMidpoint(pts) : null;
+        if (!mid) return [];
+        const deg = (Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180) / Math.PI;
+        return Math.abs(Math.sin((deg * Math.PI) / 180)) > 0.87
+          ? [{ x: mid.x, y: mid.y, half: (el.label.length * 12.5 * 0.64) / 2 / scale }]
+          : [];
+      });
+      // a little smaller as the floor is zoomed out: a badge, the aisle's name
+      // and the next face's badge share the aisle's width
+      const widest = Math.min(11, Math.max(7.5, (11 * scale) / 13.2));
+      for (const run of kept) {
+        if (!run.upright) continue;
+        const runPx = (run.y1 - run.y0) * scale;
+        const size = Math.max(7.5, Math.min(widest, (runPx - 8) / (run.dept.length * 0.6)));
+        const half = ((run.dept.length * size * 0.6) / 2) / scale; // its length along the run
+        const axisX = (run.x0 + run.x1) / 2 + run.shiftX;
+        // beside its own face when another shelf stands back to back with it
+        let side = 0;
+        if (!run.shiftX) {
+          const backs = (b: Box, east: boolean) => {
+            const gap = east ? b.x0 - run.x1 : run.x0 - b.x1;
+            return gap >= -0.05 && gap <= 0.6 && Math.min(run.y1, b.y1) - Math.max(run.y0, b.y0) >= 0.5 * (run.y1 - run.y0);
+          };
+          const east = uprightShelves.some((b) => b !== run && backs(b, true));
+          const west = uprightShelves.some((b) => b !== run && backs(b, false));
+          side = east && !west ? -1 : west && !east ? 1 : 0;
+        }
+        const x = axisX + side * (((run.x1 - run.x0) / 2) + (size / 2 + 0.5) / scale);
+        // over the middle of the run, slid along it where an aisle's name stands there
+        const cy = (run.y0 + run.y1) / 2;
+        let y = cy;
+        for (const a of aisleNames) {
+          // the two columns of text: does this one reach the aisle's?
+          if (Math.abs(a.x - x) > ((size + 12.5) / 2 + 0.5) / scale) continue;
+          const need = half + a.half + 2 / scale;
+          if (Math.abs(y - a.y) >= need) continue;
+          const room = Math.max(0, (run.y1 - run.y0) / 2 - half) + 1.5; // may run a little past its own ends
+          y = Math.min(cy + room, Math.max(cy - room, a.y + (y >= a.y ? need : -need)));
+        }
+        out.push({ id: run.id, dept: run.dept, x, y, rotate: -90, size });
+      }
+    }
+
+    // ── every other shelf: under its run ──
+    // each badge sits under its run, clear of the ones already placed, of a
+    // shelf below it that is showing its own title (a table, a wall run) and of
+    // an area's name on the floor: over either it would blot that name out.
+    // Thin runs whose titles are not on the map at this zoom are not avoided:
+    // a badge is wider than its run, and the gondolas step along diagonally
+    // beside it, so avoiding them would push every badge below its whole row.
+    // does a line of text, `x0`..`x1` wide and centred on y, lie over this?
+    type Blocker = (x0: number, x1: number, y: number) => boolean;
+    const hits = (b: Box, x0: number, x1: number, y: number) => x1 > b.x0 && x0 < b.x1 && y + 6 / scale > b.y0 && y - 6 / scale < b.y1;
+    const named: Blocker[] = [];
+    for (const el of floorEls) {
+      if (el.type === 'shelf' && el.shape === 'rect' && titleOnShelf(el)) {
+        named.push(overRect(el.geom as RectGeom, 6 / scale));
+        continue;
+      }
+      // an area's name alone — not its whole floor — where ElementNode writes it:
+      // the centre of a rect, the centre of a polygon's vertices
+      if (el.type !== 'zone' || !showLabels || !el.label) continue;
+      let c: { x: number; y: number };
+      if (el.shape === 'rect') {
+        const r = el.geom as RectGeom;
+        c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+      } else if (el.shape === 'polygon') {
+        const pts = polyPoints(el);
+        c = pts.reduce((a, q) => ({ x: a.x + q.x / pts.length, y: a.y + q.y / pts.length }), { x: 0, y: 0 });
+      } else continue;
+      const half = (el.label.length * 3.2 + 3) / scale;
+      named.push((x0, x1, y) => hits({ x0: c.x - half, x1: c.x + half, y0: c.y - 7 / scale, y1: c.y + 7 / scale }, x0, x1, y));
+    }
+    const placed: Box[] = [];
+    for (const run of kept.filter((k) => !k.upright).sort((a, b) => a.y1 - b.y1 || a.x0 - b.x0)) {
+      const halfW = (run.dept.length * 3.2 + 3) / scale;
+      const x = (run.x0 + run.x1) / 2 + run.shiftX;
+      const start = run.y1 + 10 / scale;
+      const free = (y: number, aside: boolean) =>
+        !placed.some((p) => hits(p, x - halfW, x + halfW, y)) && (aside || !named.some((under) => under(x - halfW, x + halfW, y)));
+      // a clear spot within a few lines below; failing that, back under the run,
+      // clear of the other badges at least — a long shelf in the way must not
+      // carry the badge far from its own
+      let y = start;
+      while (y - start < (13 * 4) / scale && !free(y, false)) y += 13 / scale;
+      if (y - start >= (13 * 4) / scale) for (y = start; y - start < (13 * 10) / scale && !free(y, true); y += 13 / scale);
+      placed.push({ x0: x - halfW, x1: x + halfW, y0: y - 6 / scale, y1: y + 6 / scale });
+      out.push({ id: run.id, dept: run.dept, x, y, rotate: 0, size: 11 });
+    }
+    return out;
+  }, [departments, shelfById, floorEls, scale, showLabels]);
 
   const sel = selectedId ? floorEls.find((el) => el.id === selectedId) : null;
 
@@ -1149,37 +1343,29 @@ export default function MapCanvas(props: Props) {
           </g>
         ))}
 
-        {/* department area labels — groups view marks the general area a
-            shelf belongs to so the floor reads without its item pins */}
-        {deptBadgeIds && (
+        {/* department badges — while a floor is zoomed out they are its
+            directory, in place of the group titles (which need more room) */}
+        {deptBadges && (
           <g pointerEvents="none">
-            {[...deptBadgeIds.map].map(([shelfId, dept]) => {
-              if (deptBadgeIds.skip.has(shelfId)) return null;
-              const el = shelfById.get(shelfId);
-              if (!el || el.shape !== 'rect') return null;
-              const r = el.geom as RectGeom;
-              const cx = r.x + r.w / 2;
-              const cy = r.y + r.h / 2 + r.h / 2 + 10 / scale;
-              return (
-                <text
-                  key={`dept-${shelfId}`}
-                  x={cx}
-                  y={cy}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={11 / scale}
-                  fontWeight={600}
-                  className="el-label"
-                  stroke="var(--map-floor)"
-                  strokeWidth={3 / scale}
-                  paintOrder="stroke"
-                  strokeLinejoin="round"
-                  transform={r.rot ? `rotate(${r.rot} ${r.x + r.w / 2} ${r.y + r.h / 2})` : undefined}
-                >
-                  {dept}
-                </text>
-              );
-            })}
+            {deptBadges.map((b) => (
+              <text
+                key={`dept-${b.id}`}
+                x={b.x}
+                y={b.y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={b.size / scale}
+                fontWeight={600}
+                className="el-label"
+                stroke="var(--map-floor)"
+                strokeWidth={3 / scale}
+                paintOrder="stroke"
+                strokeLinejoin="round"
+                transform={b.rotate ? `rotate(${b.rotate} ${b.x} ${b.y})` : undefined}
+              >
+                {b.dept}
+              </text>
+            ))}
           </g>
         )}
 
@@ -1214,7 +1400,8 @@ export default function MapCanvas(props: Props) {
             focused={location.id === focusPinId || (edit && location.id === selectedPinId)}
             clickable={!edit}
             anchor={pinAnchors.get(location.id) ?? shelfAnchor({ x: location.x, y: location.y }, elements)}
-            groupTitle={groupPinIds.has(location.id) ? groupPinTitle(location) : undefined}
+            groupTitle={groupPinIds.has(location.id) ? groupPinTitle(location)?.title : undefined}
+            groupTitlePx={groupPinIds.has(location.id) ? groupPinTitle(location)?.px : undefined}
             colorOverride={groupPinIds.has(location.id) ? groupPinColor(location) : undefined}
             isGroupPin={groupPinIds.has(location.id)}
             onClick={() => onPinClick?.(product.id)}
@@ -1377,6 +1564,57 @@ function pinHitDistance(
   return Math.max(0, Math.hypot(w.x - (anchor?.x ?? loc.x), w.y - (anchor?.y ?? loc.y)) - half);
 }
 
+/** Does a rect's name fit across its middle? — a box-like fixture's rule (a
+ *  zone, a display table): the name has to be narrower than the rect is deep
+ *  relative to its width, and the rect at least a text-height tall. */
+function acrossMiddle(r: RectGeom, label: string, fs: number): boolean {
+  return !(r.w < (label.length * fs * 0.55) / Math.max(r.h, 0.001) || r.h < fs * 1.2);
+}
+
+/** Smallest on-screen size (px) a shelf's title is still written at. */
+const TITLE_MIN_PX = 8;
+
+/**
+ * How a shelf's title is written. A long shelf's runs along it, inside it — so
+ * a vertical gondola carries its name the way a floor plan does, instead of a
+ * line of horizontal text across its neighbours. It shrinks with the shelf's
+ * on-screen depth and is not written ('hidden') once it would be too small to
+ * read: zoomed out a floor shows departments, zoomed in, groups. A shelf about
+ * as deep as it is long (a display table) has its name across its middle, when
+ * the name fits the shelf's width on screen. `rotate` is in the rect's own frame.
+ */
+export function shelfTitle(
+  r: RectGeom, label: string, fs: number, scale: number
+): { size: number; rotate: number } | 'hidden' | null {
+  const across = Math.min(r.w, r.h);
+  const run = Math.max(r.w, r.h);
+  if (run < across * 1.3) {
+    const fits = label.length * fs * scale * 0.56 <= run * scale * 1.08 && across * scale >= fs * scale * 1.15;
+    const reading = ((r.rot % 360) + 360) % 360;
+    return fits ? { size: fs, rotate: reading > 90 && reading < 270 ? 180 : 0 } : 'hidden';
+  }
+  const px = Math.min(fs * scale, across * scale * 0.72, (run * scale - 6) / (label.length * 0.56));
+  if (px < TITLE_MIN_PX) return 'hidden';
+  // turned, on the map, the way every line of text here reads (see readingAngle);
+  // `rotate` is in the rect's own frame, so take the rect's own turn back off
+  const base = r.h > r.w ? 90 : 0; // a tall rect runs upward from its width
+  let rotate = readingAngle(r.rot + base) - r.rot;
+  if (rotate > 180) rotate -= 360;
+  if (rotate <= -180) rotate += 360;
+  return { size: px / scale, rotate };
+}
+
+/** The angle a line of text is turned to when it runs along a line drawn at
+ *  `deg` (clockwise on screen). It reads left to right or bottom to top —
+ *  never upside down, and never top to bottom once it is steeper than 60°:
+ *  a near-vertical line always reads upward, so an aisle's name, a shelf's
+ *  title and its department's badge beside it all turn the same way. */
+export function readingAngle(deg: number): number {
+  const a = ((deg % 360) + 360) % 360;
+  const turned = a > 60 && a < 240 ? a - 180 : a;
+  return turned > 180 ? turned - 360 : turned; // written as a turn of at most half a circle
+}
+
 function ElementNode({
   el, scale, selected, highlighted, edit, showLabels = true,
 }: { el: MapElement; scale: number; selected: boolean; highlighted?: boolean; edit: boolean; showLabels?: boolean }) {
@@ -1399,7 +1637,10 @@ function ElementNode({
     const r = el.geom as RectGeom;
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
-    const dim = r.w < (label.length * fs * 0.55) / Math.max(r.h, 0.001) || r.h < fs * 1.2;
+    // a shelf's name runs along it (or across a display table); anything else keeps its name across the middle
+    const along = el.type === 'shelf' && label ? shelfTitle(r, label, fs, scale) : null;
+    const across = acrossMiddle(r, label, fs);
+    const shelf = el.type === 'shelf';
     return (
       <g transform={r.rot ? `rotate(${r.rot} ${cx} ${cy})` : undefined} opacity={selected ? 1 : highlighted ? 1 : 0.97}>
         <rect
@@ -1410,13 +1651,24 @@ function ElementNode({
           strokeWidth={el.type === 'wall' ? 2.4 : highlighted ? 3 : 1.4}
           strokeDasharray={el.type === 'aisle' ? '7 5' : undefined}
           vectorEffect="non-scaling-stroke"
-          rx={el.type === 'shelf' ? 0 : Math.min(0.15, r.w / 4)}
+          rx={shelf ? 0 : Math.min(0.15, r.w / 4)}
         />
-        {label && !dim && showLabels && !labelHidden && (
-          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fs} className="el-label">
-            {label}
-          </text>
-        )}
+        {label && showLabels && !labelHidden && (along ? along !== 'hidden' : across) && (() => {
+          // written along the shelf (a long one) or across its middle (anything else)
+          const written = along && along !== 'hidden' ? along : null;
+          return (
+            <text
+              x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+              fontSize={written ? written.size : fs}
+              // a shelf's fill is its department's colour: it picks the ink that reads on it
+              className={shelf ? undefined : 'el-label'}
+              fill={shelf ? inkOn(fill) : undefined}
+              transform={written ? `rotate(${written.rotate} ${cx} ${cy})` : undefined}
+            >
+              {label}
+            </text>
+          );
+        })()}
       </g>
     );
   }
@@ -1453,9 +1705,8 @@ function ElementNode({
   if (mid && pts.length >= 2) {
     const a = pts[0];
     const b = pts[1];
-    labelRot = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-    if (labelRot > 90) labelRot -= 180; // keep the text upright
-    if (labelRot < -90) labelRot += 180;
+    // along the strip, reading the way every turned line on the map does
+    labelRot = readingAngle((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI);
   }
   return (
     <g>
@@ -1534,8 +1785,8 @@ function PolyOverlay({ pts, scale }: { pts: PolyGeom; scale: number }) {
 }
 
 function ProductPin({
-  location, product, scale, focused, clickable, anchor, groupTitle, colorOverride, isGroupPin, onClick,
-}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: (WorldPt & { nx?: number; ny?: number }) | null; groupTitle?: string; colorOverride?: string; isGroupPin?: boolean; onClick: () => void }) {
+  location, product, scale, focused, clickable, anchor, groupTitle, groupTitlePx, colorOverride, isGroupPin, onClick,
+}: { location: ProductLocation; product: Product; scale: number; focused: boolean; clickable: boolean; anchor: (WorldPt & { nx?: number; ny?: number; el?: MapElement }) | null; groupTitle?: string; groupTitlePx?: number; colorOverride?: string; isGroupPin?: boolean; onClick: () => void }) {
   const color = colorOverride || product.category_color || '#2f6f3e';
   // the marker sits on the shelf's outline — the wall the item is stocked against
   const px = anchor?.x ?? location.x;
@@ -1588,24 +1839,105 @@ function ProductPin({
       <circle cx={px} cy={py} r={0.45} fill="transparent" pointerEvents={clickable ? 'all' : 'none'} />
       {/* a group pin carries its GROUP's title at all times — it IS the
           group's map pin, never an item's name (even when focused). Other
-          pins label only while focused. */}
-      {(groupTitle || (!isGroupPin && focused && product.name)) && (
-        <text
-          x={px}
-          y={py - 0.85}
-          textAnchor="middle"
-          fontSize={13 / scale}
-          className="el-label"
-          stroke="var(--map-floor)"
-          strokeWidth={3.5 / scale}
-          paintOrder="stroke"
-          fontWeight={700}
-        >
-          {groupTitle ?? product.name}
-        </text>
-      )}
+          pins label only while focused. On a vertical gondola a group's title
+          runs along the pin, over the shelf it names: horizontal text there
+          would lie across the neighbouring runs. */}
+      {(groupTitle || (!isGroupPin && focused && product.name)) && (() => {
+        const upright = anchored && groupTitle && Math.abs(Math.sin((along * Math.PI) / 180)) > 0.85;
+        if (!upright) {
+          return (
+            <text x={px} y={py - 0.85} textAnchor="middle" fontSize={(groupTitlePx ?? 13) / scale} className="el-label" stroke="var(--map-floor)" strokeWidth={3.5 / scale} paintOrder="stroke" fontWeight={700}>
+              {groupTitle ?? product.name}
+            </text>
+          );
+        }
+        const rg = anchor?.el?.shape === 'rect' ? (anchor.el.geom as RectGeom) : null;
+        const depth = rg ? Math.min(rg.w, rg.h) : 0;
+        const tx = px - anchor!.nx! * depth / 2;
+        const ty = py - anchor!.ny! * depth / 2;
+        // parallel to the bar, reading upward
+        let tilt = ((((along + 90) % 180) + 180) % 180) - 90;
+        if (Math.sin((tilt * Math.PI) / 180) > 0.2) tilt -= 180;
+        return (
+          <text x={tx} y={ty} textAnchor="middle" dominantBaseline="central" fontSize={(groupTitlePx ?? 13) / scale} className="el-label" stroke="var(--map-floor)" strokeWidth={3.5 / scale} paintOrder="stroke" strokeLinejoin="round" fontWeight={700} transform={`rotate(${tilt} ${tx} ${ty})`}>
+            {groupTitle}
+          </text>
+        );
+      })()}
     </g>
   );
+}
+
+/** Does a line of text — `x0` to `x1`, centred on `y`, `pad` half its height —
+ *  lie over a rect's actual footprint? The box around a diagonal shelf is far
+ *  larger than the shelf, so the line is walked along and each step tested in
+ *  the rect's own frame. */
+function overRect(r: RectGeom, pad: number): (x0: number, x1: number, y: number) => boolean {
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const a = (-r.rot * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  return (x0, x1, y) => {
+    const steps = Math.max(1, Math.ceil((x1 - x0) / Math.min(0.4, 2 * pad)));
+    for (let i = 0; i <= steps; i++) {
+      const px = x0 + ((x1 - x0) * i) / steps;
+      const lx = cx + (px - cx) * cos - (y - cy) * sin;
+      const ly = cy + (px - cx) * sin + (y - cy) * cos;
+      if (lx >= r.x - pad && lx <= r.x + r.w + pad && ly >= r.y - pad && ly <= r.y + r.h + pad) return true;
+    }
+    return false;
+  };
+}
+
+/** The department a zone records in its meta — the one its shelves belong to
+ *  — where that is not the zone's own name ("Produce" holding Fresh Produce). */
+interface TitleBox { id: string; cx: number; cy: number; x0: number; x1: number; y0: number; y1: number }
+
+/** The patch of map a group pin's title covers, in metres — where ProductPin
+ *  writes it: along an upright run, otherwise set above the pin. Type set
+ *  tight against its neighbour still reads, so the patch is a little smaller
+ *  than the glyphs. */
+function pinTitleBox(
+  id: string, anchor: (WorldPt & { nx?: number; ny?: number; el?: MapElement }) | null, spec: { title: string; px: number }, scale: number
+): TitleBox | null {
+  if (!anchor) return null;
+  const title = spec.title;
+  const len = (title.length * spec.px * 0.56) / scale;
+  const half = spec.px * 0.38 / scale;
+  const anchored = typeof anchor.nx === 'number' && typeof anchor.ny === 'number';
+  const along = Math.atan2(anchor.ny ?? 0, anchor.nx ?? 0) * (180 / Math.PI) + 90;
+  if (anchored && Math.abs(Math.sin((along * Math.PI) / 180)) > 0.85) {
+    const rg = anchor.el?.shape === 'rect' ? (anchor.el.geom as RectGeom) : null;
+    const depth = rg ? Math.min(rg.w, rg.h) : 0;
+    const cx = anchor.x - anchor.nx! * depth / 2;
+    const cy = anchor.y - anchor.ny! * depth / 2;
+    return { id, cx, cy, x0: cx - half, x1: cx + half, y0: cy - len / 2, y1: cy + len / 2 };
+  }
+  const cy = anchor.y - 0.85 - 4.2 * spec.px / 13 / scale; // on a baseline 0.85 m above the pin
+  return { id, cx: anchor.x, cy, x0: anchor.x - len / 2, x1: anchor.x + len / 2, y0: cy - half, y1: cy + half };
+}
+
+/** The department a zone records in its meta — the one its shelves belong to
+ *  — where that is not the zone's own name ("Produce" holding Fresh Produce). */
+function zoneDepartment(z: MapElement): string {
+  try {
+    const d = JSON.parse(z.meta || '{}').department;
+    return typeof d === 'string' ? d : '';
+  } catch {
+    return '';
+  }
+}
+
+/** An element's label options from its meta: its size in px (12.5 unless
+ *  scaled) and whether the owner hid it — what ElementNode draws by. */
+function labelOptions(el: MapElement): { px: number; hidden: boolean } {
+  try {
+    const m = JSON.parse(el.meta || '{}');
+    return { px: 12.5 * (typeof m.labelScale === 'number' ? m.labelScale : 1), hidden: m.labelHidden === true };
+  } catch {
+    return { px: 12.5, hidden: false };
+  }
 }
 
 /** Selection outline + 8 resize handles + rotation handle (screen-constant sizes). */

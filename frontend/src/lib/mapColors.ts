@@ -30,3 +30,15 @@ export function shade(hex: string, amt: number): string {
   const b = ch(n & 255);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
+
+/** Text colour that reads on a fill — dark ink on a light fill, white on a
+ *  dark one — chosen from the fill itself, so it holds in both themes. */
+export function inkOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = [n >> 16 & 255, n >> 8 & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return luminance > 0.36 ? '#1b1f27' : '#ffffff';
+}

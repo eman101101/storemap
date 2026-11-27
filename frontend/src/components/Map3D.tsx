@@ -861,15 +861,19 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
     [hoverAisleEl, stockPins]
   );
   const hoverShelfEl = hoverShelf ? elements.find((el) => el.id === hoverShelf.id) ?? null : null;
-  const hoverShelfContents = useMemo(
-    () =>
-      hoverShelfEl?.type === 'shelf'
-        ? shelfContents(hoverShelfEl, stockPins, SHELF_TOL_M, hoverShelf?.side)
-        : hoverShelfEl?.type === 'aisle'
-          ? aisleContents(hoverShelfEl, stockPins)
-          : null,
-    [hoverShelfEl, stockPins, hoverShelf?.side]
-  );
+  // The card reflects the face hovered — unless that face holds nothing while
+  // the shelf does: a run that is one face of a double-sided gondola is a
+  // shelf of its own, half a metre across, and the pointer lands on either
+  // half of it. That shelf reads as one, with no side in its title.
+  const hoverShelfCard = useMemo<{ contents: ReturnType<typeof shelfContents>; side?: 'front' | 'back' } | null>(() => {
+    if (!hoverShelfEl) return null;
+    if (hoverShelfEl.type === 'aisle') return { contents: aisleContents(hoverShelfEl, stockPins) };
+    if (hoverShelfEl.type !== 'shelf') return null;
+    const face = shelfContents(hoverShelfEl, stockPins, SHELF_TOL_M, hoverShelf?.side);
+    if (face.count > 0 || !hoverShelf?.side) return { contents: face, side: hoverShelf?.side };
+    const whole = shelfContents(hoverShelfEl, stockPins, SHELF_TOL_M);
+    return { contents: whole, side: whole.count > 0 ? undefined : hoverShelf?.side };
+  }, [hoverShelfEl, stockPins, hoverShelf?.side]);
 
   return (
     <>
@@ -909,11 +913,11 @@ export default function Map3D({ floor, elements, pins, focusPinId, focusPinIds, 
           contents={hoverContents}
         />
       )}
-      {hoverShelf && (hoverShelfEl?.type === 'shelf' || hoverShelfEl?.type === 'aisle') && (
+      {hoverShelf && hoverShelfCard && (hoverShelfEl?.type === 'shelf' || hoverShelfEl?.type === 'aisle') && (
         <AisleTooltip
           style={{ left: hoverShelf.sx, top: hoverShelf.sy }}
-          label={`${hoverShelfEl.label || 'Shelf'}${hoverShelfEl.type === 'shelf' ? ` · ${hoverShelf?.side === 'back' ? 'Side B' : 'Side A'}` : ''}`}
-          contents={hoverShelfContents}
+          label={`${hoverShelfEl.label || 'Shelf'}${hoverShelfCard.side ? ` · ${hoverShelfCard.side === 'back' ? 'Side B' : 'Side A'}` : ''}`}
+          contents={hoverShelfCard.contents}
           kind={hoverShelfEl.type === 'aisle' ? 'aisle' : 'shelf'}
         />
       )}

@@ -2,6 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Floor, MapElement } from '../types';
 import type { StockItem } from './render3d';
+import { shelfAnchor } from './geometry';
+import { shelfLocalToWorld } from './shelfLayout';
 import {
   project, fitCamera, boxFaces, routeFaces, buildSceneFaces, scaleColor, ROUTE, pickFixture,
   camFromEyeLook, pathSampler, toCamera, clipPolygonNear, stockFaces, subdivideFaces,
@@ -180,6 +182,62 @@ describe('scene construction', () => {
       expect(out.filter((f) => f.fill === '#f0f')).toHaveLength(1);
     }
   });
+
+  it('never cuts a rotated shelf to sort it — each of its faces splits on its own plane', () => {
+    // A rotated face has no axis it is flat against. Split on its thinnest
+    // bounding-box axis instead, as this used to, and the plane cuts every
+    // face that crosses it — a handful of angled fixtures shredded the scene.
+    const faces = buildSceneFaces(floor, [el('shelf', 'rect', { x: 1, y: 2, w: 8, h: 1.3, rot: 38 })], MODERN_THEME, { shelfDetail: 'full' });
+    const solids = faces.filter((f) => (f.layer ?? 2) >= 2);
+    expect(solids.length).toBeGreaterThan(20); // top, sides, end caps and painted board strips
+    const out: Face[] = [];
+    for (const { node } of buildSceneBSP(solids)) traverseFaceBSP(node, { x: 6, y: 9, z: 7 }, out);
+    expect(out).toHaveLength(solids.length);
+  });
+
+  it('keeps a scene of angled and square fixtures intact', () => {
+    const angled = (x: number, y: number, rot: number) => el('shelf', 'rect', { x, y, w: 5, h: 1.3, rot });
+    const shelves = [
+      angled(1, 1, 45), angled(9, 1.5, 315), angled(2, 7, 30), angled(10, 8, 60), angled(6, 10, 120), angled(13, 5, 200),
+      el('shelf', 'rect', { x: 1, y: 4, w: 14, h: 1.3, rot: 0 }),
+      el('shelf', 'rect', { x: 5, y: 9, w: 1.3, h: 8, rot: 90 }),
+      el('wall', 'polyline', [[0, 0], [16, 0], [16, 12], [11, 12]]),
+    ];
+    const faces = buildSceneFaces(floor, shelves, MODERN_THEME, { shelfDetail: 'full' });
+    const out: Face[] = [];
+    for (const { node } of buildSceneBSP(faces)) traverseFaceBSP(node, { x: 8, y: 6, z: 24 }, out);
+    expect(out.length).toBeGreaterThanOrEqual(faces.length); // every face is still drawn
+    expect(out.length).toBeLessThan(faces.length * 4);
+  });
+
+  it('orders stock on a rotated face exactly, from either side', () => {
+    const shelfEl = el('shelf', 'rect', { x: 2, y: 2, w: 8, h: 1.3, rot: 30 });
+    const scene = buildSceneFaces(floor, [shelfEl], MODERN_THEME);
+    // a point just off the shelf's lower long face anchors there: that is where an item stands
+    const local = { x: 4, y: 1.3 + 0.2 };
+    const r = shelfEl.geom as { x: number; y: number; w: number; h: number; rot: number };
+    const at = shelfLocalToWorld(r, local.x, local.y);
+    const anchor = shelfAnchor(at, [shelfEl])!;
+    expect(anchor.el).toBe(shelfEl);
+    const stock = stockFaces([{ x: anchor.x, y: anchor.y, nx: anchor.nx, ny: anchor.ny, color: '#cc0000', zs: [0.5], h: 0.24, w: 0.3 }]);
+    // the side face the item stands against: the scene face lying in the anchor's plane
+    const planeOf = (f: Face) => f.pts.every((p) => Math.abs((p.x - anchor.x) * anchor.nx + (p.y - anchor.y) * anchor.ny) < 1e-6);
+    const side = scene.filter((f) => (f.layer ?? 2) >= 2 && !f.line && planeOf(f));
+    expect(side.length).toBeGreaterThan(0);
+    const bsp = buildSceneBSP([...scene.filter((f) => (f.layer ?? 2) >= 2), ...stock]);
+    const order = (side: 'front' | 'back') => {
+      const out: Face[] = [];
+      const k = side === 'front' ? 3 : -3;
+      for (const { node } of bsp) traverseFaceBSP(node, { x: anchor.x + anchor.nx * k, y: anchor.y + anchor.ny * k, z: 0.8 }, out);
+      return out;
+    };
+    const lastOf = (out: Face[], test: (f: Face) => boolean) => out.reduce((acc, f, i) => (test(f) ? i : acc), -1);
+    const isStock = (f: Face) => f.fill === scaleColor('#cc0000', 0.92);
+    const front = order('front');
+    expect(lastOf(front, (f) => side.includes(f))).toBeLessThan(front.findIndex(isStock)); // the face first, the item over it
+    const back = order('back');
+    expect(lastOf(back, (f) => side.includes(f))).toBeGreaterThan(back.findIndex(isStock)); // the item first, hidden by the face
+  });
 });
     it('splits the floor slab and long walls into ≤4 m tiles', () => {
       const faces = buildSceneFaces(floor, [el('wall', 'rect', { x: 0, y: 0, w: 20, h: 0.4, rot: 0 })]);
@@ -301,8 +359,8 @@ describe('map themes (light default + dark)', () => {
 
   it('depth-capped leaves fall back to back-to-front centroid order', () => {
     const leaf = {
-      axis: 0 as const,
-      split: 0,
+      n: { x: 1, y: 0, z: 0 },
+      d: 0,
       below: null,
       above: null,
       faces: [
@@ -757,5 +815,17 @@ describe('stockFaces — per-shelf boards and item size', () => {
   });
   it('without shelf data it falls back to the classic 4-level ladder', () => {
     expect(stockFaces([{ x: 6, y: 6, nx: 0, ny: 1, color: '#3b6fd4' }])).toHaveLength(4);
+  });
+  it('stands a rectangle on any face — the two sides of a vertical gondola too', () => {
+    for (const [nx, ny] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.6, 0.8]]) {
+      const [f] = stockFaces([{ x: 6, y: 6, nx, ny, color: '#3b6fd4', zs: [0.4], h: 0.3, w: 0.4 }]);
+      // each corner: 45 mm proud of the face, 0.2 m either way along it, on the board or at the top
+      for (const p of f!.pts) {
+        expect((p.x - 6) * nx + (p.y - 6) * ny).toBeCloseTo(0.045, 6);
+        expect(Math.abs((p.x - 6) * -ny + (p.y - 6) * nx)).toBeCloseTo(0.2, 6);
+        expect(p.z === 0.4 || p.z === 0.7).toBe(true);
+      }
+      expect(new Set(f!.pts.map((p) => `${p.x},${p.y},${p.z}`)).size).toBe(4); // four distinct corners
+    }
   });
 });
